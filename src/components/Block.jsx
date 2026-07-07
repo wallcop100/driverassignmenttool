@@ -1,6 +1,9 @@
-import { cgColor } from '../state.js';
+import { useContext } from 'react';
+import { LabelContext } from '../labelContext.js';
+import { cgColor, labelText } from '../state.js';
 
 export default function Block({ link, linkRef, flags = [], pending, selected, dispatch, draggable = true }) {
+  const labelFields = useContext(LabelContext);
   const ref = link?.ref ?? linkRef;
   const mismatch = flags.some((f) => f.level === 'MISMATCH');
   const fail = flags.some((f) => f.level === 'FAIL');
@@ -14,10 +17,8 @@ export default function Block({ link, linkRef, flags = [], pending, selected, di
 
   const color = link ? cgColor(link.controlGroup) : cgColor(null);
   const style = { minWidth };
-  if (!fail) {
-    style.borderLeftColor = color.border;
-    style.background = color.bg;
-  }
+  if (!fail) style.background = color.bg;
+  const bandStyle = fail ? undefined : { background: color.border };
 
   const detail = link
     ? [`${ref}`,
@@ -41,11 +42,13 @@ export default function Block({ link, linkRef, flags = [], pending, selected, di
       onDragEnd={() => dispatch({ type: 'SET_DRAGGING', linkRef: null })}
       onClick={(e) => {
         e.stopPropagation();
-        if (link) dispatch({ type: 'SELECT_LINK', linkRef: selected ? null : ref });
+        if (link) dispatch({ type: 'SELECT_LINKS', linkRef: ref, additive: e.ctrlKey || e.metaKey });
       }}>
+      <span className="block-band" style={bandStyle}>
+        {link && <span className="material-icons block-grip" title="drag to move">drag_indicator</span>}
+      </span>
       <span className="block-label">
-        {link?.loadW != null ? `${link.loadW}W` : ref}
-        {link?.fvV != null && <span className="block-fv">{link.fvV}fV</span>}
+        {link ? labelText(link, labelFields) : ref}
       </span>
       {mismatch && <span className="material-icons block-badge badge-mismatch-icon">priority_high</span>}
       {link && !link.powerType && <span className="block-badge badge-unknown-type">?</span>}

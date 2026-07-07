@@ -17,7 +17,7 @@ function diffRows(state) {
   return rows;
 }
 
-export default function ReviewModal({ state, onClose }) {
+export default function ReviewModal({ state, dispatch, onClose }) {
   const [error, setError] = useState(null);
   const [done, setDone] = useState(false);
   const rows = diffRows(state);
@@ -47,7 +47,7 @@ export default function ReviewModal({ state, onClose }) {
             {rows.length > 0 && (
               <table className="table table-sm align-middle">
                 <thead>
-                  <tr><th>Driver · Node</th><th>Was</th><th /><th>Now</th></tr>
+                  <tr><th>Driver · Node</th><th>Was</th><th /><th>Now</th><th /></tr>
                 </thead>
                 <tbody>
                   {rows.map((r) => (
@@ -59,6 +59,12 @@ export default function ReviewModal({ state, onClose }) {
                       <td className="text-secondary">{r.oldRefs.join(', ') || '—'}</td>
                       <td><span className="material-icons small-icon text-secondary">arrow_forward</span></td>
                       <td>{r.newRefs.join(', ') || '—'}</td>
+                      <td>
+                        <button className="btn btn-sm btn-link p-0" title="Revert this row to the imported baseline"
+                          onClick={() => dispatch({ type: 'REVERT_KEY', key: r.key })}>
+                          <span className="material-icons small-icon">undo</span>
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>

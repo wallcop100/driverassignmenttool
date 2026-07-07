@@ -1,13 +1,17 @@
-import { useEffect, useReducer } from 'react';
+import { useEffect, useReducer, useState } from 'react';
 import * as api from './api.js';
 import ImportScreen from './components/ImportScreen.jsx';
 import Landing from './components/Landing.jsx';
+import Tutorial from './components/Tutorial.jsx';
 import ZonePage from './components/ZonePage.jsx';
-import { initialState, reducer } from './state.js';
+import { LabelContext } from './labelContext.js';
+import { clearSession, loadSession, saveSession } from './persist.js';
+import { initialState, intersectionSuggestions, reducer } from './state.js';
 
 export default function App() {
   const [state, dispatch] = useReducer(reducer, initialState);
-  const { model, assignments, addedDrivers, selectedLink } = state;
+  const { model, assignments, addedDrivers, selectedLinks } = state;
+  const [saved] = useState(loadSession); // a prior session, offered on the import screen
 
   useEffect(() => {
     if (!model) return;
@@ -18,31 +22,56 @@ export default function App() {
     return () => { stale = true; };
   }, [model, assignments, addedDrivers]);
 
+  // One eligibility fetch per zone/state change powers dim-the-impossible,
+  // fill-node, target counts and orphan detection.
+  const zone = state.view.page === 'zone' ? state.view.zone : null;
   useEffect(() => {
-    if (!model || !selectedLink) return;
+    if (!model || !zone) return;
     let stale = false;
-    api.suggest(selectedLink, assignments, addedDrivers)
-      .then((r) => !stale && dispatch({
-        type: 'SET_SUGGESTIONS',
-        suggestions: new Set(r.targets.map((t) => `${t.driver}|${t.node}`)),
-      }))
+    api.eligibility(zone, assignments, addedDrivers)
+      .then((r) => !stale && dispatch({ type: 'SET_ELIGIBILITY', eligibility: r }))
       .catch(console.error);
     return () => { stale = true; };
-  }, [model, selectedLink]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [model, zone, assignments, addedDrivers]);
+
+  // best-fit green nodes = intersection of the selection's eligible nodes
+  useEffect(() => {
+    if (!selectedLinks.length || !state.eligibility) return;
+    dispatch({ type: 'SET_SUGGESTIONS', suggestions: intersectionSuggestions(selectedLinks, state.eligibility) });
+  }, [selectedLinks, state.eligibility]);
+
+  // autosave the whole session (#3)
+  useEffect(() => { saveSession(state); }, [model, assignments, addedDrivers, state.prefs, state.view]);
 
   useEffect(() => {
     const onKey = (e) => {
-      if (e.key === 'Escape') dispatch({ type: 'SELECT_LINK', linkRef: null });
+      if (e.key === 'Escape') dispatch({ type: 'SELECT_LINKS', linkRef: null, additive: false });
       if (e.ctrlKey && e.key.toLowerCase() === 'z') {
         e.preventDefault();
-        dispatch({ type: 'UNDO' });
+        dispatch({ type: e.shiftKey ? 'REDO' : 'UNDO' });
       }
+      if (e.ctrlKey && e.key.toLowerCase() === 'y') { e.preventDefault(); dispatch({ type: 'REDO' }); }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  if (!model) return <ImportScreen dispatch={dispatch} />;
-  if (state.view.page === 'zone') return <ZonePage state={state} dispatch={dispatch} zone={state.view.zone} />;
-  return <Landing state={state} dispatch={dispatch} />;
+  let screen;
+  if (!model) {
+    screen = (
+      <ImportScreen dispatch={dispatch} saved={saved}
+        onResume={() => dispatch({ type: 'RESTORE', saved })}
+        onDiscard={clearSession} />
+    );
+  } else if (state.view.page === 'zone') {
+    screen = <ZonePage state={state} dispatch={dispatch} zone={state.view.zone} />;
+  } else {
+    screen = <Landing state={state} dispatch={dispatch} />;
+  }
+  return (
+    <LabelContext.Provider value={state.prefs.label}>
+      {screen}
+      {state.demo && model && <Tutorial dispatch={dispatch} view={state.view} />}
+    </LabelContext.Provider>
+  );
 }

@@ -4,42 +4,22 @@
   "version": "0.1.0",
   "description": "Pullzone driver bin-packing UI for the Lighting DesignDB secondary power workflow",
   "private": true,
-  "main": "electron/main.js",
+  "type": "module",
   "scripts": {
-    "dev": "concurrently -k \"vite\" \"python sidecar/main.py 5175\" \"wait-on tcp:5173 && electron .\"",
-    "test:py": "python -m pytest tests/ -q",
-    "build:ui": "vite build",
-    "build:sidecar": "pyinstaller --onefile --name sidecar --paths sidecar --distpath build/sidecar --workpath build/pyi --specpath build -y sidecar/main.py",
-    "dist": "npm run build:ui && npm run build:sidecar && electron-builder"
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "node --test test/"
   },
   "dependencies": {
     "bootstrap": "^5.3.3",
     "material-icons": "^1.13.12",
+    "papaparse": "^5.4.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.4",
-    "concurrently": "^9.1.0",
-    "electron": "^33.2.0",
-    "electron-builder": "^25.1.8",
-    "vite": "^6.0.3",
-    "wait-on": "^8.0.1"
-  },
-  "build": {
-    "appId": "com.erik.driverassignmenttool",
-    "files": [
-      "dist/**",
-      "electron/**"
-    ],
-    "extraResources": [
-      {
-        "from": "build/sidecar/sidecar.exe",
-        "to": "sidecar.exe"
-      }
-    ],
-    "win": {
-      "target": "nsis"
-    }
+    "vite": "^6.0.3"
   }
 }

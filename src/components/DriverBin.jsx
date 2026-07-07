@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { cgColor, driverLoad, isPending, keyOf } from '../state.js';
+import { cgColor, driverLoad, driverStatus, isPending, keyOf } from '../state.js';
 import Block from './Block.jsx';
+import KebabMenu from './KebabMenu.jsx';
 
 function Bar({ used, cap, unit, projected }) {
   const pct = cap ? Math.round((100 * used) / cap) : 0;
@@ -17,20 +18,21 @@ function Bar({ used, cap, unit, projected }) {
   );
 }
 
-function Slot({ driver, node, state, dispatch, links, flagIndex }) {
+function Slot({ driver, node, state, dispatch, links, flagIndex, onNodeClick }) {
   const [hover, setHover] = useState(false);
   const key = keyOf(driver.ref, node.name);
   const entry = state.assignments[key] ?? { toEntityType: '', refs: [] };
   const nodeFlags = flagIndex.byNode.get(key) ?? [];
   const fail = nodeFlags.some((f) => f.level === 'FAIL');
   const suggested = state.suggestions?.has(key);
+  const focused = state.focusNode === key;
+  const marked = state.distributeNodes.includes(key); // distribution target (#2)
   const positionLocked = entry.refs.length > 0 && entry.toEntityType === 'Position';
 
   const placed = entry.refs.map((r) => links[r]).filter(Boolean);
   const nodeWatts = placed.reduce((s, l) => s + (l.loadW ?? 0), 0);
   const seriesFv = placed.reduce((s, l) => s + (l.fvV ?? 0), 0);
 
-  // one ControlGroup per node — the meaningful label
   const groups = [...new Set(placed.map((l) => l.controlGroup).filter(Boolean))];
   const cg = groups.length === 1 ? groups[0] : null;
 
@@ -45,12 +47,13 @@ function Slot({ driver, node, state, dispatch, links, flagIndex }) {
 
   return (
     <div
-      className={['node-slot', fail && 'is-fail', suggested && 'is-suggested',
-        positionLocked && 'is-locked', ghost && 'is-dragover'].filter(Boolean).join(' ')}
+      className={['node-slot', fail && 'is-fail', suggested && 'is-suggested', focused && 'is-focused',
+        marked && 'is-marked', positionLocked && 'is-locked', ghost && 'is-dragover']
+        .filter(Boolean).join(' ')}
       onDragOver={(e) => { if (!positionLocked) { e.preventDefault(); setHover(true); } }}
       onDragLeave={() => setHover(false)}
       onDrop={(e) => { e.preventDefault(); drop(e.dataTransfer.getData('text/plain')); }}
-      onClick={() => state.selectedLink && drop(state.selectedLink)}>
+      onClick={() => onNodeClick(key)}>
       <div className="slot-header">
         <span className="fw-semibold">{node.name || '—'}</span>
         {groups.length > 1 ? (
@@ -62,11 +65,17 @@ function Slot({ driver, node, state, dispatch, links, flagIndex }) {
             {cg}
           </span>
         ) : null}
-        {node.maxLoadW == null && node.maxFvV == null && (
-          <span className="ms-auto text-secondary metric-label">
-            {driver.undetermined ? 'unlimited' : `${nodeWatts.toFixed(1)}W`}
-          </span>
-        )}
+        <span className="ms-auto d-flex align-items-center gap-1">
+          {node.maxLoadW == null && node.maxFvV == null && (
+            <span className="text-secondary metric-label">
+              {driver.undetermined ? 'undetermined' : `${nodeWatts.toFixed(1)}W`}
+            </span>
+          )}
+          <KebabMenu title="Node actions" items={[{
+            label: 'Return all to tray', icon: 'undo', disabled: !entry.refs.length,
+            onClick: () => dispatch({ type: 'MOVE_MANY', linkRefs: entry.refs, toKey: null }),
+          }]} />
+        </span>
       </div>
 
       {node.maxLoadW != null && (
@@ -83,15 +92,17 @@ function Slot({ driver, node, state, dispatch, links, flagIndex }) {
           <Block key={r} link={links[r]} linkRef={r} dispatch={dispatch}
             flags={(flagIndex.byLink.get(r) ?? []).concat(nodeFlags.filter((f) => !f.link))}
             pending={isPending(key, state.assignments, state.model.baseline)}
-            selected={state.selectedLink === r} />
+            selected={state.selectedLinks.includes(r)} />
         ))}
-        {!entry.refs.length && <span className="slot-empty">drop here</span>}
+        {!entry.refs.length && (
+          <span className="slot-empty">{marked ? 'distribution target' : focused ? 'filling…' : 'drop here'}</span>
+        )}
       </div>
     </div>
   );
 }
 
-export default function DriverBin({ driver, state, dispatch, links, accent, flagIndex }) {
+export default function DriverBin({ driver, state, dispatch, links, accent, flagIndex, onNodeClick }) {
   const driverFlags = (flagIndex.byDriver.get(driver.ref) ?? []).filter((f) => !f.node && !f.link);
   const fail = driverFlags.some((f) => f.level === 'FAIL');
   const warn = driverFlags.some((f) => f.level === 'WARN');
@@ -99,21 +110,32 @@ export default function DriverBin({ driver, state, dispatch, links, accent, flag
   const pct = driver.maxPowerW ? Math.round((100 * load) / driver.maxPowerW) : null;
   const width = driver.undetermined ? 260 : Math.max(230, Math.min(140 + driver.maxPowerW * 1.8, 560));
 
+  // #1 dim-the-impossible: classify relative to the selected link
+  const status = driverStatus(driver.ref, state.selectedLinks, state.eligibility);
+  const driverRefs = driver.nodes.flatMap((n) => state.assignments[keyOf(driver.ref, n.name)]?.refs ?? []);
+
   return (
-    <div className={['driver-bin', driver.undetermined && 'is-undetermined', fail && 'is-fail']
-      .filter(Boolean).join(' ')} style={{ width, '--zone-accent': accent }}>
+    <div className={['driver-bin', `status-${status}`, driver.undetermined && 'is-undetermined',
+      fail && 'is-fail'].filter(Boolean).join(' ')} style={{ width, '--zone-accent': accent }}>
       <div className="bin-header" title={driverFlags.map((f) => f.message).join('\n') || undefined}>
         <span className="fw-bold">{driver.ref}</span>
         {driver.added && <span className="badge text-bg-info">NEW</span>}
         <span className={`type-chip type-${driver.powerType ?? 'unknown'}`}>
-          {driver.powerType ?? '?'}
+          {driver.powerType ?? '?'}{driver.powerType === 'CC' && driver.currentA ? ` ${driver.currentA}A`
+            : driver.powerType === 'CV' && driver.outputVoltageV ? ` ${driver.outputVoltageV}V` : ''}
         </span>
         <span className="text-secondary small text-truncate flex-grow-1">{driver.typeRef}</span>
+        {status === 'impossible' && <span className="status-tag tag-impossible">✕ type</span>}
+        {status === 'full' && <span className="status-tag tag-full">no room</span>}
         {(fail || warn) && (
           <span className={`material-icons small-icon ${fail ? 'text-fail' : 'text-warn'}`}>
             {fail ? 'error' : 'warning'}
           </span>
         )}
+        <KebabMenu title="Driver actions" items={[{
+          label: 'Return all to tray', icon: 'undo', disabled: !driverRefs.length,
+          onClick: () => dispatch({ type: 'MOVE_MANY', linkRefs: driverRefs, toKey: null }),
+        }]} />
       </div>
       <div className="bin-capacity" title={driver.driverRestrictions || 'restrictions undeclared'}>
         {driver.maxPowerW != null ? (
@@ -134,7 +156,7 @@ export default function DriverBin({ driver, state, dispatch, links, accent, flag
       </div>
       {driver.nodes.map((node) => (
         <Slot key={node.name} driver={driver} node={node} state={state} dispatch={dispatch}
-          links={links} flagIndex={flagIndex} />
+          links={links} flagIndex={flagIndex} onNodeClick={onNodeClick} />
       ))}
     </div>
   );

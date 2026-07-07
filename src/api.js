@@ -1,44 +1,52 @@
-const port = window.desktop?.sidecarPort ?? 5175;
-const BASE = `http://127.0.0.1:${port}`;
+// Local, in-browser engine calls behind the same async surface the components
+// used when this talked to a Python sidecar. The parsed model is held here so
+// validate/eligibility/export keep their original (assignments, added) signatures.
+import demoForm from './demo/form.csv?raw';
+import demoLinks from './demo/links.csv?raw';
+import * as engine from './engine.js';
 
-async function post(path, body, isJson = true) {
-  const res = await fetch(`${BASE}${path}`, {
-    method: 'POST',
-    headers: isJson ? { 'Content-Type': 'application/json' } : undefined,
-    body: isJson ? JSON.stringify(body) : body,
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.error || `${path} failed (${res.status})`);
+let model = null;
+
+// Drop both files at once, autodetect which is which (#10).
+export async function parseAuto(files) {
+  const texts = await Promise.all([...files].map((f) => f.text()));
+  let formText = null;
+  let linksText = null;
+  for (const t of texts) {
+    const kind = engine.detectKind(t);
+    if (kind === 'form') formText = t;
+    else if (kind === 'links') linksText = t;
   }
-  return res;
+  if (!formText || !linksText) {
+    const missing = !formText ? 'a Driver Assignment CSV' : 'a Links Assignment CSV';
+    throw new Error(`Couldn't detect ${missing}. Drop one of each (order doesn't matter).`);
+  }
+  model = engine.buildModel(formText, linksText);
+  return model;
 }
 
-export async function parse(formFile, linksFile) {
-  const fd = new FormData();
-  fd.append('form', formFile);
-  fd.append('links', linksFile);
-  return (await post('/parse', fd, false)).json();
+export function loadDemo() {
+  model = engine.buildModel(demoForm, demoLinks);
+  return model;
 }
 
 export async function validate(assignments, addedDrivers) {
-  return (await post('/validate', { assignments, addedDrivers })).json();
-}
-
-export async function suggest(linkRef, assignments, addedDrivers) {
-  return (await post('/suggest', { linkRef, assignments, addedDrivers })).json();
+  return { flags: engine.validate(model, assignments, addedDrivers) };
 }
 
 export async function eligibility(zone, assignments, addedDrivers) {
-  return (await post('/eligibility', { zone, assignments, addedDrivers })).json();
+  return engine.eligibility(model, zone, assignments, addedDrivers);
+}
+
+export async function distribute(assignments, addedDrivers, linkRefs, nodeKeys) {
+  return engine.distributeGroup(model, assignments, addedDrivers, linkRefs, nodeKeys);
 }
 
 export async function exportCsv(assignments, addedDrivers) {
-  return (await post('/export', { assignments, addedDrivers })).text();
+  return engine.exportCsv(model, assignments, addedDrivers);
 }
 
 export async function saveCsv(text, suggestedName) {
-  if (window.desktop?.saveFile) return window.desktop.saveFile(text, suggestedName);
   const url = URL.createObjectURL(new Blob([text], { type: 'text/csv' }));
   const a = Object.assign(document.createElement('a'), { href: url, download: suggestedName });
   a.click();
