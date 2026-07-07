@@ -3,7 +3,7 @@
 // the browser and under node (see test/engine.test.mjs).
 import Papa from 'papaparse';
 
-const CURRENT_TOLERANCE = 0.15;
+const CURRENT_TOLERANCE = 0.10;
 
 const DRIVER_RE = /(?<Watts>\d+(\.\d+)?)W(\s\|\s(?<Value>\d+(\.\d+)?)(?<Unit>[AV]))?/;
 const NODE_FV_RE = /(?<FV>\d+(\.\d+)?)fV/;
@@ -235,7 +235,7 @@ function validateDriver(ctx, assignments, driver) {
     if (sumFv > node.maxFvV) flag('FAIL', 'SeriesFV', `series fV ${g(sumFv)} exceeds node max ${g(node.maxFvV)}fV`, node.name);
   }
 
-  // 6. Current match (CC, 15% band)
+  // 6. Current match (CC, 10% band)
   if (driver.powerType === 'CC') {
     if (driver.currentA == null) {
       flag('WARN', 'CurrentMatch', 'current range undeclared — current not verified');

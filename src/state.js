@@ -353,7 +353,7 @@ export function orphanClusters(trayLinks, eligibility, inventory) {
   }
   const matchType = (c) => inventory.find((t) => {
     if (t.powerType !== c.powerType) return false;
-    if (c.powerType === 'CC' && c.currentA && t.currentA) return Math.abs(c.currentA - t.currentA) / t.currentA <= 0.15;
+    if (c.powerType === 'CC' && c.currentA && t.currentA) return Math.abs(c.currentA - t.currentA) / t.currentA <= 0.10;
     if (c.powerType === 'CV' && c.voltageV && t.outputVoltageV) return Math.abs(c.voltageV - t.outputVoltageV) <= 0.5;
     return true;
   });
