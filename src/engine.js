@@ -420,3 +420,61 @@ export function exportCsv(model, assignments, added) {
   }
   return `${lines.join('\r\n')}\r\n`;
 }
+
+// Rows (ElementRef+Node) whose link refs differ from the imported baseline, or
+// that belong to a driver added in the UI — i.e. exactly what the Review diff
+// shows. Shared by the CSV diff view and the patch script below.
+export function changedRows(model, assignments, addedDrivers) {
+  const a = assignments || {};
+  const addedRefs = new Set((addedDrivers || []).map((d) => d.ref));
+  const keys = new Set([...Object.keys(model.baseline), ...Object.keys(a)]);
+  const rows = [];
+  for (const key of keys) {
+    const [elementRef, node] = key.split('|');
+    const refs = a[key]?.refs || [];
+    const was = model.baseline[key]?.refs || [];
+    if (!addedRefs.has(elementRef) && refs.join() === was.join()) continue;
+    rows.push({ key, elementRef, node, refs });
+  }
+  rows.sort((x, y) => x.elementRef.localeCompare(y.elementRef) || x.node.localeCompare(y.node));
+  return rows;
+}
+
+// ---- patch script (ExcelScript LinksMap merge) ----
+// JS port of the DB-Merge macro: for every link ref in a changed assignment
+// row, patch LinksMap's FromLinkEndContext* columns to point at the new
+// ElementRef+Node. Only rows that actually changed from the imported baseline
+// (or belong to a UI-added driver) are patched — same scope as the Review diff.
+const esc = (v) => String(v).replace(/"/g, '\\"');
+
+const PATCH_HEADER = `//--DB Merge--//
+function main(DB:ExcelScript.Workbook) {
+	//Set Columns
+		//LinksMap
+		let LinksMap=DB.getWorksheet("LinksMap");
+		//Find ColumnIndex of core attributes
+			let LM_Ref=LinksMap.getCell(0,0).getEntireRow().find("Ref",{completeMatch:true}).getColumnIndex();
+			let LM_FromLinkEndContextType=LinksMap.getCell(0,0).getEntireRow().find("FromLinkEndContextType",{completeMatch:true}).getColumnIndex();
+			let LM_FromLinkEndContextRef=LinksMap.getCell(0,0).getEntireRow().find("FromLinkEndContextRef",{completeMatch:true}).getColumnIndex();
+			let LM_FromLinkEndContextParameters=LinksMap.getCell(0,0).getEntireRow().find("FromLinkEndContextParameters",{completeMatch:true}).getColumnIndex();
+
+	//Patch
+`;
+const PATCH_FOOTER = '}';
+
+function patchBlock(ref, elementRef, node) {
+  const r = esc(ref);
+  return `		//${r}
+		LinksMap.getCell(LinksMap.getCell(0,LM_Ref).getEntireColumn().find("${r}",{completeMatch:true}).getRowIndex(),LM_FromLinkEndContextType).setValue("Element")
+		LinksMap.getCell(LinksMap.getCell(0,LM_Ref).getEntireColumn().find("${r}",{completeMatch:true}).getRowIndex(),LM_FromLinkEndContextRef).setValue("${esc(elementRef)}")
+		LinksMap.getCell(LinksMap.getCell(0,LM_Ref).getEntireColumn().find("${r}",{completeMatch:true}).getRowIndex(),LM_FromLinkEndContextParameters).setValue("{${esc(node)}}")
+
+`;
+}
+
+export function generatePatchScript(model, assignments, addedDrivers) {
+  const body = changedRows(model, assignments, addedDrivers)
+    .flatMap((row) => row.refs.map((ref) => patchBlock(ref, row.elementRef, row.node)))
+    .join('');
+  return PATCH_HEADER + body + PATCH_FOOTER;
+}

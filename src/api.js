@@ -46,10 +46,22 @@ export async function exportCsv(assignments, addedDrivers) {
   return engine.exportCsv(model, assignments, addedDrivers);
 }
 
-export async function saveCsv(text, suggestedName) {
-  const url = URL.createObjectURL(new Blob([text], { type: 'text/csv' }));
+export async function generatePatch(assignments, addedDrivers) {
+  return engine.generatePatchScript(model, assignments, addedDrivers);
+}
+
+function download(text, suggestedName, mime) {
+  const url = URL.createObjectURL(new Blob([text], { type: mime }));
   const a = Object.assign(document.createElement('a'), { href: url, download: suggestedName });
   a.click();
   URL.revokeObjectURL(url);
   return true;
+}
+
+export async function saveCsv(text, suggestedName) {
+  return download(text, suggestedName, 'text/csv');
+}
+
+export async function saveText(text, suggestedName) {
+  return download(text, suggestedName, 'text/plain');
 }

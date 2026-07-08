@@ -99,6 +99,61 @@ test('export reflects a move + added driver', { skip: !hasSamples && 'sample-dat
   assert.ok(engine.validate(m, a, added).every((f) => !(f.level === 'FAIL' && f.driver === 'E90001')));
 });
 
+// Synthetic model (no sample-data dependency, so this runs in CI too).
+const patchModel = {
+  zones: ['Z'], links: [], inventory: [
+    { typeRef: 'T', powerType: 'CC', currentA: 0.3, outputVoltageV: null, undetermined: false,
+      driverRestrictions: '30W | 0.3A', nodeRestrictions: '55fV', nodes: [{ name: 'OP.1', maxFvV: 55, maxLoadW: null }] },
+  ],
+  drivers: [{ ref: 'D1', zone: 'Z', typeRef: 'T', powerType: 'CC', currentA: 0.3, maxPowerW: 30, undetermined: false,
+    nodes: [{ name: 'OP.1', maxFvV: 55, maxLoadW: null }] }],
+  baseline: {
+    'D1|OP.1': { toEntityType: 'Link', refs: ['X1'] },
+  },
+};
+
+test('changedRows: only rows differing from baseline, plus added drivers', () => {
+  const a = { 'D1|OP.1': { toEntityType: 'Link', refs: ['X2'] } }; // moved off X1 onto X2
+  const rows = engine.changedRows(patchModel, a, []);
+  assert.deepEqual(rows, [{ key: 'D1|OP.1', elementRef: 'D1', node: 'OP.1', refs: ['X2'] }]);
+
+  const unchanged = engine.changedRows(patchModel, { 'D1|OP.1': { toEntityType: 'Link', refs: ['X1'] } }, []);
+  assert.deepEqual(unchanged, []);
+});
+
+test('generatePatchScript: header/footer + one block per ref in changed rows', () => {
+  const a = { 'D1|OP.1': { toEntityType: 'Link', refs: ['X1', 'X2'] } }; // X2 newly added
+  const script = engine.generatePatchScript(patchModel, a, []);
+  assert.match(script, /^\/\/--DB Merge--\/\/\nfunction main\(DB:ExcelScript\.Workbook\) \{/);
+  assert.match(script, /\}$/);
+  assert.match(script, /LM_FromLinkEndContextType=LinksMap\.getCell\(0,0\)/);
+  for (const ref of ['X1', 'X2']) {
+    assert.match(script, new RegExp(`getEntireColumn\\(\\)\\.find\\("${ref}"`));
+    assert.match(script, new RegExp(`FromLinkEndContextRef\\).setValue\\("D1"\\)`));
+    assert.match(script, new RegExp(`FromLinkEndContextParameters\\).setValue\\("\\{OP\\.1\\}"\\)`));
+  }
+});
+
+test('generatePatchScript: unchanged rows produce no blocks (just header+footer)', () => {
+  const script = engine.generatePatchScript(patchModel, clone(patchModel.baseline), []);
+  assert.ok(!script.includes('X1'));
+  assert.ok(script.trimEnd().endsWith('//Patch\n}'));
+});
+
+test('generatePatchScript: added driver rows are patched even with unchanged-looking keys', () => {
+  const a = { 'D1|OP.1': { toEntityType: 'Link', refs: ['X1'] }, 'E90001|OP.1': { toEntityType: 'Link', refs: ['X9'] } };
+  const script = engine.generatePatchScript(patchModel, a, [{ ref: 'E90001', typeRef: 'T', zone: 'Z' }]);
+  assert.ok(!script.includes('"X1"')); // D1|OP.1 unchanged from baseline — not patched
+  assert.match(script, /find\("X9"/);
+  assert.match(script, /FromLinkEndContextRef\).setValue\("E90001"\)/);
+});
+
+test('generatePatchScript escapes quotes in refs', () => {
+  const a = { 'D1|OP.1': { toEntityType: 'Link', refs: ['X"1'] } };
+  const script = engine.generatePatchScript(patchModel, a, []);
+  assert.match(script, /find\("X\\"1"/);
+});
+
 test('malformed csv rejected', () => {
   assert.throws(() => engine.buildModel('Foo,Bar\r\n1,2\r\n', 'Foo,Bar\r\n1,2\r\n'), /missing column/);
 });

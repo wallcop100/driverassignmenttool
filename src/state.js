@@ -291,6 +291,17 @@ export function isProvision(link) {
   return !link.powerType;
 }
 
+// Worst level present in a flags list — single source of truth so driver/node/
+// block severity can never drift out of sync (FAIL > MISMATCH > WARN > none).
+// MISMATCH covers wrong CC/CV type, wrong CV voltage, and out-of-band CC current
+// (mA) — all genuinely serious electrical mismatches, same rank as FAIL.
+export function severityOf(flagsList) {
+  if (flagsList.some((f) => f.level === 'FAIL')) return 'FAIL';
+  if (flagsList.some((f) => f.level === 'MISMATCH')) return 'MISMATCH';
+  if (flagsList.some((f) => f.level === 'WARN')) return 'WARN';
+  return null;
+}
+
 // Driver status relative to the current selection (#1, #8): impossible if it
 // can't take ANY selected link; candidate if it has a node eligible for ALL of
 // them (intersection); else full (right type, no shared room).
@@ -372,20 +383,34 @@ export function zoneAccent(zone, zones) {
   return ACCENTS[(i < 0 ? 0 : i) % ACCENTS.length];
 }
 
+// All distinct ControlGroups present in one zone's links, sorted — lets colour
+// assignment spread hues evenly across however many groups actually exist there,
+// instead of relying on hash luck to keep a handful of groups visually apart.
+export function zoneControlGroups(model, zone) {
+  return [...new Set(model.links.filter((l) => l.zone === zone && l.controlGroup).map((l) => l.controlGroup))].sort();
+}
+
 function hashHue(str) {
   let h = 0;
   for (const c of str) h = (h * 31 + c.charCodeAt(0)) >>> 0;
   return h % 360;
 }
 
-// Deterministic per-ControlGroup colour — dozens of distinct hues, stable across
-// sessions, so cables in the same group read as one colour and a split node pops.
-export function cgColor(cg) {
+// ControlGroup colour. When the zone's full group list is known, each group gets
+// an evenly-spaced hue around the wheel — maximally distinct for however many
+// groups are present. Falls back to a stable hash-based hue without it.
+export function cgColor(cg, groups) {
   if (!cg) return { border: '#94a3b8', bg: '#eef2f7', text: '#64748b' };
-  const hue = hashHue(cg);
+  let hue;
+  if (groups && groups.length) {
+    const i = groups.indexOf(cg);
+    hue = i >= 0 ? Math.round((i / groups.length) * 360) : hashHue(cg);
+  } else {
+    hue = hashHue(cg);
+  }
   return {
-    border: `hsl(${hue} 55% 42%)`,
-    bg: `hsl(${hue} 68% 96%)`,
-    text: `hsl(${hue} 55% 30%)`,
+    border: `hsl(${hue} 62% 40%)`,
+    bg: `hsl(${hue} 72% 95%)`,
+    text: `hsl(${hue} 62% 27%)`,
   };
 }

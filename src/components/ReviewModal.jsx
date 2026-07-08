@@ -20,6 +20,7 @@ function diffRows(state) {
 export default function ReviewModal({ state, dispatch, onClose }) {
   const [error, setError] = useState(null);
   const [done, setDone] = useState(false);
+  const [patchDone, setPatchDone] = useState(false);
   const rows = diffRows(state);
 
   const doExport = async () => {
@@ -29,6 +30,18 @@ export default function ReviewModal({ state, dispatch, onClose }) {
       const stamp = new Date().toISOString().slice(0, 10).replaceAll('-', '');
       await api.saveCsv(csv, `DriverAssignmentForm-${stamp}.csv`);
       setDone(true);
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+
+  const doPatch = async () => {
+    setError(null);
+    try {
+      const script = await api.generatePatch(state.assignments, state.addedDrivers);
+      const stamp = new Date().toISOString().slice(0, 10).replaceAll('-', '');
+      await api.saveText(script, `LinksMapPatch-${stamp}.ts`);
+      setPatchDone(true);
     } catch (e) {
       setError(e.message);
     }
@@ -72,9 +85,14 @@ export default function ReviewModal({ state, dispatch, onClose }) {
             )}
             {error && <div className="alert alert-danger py-2">{error}</div>}
             {done && <div className="alert alert-success py-2">Exported. The file can be re-imported later to resume.</div>}
+            {patchDone && <div className="alert alert-success py-2">Patch script exported — run it in ExcelScript against LinksMap.</div>}
           </div>
           <div className="modal-footer">
             <button className="btn btn-outline-secondary" onClick={onClose}>Close</button>
+            <button className="btn btn-outline-secondary" onClick={doPatch} disabled={!rows.length || patchDone}
+              title="Generate an ExcelScript that patches LinksMap.FromLinkEndContext* for the changed rows">
+              Export Patch Script
+            </button>
             <button className="btn btn-primary" onClick={doExport} disabled={done}>
               Confirm &amp; export CSV
             </button>

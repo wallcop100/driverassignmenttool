@@ -28,9 +28,8 @@ function groupSummary(links) {
   return { w, t };
 }
 
-export default function Tray({ trayLinks, provisionLinks, state, dispatch, focusActive, filter, setFilter, filterOpts, onConfirmDistribute }) {
+export default function Tray({ trayLinks, provisionLinks, state, dispatch, focusActive, filter, setFilter, filterOpts, onConfirmDistribute, groups }) {
   const [sort, setSort] = useState('load-desc');
-  const [grouped, setGrouped] = useState(true); // default: By ControlGroup
   const [collapsed, setCollapsed] = useState(() => new Set());
   const [showProvision, setShowProvision] = useState(false);
 
@@ -48,10 +47,10 @@ export default function Tray({ trayLinks, provisionLinks, state, dispatch, focus
     return n;
   });
 
-  const groups = {};
-  for (const l of shown) (groups[l.controlGroup || '—'] ??= []).push(l);
+  const byGroup = {};
+  for (const l of shown) (byGroup[l.controlGroup || '—'] ??= []).push(l);
   const blocks = (links) => links.map((l) => (
-    <Block key={l.ref} link={l} dispatch={dispatch} selected={state.selectedLinks.includes(l.ref)} />
+    <Block key={l.ref} link={l} dispatch={dispatch} groups={groups} selected={state.selectedLinks.includes(l.ref)} />
   ));
 
   return (
@@ -61,11 +60,10 @@ export default function Tray({ trayLinks, provisionLinks, state, dispatch, focus
       onClick={unassignSelected}>
       <div className="rail-head" onClick={(e) => e.stopPropagation()}>
         <div className="d-flex align-items-center gap-2 mb-2">
-          <span className="fw-semibold small text-secondary">TRAY · {shown.length}</span>
-          <div className="btn-group btn-group-sm ms-auto" role="group">
-            <button className={`btn btn-outline-secondary ${grouped ? 'active' : ''}`} onClick={() => setGrouped(true)}>Group</button>
-            <button className={`btn btn-outline-secondary ${!grouped ? 'active' : ''}`} onClick={() => setGrouped(false)}>Flat</button>
-          </div>
+          <span className="fw-semibold small text-secondary d-flex align-items-center gap-1">
+            <span className="material-icons small-icon">settings_ethernet</span>
+            Links <span className="text-secondary">· {shown.length}</span>
+          </span>
         </div>
         <div className="d-flex align-items-center gap-2">
           <select className="form-select form-select-sm" value={filter}
@@ -84,13 +82,11 @@ export default function Tray({ trayLinks, provisionLinks, state, dispatch, focus
               </optgroup>
             )}
           </select>
-          {!grouped && (
-            <select className="form-select form-select-sm" value={sort} onChange={(e) => setSort(e.target.value)}>
-              <option value="load-desc">Load ↓</option>
-              <option value="load-asc">Load ↑</option>
-              <option value="name">Name</option>
-            </select>
-          )}
+          <select className="form-select form-select-sm" value={sort} onChange={(e) => setSort(e.target.value)}>
+            <option value="load-desc">Load ↓</option>
+            <option value="load-asc">Load ↑</option>
+            <option value="name">Name</option>
+          </select>
         </div>
       </div>
 
@@ -114,31 +110,27 @@ export default function Tray({ trayLinks, provisionLinks, state, dispatch, focus
 
       {!shown.length && <div className="slot-empty p-2">no unassigned links{filter !== 'all' ? ' (filtered)' : ''}</div>}
 
-      {grouped ? (
-        Object.entries(groups).sort().map(([name, gl]) => {
-          const isOpen = !collapsed.has(name);
-          const { w, t } = groupSummary(gl);
-          const color = cgColor(name === '—' ? null : name);
-          return (
-            <div key={name} className={`tg ${state.distributeGroup === name ? 'is-selected' : ''}`}
-              onClick={(e) => e.stopPropagation()}>
-              <div className="tg-head" onClick={() => toggle(name)} style={{ borderLeftColor: color.border }}>
-                <span className="material-icons tg-caret">{isOpen ? 'expand_more' : 'chevron_right'}</span>
-                <span className="cg-chip" style={{ background: color.bg, color: color.text }}>{name}</span>
-                <span className="text-secondary small">{gl.length}</span>
-                <span className="tg-summary text-secondary small ms-auto">{w.toFixed(0)}W{t ? ` · ${t}` : ''}</span>
-                <KebabMenu title="ControlGroup actions" items={[{
-                  label: 'Distribute across nodes', icon: 'call_split',
-                  onClick: () => dispatch({ type: 'START_DISTRIBUTE', group: name }),
-                }]} />
-              </div>
-              {isOpen && <div className="tg-blocks">{blocks(gl)}</div>}
+      {Object.entries(byGroup).sort().map(([name, gl]) => {
+        const isOpen = !collapsed.has(name);
+        const { w, t } = groupSummary(gl);
+        const color = cgColor(name === '—' ? null : name, groups);
+        return (
+          <div key={name} className={`tg ${state.distributeGroup === name ? 'is-selected' : ''}`}
+            onClick={(e) => e.stopPropagation()}>
+            <div className="tg-head" onClick={() => toggle(name)} style={{ borderLeftColor: color.border }}>
+              <span className="material-icons tg-caret">{isOpen ? 'expand_more' : 'chevron_right'}</span>
+              <span className="cg-chip" style={{ background: color.bg, color: color.text }}>{name}</span>
+              <span className="text-secondary small">{gl.length}</span>
+              <span className="tg-summary text-secondary small ms-auto">{w.toFixed(0)}W{t ? ` · ${t}` : ''}</span>
+              <KebabMenu title="ControlGroup actions" items={[{
+                label: 'Distribute across nodes', icon: 'call_split',
+                onClick: () => dispatch({ type: 'START_DISTRIBUTE', group: name }),
+              }]} />
             </div>
-          );
-        })
-      ) : (
-        <div className="tg-blocks flat">{blocks(shown)}</div>
-      )}
+            {isOpen && <div className="tg-blocks">{blocks(gl)}</div>}
+          </div>
+        );
+      })}
 
       {provisionLinks.length > 0 && (
         <div className="provision-lane" onClick={(e) => e.stopPropagation()}>

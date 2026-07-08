@@ -2,7 +2,7 @@
 // restore). state.js is pure (no React), so it runs directly under node.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { initialState, reducer } from '../src/state.js';
+import { cgColor, initialState, reducer, severityOf, zoneControlGroups } from '../src/state.js';
 
 const model = {
   baseline: {
@@ -89,4 +89,39 @@ test('SET_PREFS merges label config', () => {
   let s = init();
   s = reducer(s, { type: 'SET_PREFS', prefs: { label: ['loadW', 'controlGroup'] } });
   assert.deepEqual(s.prefs.label, ['loadW', 'controlGroup']);
+});
+
+test('severityOf: FAIL > MISMATCH > WARN > none, regardless of node/link scoping', () => {
+  // CC/CV type, voltage, and mA current checks always carry node+link — a naive
+  // filter that drops scoped flags (the DriverBin bug) must not affect this.
+  assert.equal(severityOf([]), null);
+  assert.equal(severityOf([{ level: 'WARN', node: 'OP.1' }]), 'WARN');
+  assert.equal(severityOf([{ level: 'WARN' }, { level: 'MISMATCH', node: 'OP.1', link: 'X1' }]), 'MISMATCH');
+  assert.equal(severityOf([{ level: 'MISMATCH', node: 'OP.1', link: 'X1' }, { level: 'FAIL' }]), 'FAIL');
+});
+
+test('regression guard: driver-level rollup must not drop node/link-scoped flags', () => {
+  // This is the exact shape of the bug: TypeMatch/CVVoltage/CurrentMatch flags
+  // always set `node` and usually `link`. A driver-level view built by filtering
+  // those out (as DriverBin.jsx once did) silently loses every CC/CV + mA issue.
+  const flags = [
+    { driver: 'D1', node: 'OP.1', link: 'X1', level: 'MISMATCH', check: 'TypeMatch' },
+    { driver: 'D1', node: 'OP.1', link: 'X1', level: 'MISMATCH', check: 'CurrentMatch' },
+  ];
+  const correct = flags.filter((f) => f.driver === 'D1');
+  const buggyOldFilter = correct.filter((f) => !f.node && !f.link);
+  assert.equal(severityOf(correct), 'MISMATCH');
+  assert.equal(severityOf(buggyOldFilter), null); // the bug: mismatches vanish
+});
+
+test('zoneControlGroups + cgColor: distinct groups get evenly-spaced, distinguishable hues', () => {
+  const model = { links: [
+    { zone: 'Z', controlGroup: 'A' }, { zone: 'Z', controlGroup: 'B' }, { zone: 'Z', controlGroup: 'C' },
+    { zone: 'OTHER', controlGroup: 'D' },
+  ] };
+  const groups = zoneControlGroups(model, 'Z');
+  assert.deepEqual(groups, ['A', 'B', 'C']);
+  const hues = groups.map((g) => cgColor(g, groups).border);
+  assert.equal(new Set(hues).size, 3); // all distinct
+  assert.deepEqual(cgColor(null, groups), { border: '#94a3b8', bg: '#eef2f7', text: '#64748b' });
 });

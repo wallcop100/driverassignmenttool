@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { eligibility as computeEligibility } from '../engine.js';
 import { assignedRefs, isProvision, orphanClusters, zoneAccent, zoneStats } from '../state.js';
 import Search from './Search.jsx';
+import Tooltip from './Tooltip.jsx';
 
 const SORTS = {
   problems: (a, b) => b.fails - a.fails || b.orphans - a.orphans,
@@ -37,7 +38,7 @@ export default function Landing({ state, dispatch }) {
           <button className={`btn btn-outline-secondary ${metric === 'completion' ? 'active' : ''}`}
             onClick={() => setMetric('completion')}>Completion</button>
           <button className={`btn btn-outline-secondary ${metric === 'capacity' ? 'active' : ''}`}
-            onClick={() => setMetric('capacity')}>Capacity</button>
+            onClick={() => setMetric('capacity')}>Usage</button>
         </div>
         <div className="ms-auto d-flex align-items-center gap-2">
           <Search model={model} dispatch={dispatch} />
@@ -46,7 +47,7 @@ export default function Landing({ state, dispatch }) {
             <option value="problems">Sort: problems</option>
             <option value="completion">Sort: least complete</option>
             <option value="orphans">Sort: drivers needed</option>
-            <option value="capacity">Sort: capacity</option>
+            <option value="capacity">Sort: usage</option>
             <option value="unassigned">Sort: unassigned</option>
             <option value="name">Sort: name</option>
           </select>
@@ -73,10 +74,26 @@ export default function Landing({ state, dispatch }) {
             <span className="text-secondary small flex-shrink-0" style={{ width: 130 }}>
               {label}
             </span>
-            {z.unassigned > 0 && <span className="badge badge-tray flex-shrink-0" title="unassigned links">{z.unassigned} tray</span>}
-            {z.orphans > 0 && <span className="badge badge-warn flex-shrink-0" title="fingerprint clusters with no eligible node — drivers needed">{z.orphans} need</span>}
-            {z.fails > 0 && <span className="badge badge-fail flex-shrink-0" title="actionable issues">{z.fails}</span>}
-            {z.warns > 0 && <span className="badge badge-info-muted flex-shrink-0" title="info / expected warnings">{z.warns}</span>}
+            {z.unassigned > 0 && (
+              <Tooltip content="Cables not yet assigned to any driver node">
+                <span className="badge badge-tray flex-shrink-0">{z.unassigned} tray</span>
+              </Tooltip>
+            )}
+            {z.orphans > 0 && (
+              <Tooltip content="Fingerprint clusters with no eligible node — drivers needed">
+                <span className="badge badge-warn flex-shrink-0">{z.orphans} need</span>
+              </Tooltip>
+            )}
+            {z.fails > 0 && (
+              <Tooltip content="Actionable issues: overfill, or wrong CC/CV type/voltage/current">
+                <span className="badge badge-fail flex-shrink-0">{z.fails}</span>
+              </Tooltip>
+            )}
+            {z.warns > 0 && (
+              <Tooltip content="Info / expected warnings (e.g. undeclared limits, within-tolerance current)">
+                <span className="badge badge-info-muted flex-shrink-0">{z.warns}</span>
+              </Tooltip>
+            )}
             <span className="material-icons text-secondary">chevron_right</span>
           </button>
           );

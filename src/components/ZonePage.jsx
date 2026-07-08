@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import * as api from '../api.js';
 import {
   assignedRefs, driverMatchesFilter, effectiveDrivers, filterOptions, isPending, isProvision,
-  keyOf, linksByRef, linksForNode, orphanClusters, zoneAccent, zoneStats,
+  keyOf, linksByRef, linksForNode, orphanClusters, zoneAccent, zoneControlGroups, zoneStats,
 } from '../state.js';
 import AddDriverModal from './AddDriverModal.jsx';
 import DriverBin from './DriverBin.jsx';
@@ -37,6 +37,8 @@ export default function ZonePage({ state, dispatch, zone }) {
   const accent = zoneAccent(zone, model.zones);
   const zoneCables = model.links.filter((l) => l.zone === zone && !isProvision(l));
   const trayFilterOptions = useMemo(() => filterOptions(zoneCables), [zoneCables]);
+  // evenly-spaced ControlGroup hues need the full set present in this zone
+  const cgGroups = useMemo(() => zoneControlGroups(model, zone), [model, zone]);
 
   // #5 actionable = FAIL/MISMATCH; info = WARN (hidden from block styling unless toggled on)
   const shownFlags = showInfo ? flags : flags.filter((f) => f.level !== 'WARN');
@@ -96,7 +98,7 @@ export default function ZonePage({ state, dispatch, zone }) {
         <span className="zone-dot" style={{ background: accent }} />
         <h5 className="mb-0">{zone}</h5>
         <span className={`ms-2 fw-semibold ${stats.pct > 100 ? 'text-danger' : 'text-secondary'}`}>
-          {stats.pct}% capacity
+          {stats.pct}% usage
         </span>
         {stats.fails > 0 && <span className="badge badge-fail">{stats.fails} issue{stats.fails > 1 ? 's' : ''}</span>}
         {stats.warns > 0 && <span className="badge badge-info-muted">{stats.warns} info</span>}
@@ -161,12 +163,12 @@ export default function ZonePage({ state, dispatch, zone }) {
       <div className="zone-body">
         <Tray trayLinks={visibleTray} provisionLinks={provisionLinks} state={state} dispatch={dispatch}
           focusActive={!!focusNode} filter={trayFilter} setFilter={setTrayFilter} filterOpts={trayFilterOptions}
-          onConfirmDistribute={confirmDistribute} />
+          onConfirmDistribute={confirmDistribute} groups={cgGroups} />
 
         <div className="driver-grid" data-tour="grid">
           {shownDrivers.map((d) => (
             <DriverBin key={d.ref} driver={d} state={state} dispatch={dispatch}
-              links={links} accent={accent} flagIndex={flagIndex} onNodeClick={onNodeClick} />
+              links={links} accent={accent} flagIndex={flagIndex} onNodeClick={onNodeClick} groups={cgGroups} />
           ))}
           {!shownDrivers.length && (
             <p className="text-secondary p-4">

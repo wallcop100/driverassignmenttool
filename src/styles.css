@@ -47,6 +47,26 @@ body { background: #f6f8fb; }
 .badge-info-muted { background: #e6eaf0; color: #7a869a; font-weight: 500; }
 .text-fail { color: var(--status-fail); }
 .text-warn { color: var(--status-warn); }
+.text-mismatch { color: var(--status-mismatch); }
+
+/* ---- proper hover UI (Tooltip.jsx) — replaces native title= boxes ---- */
+.tt-anchor { position: relative; display: inline-flex; align-items: stretch; }
+.tt-pop {
+  position: absolute; z-index: 70; left: 50%; transform: translateX(-50%);
+  background: #1f2937; color: #fff; font-size: 12px; line-height: 1.45; padding: 8px 10px;
+  border-radius: 8px; box-shadow: 0 8px 24px rgba(15,23,42,0.3); white-space: normal;
+  min-width: 160px; max-width: 280px; pointer-events: none; text-align: left;
+}
+.tt-bottom { top: calc(100% + 8px); }
+.tt-top { bottom: calc(100% + 8px); }
+.tt-pop::before {
+  content: ''; position: absolute; left: 50%; transform: translateX(-50%);
+  border: 5px solid transparent;
+}
+.tt-bottom::before { bottom: 100%; border-bottom-color: #1f2937; }
+.tt-top::before { top: 100%; border-top-color: #1f2937; }
+.tt-line { display: block; }
+.tt-line + .tt-line { margin-top: 4px; }
 .small-icon { font-size: 18px; }
 
 /* ---- mode banners (fill-node / place-group) ---- */
@@ -102,7 +122,6 @@ body { background: #f6f8fb; }
 .tg-caret { font-size: 18px; color: #94a3b8; }
 .tg-summary { white-space: nowrap; }
 .tg-blocks { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px; }
-.tg-blocks.flat { padding: 4px 0; }
 
 /* ---- driver grid ---- */
 .driver-grid {
@@ -123,6 +142,7 @@ body { background: #f6f8fb; }
   border-radius: 10px; padding: 10px; display: flex; flex-direction: column; gap: 8px;
 }
 .driver-bin.is-fail { border-color: var(--status-fail); box-shadow: 0 0 0 1px var(--status-fail); }
+.driver-bin.is-mismatch { border-color: var(--status-mismatch); box-shadow: 0 0 0 1px var(--status-mismatch); }
 .driver-bin.is-undetermined {
   background: repeating-linear-gradient(45deg, #f8fafc, #f8fafc 8px,
     #eef2f7 8px, #eef2f7 10px);
@@ -151,6 +171,7 @@ body { background: #f6f8fb; }
 .node-slot.is-focused { border-color: #7C5CFC; border-style: solid; box-shadow: 0 0 0 2px #7c5cfc66; background: #fbfaff; }
 .node-slot.is-marked { border-color: #7C5CFC; border-style: solid; box-shadow: inset 0 0 0 2px #7c5cfc44; background: #faf9ff; }
 .node-slot.is-fail { border-color: var(--status-fail); border-style: solid; }
+.node-slot.is-mismatch { border-color: var(--status-mismatch); border-style: solid; }
 .node-slot.is-locked { opacity: 0.6; cursor: not-allowed; }
 
 .slot-header { display: flex; gap: 8px; font-size: 12px; align-items: center; flex-wrap: wrap; }
@@ -177,14 +198,19 @@ body { background: #f6f8fb; }
   position: relative; background: #fff; border: 1px solid #d4dce8;
   border-radius: 6px; padding: 0; font-size: 12px; font-weight: 600; cursor: grab;
   user-select: none; display: flex; align-items: stretch; min-height: 28px;
-  white-space: nowrap; flex-shrink: 0; box-sizing: border-box;
+  /* a label with many fields wraps onto multiple lines instead of spilling
+     past the rail/bin edge — max-width caps it to the container, not the text */
+  max-width: 100%; box-sizing: border-box;
 }
 .block-band {
   display: flex; align-items: center; justify-content: center; padding: 0 2px;
   background: #94a3b8; border-radius: 5px 0 0 5px; flex-shrink: 0;
 }
 .block-grip { font-size: 16px !important; color: rgba(255, 255, 255, 0.9); cursor: grab; }
-.block-label { display: inline-flex; align-items: baseline; gap: 5px; padding: 3px 8px; }
+.block-label {
+  display: inline-flex; align-items: baseline; gap: 5px; padding: 3px 8px;
+  flex-wrap: wrap; white-space: normal; word-break: break-word; min-width: 0;
+}
 .block-fv { font-size: 10px; font-weight: 500; opacity: 0.7; }
 .cable-block.is-selected { outline: 3px solid var(--zone-accent); outline-offset: 1px; }
 .cable-block.is-pending { border-style: dashed; }
@@ -192,17 +218,19 @@ body { background: #f6f8fb; }
   content: ''; position: absolute; top: 2px; right: 2px; width: 6px; height: 6px;
   border-radius: 50%; background: var(--zone-accent);
 }
+/* FAIL and MISMATCH (incl. CC/CV type, voltage, and mA current checks) both get
+   a solid, equally serious fill — a subtle ring made these easy to miss. */
 .cable-block.is-fail { background: var(--status-fail) !important; border-color: var(--status-fail); color: #fff; }
 .cable-block.is-fail .block-band { background: rgba(255, 255, 255, 0.28); }
+.cable-block.is-mismatch { background: var(--status-mismatch) !important; border-color: var(--status-mismatch); color: #fff; }
+.cable-block.is-mismatch .block-band { background: rgba(255, 255, 255, 0.28); }
 .cable-block.is-warn { box-shadow: inset 0 0 0 2px var(--status-warn); }
-.cable-block.is-mismatch { box-shadow: inset 0 0 0 2px var(--status-mismatch); }
 .cable-block.is-unknown { background: #eef2f7 !important; color: #64748b; cursor: default; }
 .block-badge {
   position: absolute; top: -6px; right: -4px; font-size: 12px; line-height: 1;
   background: var(--status-mismatch); color: #fff; border-radius: 50%; padding: 1px;
 }
 .badge-unknown-type { background: #94a3b8; min-width: 14px; height: 14px; text-align: center; font-size: 10px; }
-.badge-mismatch-icon { font-size: 12px !important; }
 
 /* ---- provision lane (#6) ---- */
 .provision-lane { margin-top: 8px; border-top: 1px dashed #d4dce8; padding-top: 6px; }
