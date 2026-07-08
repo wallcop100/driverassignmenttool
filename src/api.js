@@ -61,7 +61,3 @@ function download(text, suggestedName, mime) {
 export async function saveCsv(text, suggestedName) {
   return download(text, suggestedName, 'text/csv');
 }
-
-export async function saveText(text, suggestedName) {
-  return download(text, suggestedName, 'text/plain');
-}

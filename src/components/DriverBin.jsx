@@ -49,7 +49,7 @@ function Slot({ driver, node, state, dispatch, links, flagIndex, onNodeClick, gr
   };
 
   return (
-    <div
+    <div data-node={key}
       className={['node-slot', fail && 'is-fail', !fail && mismatch && 'is-mismatch',
         suggested && 'is-suggested', focused && 'is-focused', marked && 'is-marked',
         positionLocked && 'is-locked', ghost && 'is-dragover'].filter(Boolean).join(' ')}
@@ -122,7 +122,8 @@ export default function DriverBin({ driver, state, dispatch, links, accent, flag
   const driverRefs = driver.nodes.flatMap((n) => state.assignments[keyOf(driver.ref, n.name)]?.refs ?? []);
 
   return (
-    <div className={['driver-bin', `status-${status}`, driver.undetermined && 'is-undetermined',
+    <div data-driver={driver.ref}
+      className={['driver-bin', `status-${status}`, driver.undetermined && 'is-undetermined',
       fail && 'is-fail', !fail && mismatch && 'is-mismatch'].filter(Boolean).join(' ')}
       style={{ width, '--zone-accent': accent }}>
       <div className="bin-header">

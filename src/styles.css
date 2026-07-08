@@ -49,13 +49,24 @@ body { background: #f6f8fb; }
 .text-warn { color: var(--status-warn); }
 .text-mismatch { color: var(--status-mismatch); }
 
-/* ---- proper hover UI (Tooltip.jsx) — replaces native title= boxes ---- */
+/* ---- proper hover UI (Tooltip.jsx) — replaces native title= boxes ----
+   Visibility is CSS-driven (:hover) with a dwell delay, not a JS mouseenter
+   timer: in a drag-and-drop app the cursor sweeps over many blocks just
+   passing through, and an instant popup on every one of them is jarring.
+   Only a cursor that actually stops on a block for ~500ms sees the popup;
+   sweeping past never triggers it (the hover state never lasts that long). */
 .tt-anchor { position: relative; display: inline-flex; align-items: stretch; }
 .tt-pop {
   position: absolute; z-index: 70; left: 50%; transform: translateX(-50%);
   background: #1f2937; color: #fff; font-size: 12px; line-height: 1.45; padding: 8px 10px;
   border-radius: 8px; box-shadow: 0 8px 24px rgba(15,23,42,0.3); white-space: normal;
   min-width: 160px; max-width: 280px; pointer-events: none; text-align: left;
+  opacity: 0; visibility: hidden;
+  transition: opacity 0.12s ease, visibility 0s linear 0.12s;
+}
+.tt-anchor:hover .tt-pop {
+  opacity: 1; visibility: visible;
+  transition-delay: 550ms, 550ms;
 }
 .tt-bottom { top: calc(100% + 8px); }
 .tt-top { bottom: calc(100% + 8px); }
@@ -67,6 +78,10 @@ body { background: #f6f8fb; }
 .tt-top::before { top: 100%; border-top-color: #1f2937; }
 .tt-line { display: block; }
 .tt-line + .tt-line { margin-top: 4px; }
+
+/* kill switch: no tooltip may appear while an active drag is in progress,
+   regardless of dwell time (the cursor is busy carrying a cable, not reading) */
+.zone-page.is-dragging .tt-pop { opacity: 0 !important; visibility: hidden !important; }
 .small-icon { font-size: 18px; }
 
 /* ---- mode banners (fill-node / place-group) ---- */
@@ -269,6 +284,25 @@ body { background: #f6f8fb; }
 .kind-driver { background: #6c757d; }
 
 .badge-tray { background: #e2e8f0; color: #475569; }
+
+/* ---- "N issues" hover popup (click a row to locate + pulse the entity) ---- */
+.issues-badge { position: relative; display: inline-flex; }
+.issues-pop {
+  /* flush against the badge (top: 100%, no gap) — any offset here is dead space
+     the mouse crosses on the way from badge to popup; crossing it lands on an
+     ancestor, firing mouseleave and closing the popup before you can reach it */
+  position: absolute; left: 0; top: 100%; padding-top: 6px; z-index: 80; min-width: 260px; max-width: 340px;
+}
+.issues-pop-inner {
+  max-height: 320px; overflow-y: auto; background: #fff; border: 1px solid #dbe3ee;
+  border-radius: 8px; box-shadow: 0 8px 24px rgba(15,23,42,0.18); padding: 4px;
+}
+.issues-row {
+  display: flex; align-items: flex-start; gap: 8px; width: 100%; text-align: left;
+  background: none; border: none; padding: 6px 8px; border-radius: 6px; cursor: pointer;
+}
+.issues-row:hover { background: #f4f7fb; }
+.issues-row-text { display: flex; flex-direction: column; gap: 1px; font-size: 12px; }
 
 /* ---- kebab (three-dots) menu ---- */
 .kebab { position: relative; display: inline-flex; flex-shrink: 0; }

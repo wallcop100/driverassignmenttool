@@ -6,6 +6,7 @@ import {
 } from '../state.js';
 import AddDriverModal from './AddDriverModal.jsx';
 import DriverBin from './DriverBin.jsx';
+import IssuesBadge from './IssuesBadge.jsx';
 import LabelConfig from './LabelConfig.jsx';
 import ReviewModal from './ReviewModal.jsx';
 import Search from './Search.jsx';
@@ -46,6 +47,13 @@ export default function ZonePage({ state, dispatch, zone }) {
   const stats = zoneStats(zone, model, assignments, addedDrivers, flags);
 
   const zoneDrivers = effectiveDrivers(model, addedDrivers).filter((d) => d.zone === zone);
+  // "N issues" popup: every actionable (FAIL/MISMATCH) flag belonging to a driver
+  // in this zone — always shown regardless of the info-warnings toggle above.
+  const zoneDriverRefs = useMemo(() => new Set(zoneDrivers.map((d) => d.ref)), [zoneDrivers]);
+  const zoneIssues = useMemo(() => flags
+    .filter((f) => zoneDriverRefs.has(f.driver) && (f.level === 'FAIL' || f.level === 'MISMATCH'))
+    .map((f) => ({ ...f, key: `${f.driver}|${f.node ?? ''}|${f.link ?? ''}|${f.check}` })),
+    [flags, zoneDriverRefs]);
   // #9 the tray filter also hides drivers that can't take the filtered cables
   const filtered = zoneDrivers.filter((d) => driverMatchesFilter(d, trayFilter));
   const shownDrivers = problemsOnly
@@ -89,7 +97,7 @@ export default function ZonePage({ state, dispatch, zone }) {
   }, 0), 0);
 
   return (
-    <div className="zone-page" style={{ '--zone-accent': accent }}>
+    <div className={`zone-page ${state.draggingLink ? 'is-dragging' : ''}`} style={{ '--zone-accent': accent }}>
       <header className="zone-header">
         <button className="btn btn-sm btn-outline-secondary d-flex align-items-center"
           onClick={() => dispatch({ type: 'SET_VIEW', view: { page: 'landing' } })}>
@@ -100,7 +108,7 @@ export default function ZonePage({ state, dispatch, zone }) {
         <span className={`ms-2 fw-semibold ${stats.pct > 100 ? 'text-danger' : 'text-secondary'}`}>
           {stats.pct}% usage
         </span>
-        {stats.fails > 0 && <span className="badge badge-fail">{stats.fails} issue{stats.fails > 1 ? 's' : ''}</span>}
+        <IssuesBadge issues={zoneIssues} />
         {stats.warns > 0 && <span className="badge badge-info-muted">{stats.warns} info</span>}
         <div className="ms-auto d-flex align-items-center gap-3">
           <Search model={model} dispatch={dispatch} />

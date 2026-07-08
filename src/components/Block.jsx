@@ -38,7 +38,7 @@ export default function Block({ link, linkRef, flags = [], pending, selected, di
 
   return (
     <Tooltip content={detailLines}>
-      <div className={cls} style={style}
+      <div className={cls} style={style} data-link={ref}
         draggable={draggable && !!link}
         onDragStart={(e) => {
           e.dataTransfer.setData('text/plain', ref);
