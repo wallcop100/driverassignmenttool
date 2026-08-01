@@ -58,6 +58,12 @@ export async function generatePatch(assignments, addedDrivers) {
   return engine.generatePatchScript(model, assignments, addedDrivers);
 }
 
+// One script covering every hub saved in this branch+set. The hub on screen is
+// autosaved on every change, so its stored slot is already current.
+export async function generatePatchAll(sessions) {
+  return engine.generatePatchScriptMulti(sessions);
+}
+
 function download(text, suggestedName, mime) {
   const url = URL.createObjectURL(new Blob([text], { type: mime }));
   const a = Object.assign(document.createElement('a'), { href: url, download: suggestedName });

@@ -1,12 +1,22 @@
 import { useState } from 'react';
 import * as api from '../api.js';
+import { isEmbedded } from '../embed.js';
+import { listSessions } from '../persist.js';
 import { diffRows } from '../state.js';
+
+const embedded = isEmbedded();
 
 export default function ReviewModal({ state, dispatch, onClose }) {
   const [error, setError] = useState(null);
   const [done, setDone] = useState(false);
   const [patchCopied, setPatchCopied] = useState(false);
+  const [allCopied, setAllCopied] = useState(false);
   const rows = diffRows(state);
+
+  // Embedded, other hubs of this branch+set are sitting in storage with their
+  // own models, so the workbook can be patched once for all of them.
+  const sessions = embedded ? listSessions() : [];
+  const otherHubs = sessions.length - 1;
 
   const doExport = async () => {
     setError(null);
@@ -33,6 +43,17 @@ export default function ReviewModal({ state, dispatch, onClose }) {
       setTimeout(() => setPatchCopied(false), 2000);
     } catch (e) {
       setError(e.message || 'Could not copy to clipboard');
+    }
+  };
+
+  const doPatchAll = async () => {
+    setError(null);
+    try {
+      await api.copyPatch(await api.generatePatchAll(sessions));
+      setAllCopied(true);
+      setTimeout(() => setAllCopied(false), 2000);
+    } catch (e) {
+      setError(e.message || 'Could not build the combined patch');
     }
   };
 
@@ -77,14 +98,26 @@ export default function ReviewModal({ state, dispatch, onClose }) {
           </div>
           <div className="modal-footer">
             <button className="btn btn-outline-secondary" onClick={onClose}>Close</button>
-            <button className="btn btn-outline-secondary" onClick={doPatch} disabled={!rows.length}
+            {/* Embedded, the patch is the only output — the CSV round-trip needs
+                a file the host cannot ingest in this format. */}
+            {embedded && otherHubs > 0 && (
+              <button className="btn btn-outline-primary" onClick={doPatchAll}
+                title="One ExcelScript patch covering every hub you have worked on in this set">
+                <span className="material-icons small-icon align-middle">{allCopied ? 'check' : 'layers'}</span>
+                {allCopied ? 'Sent!' : `Patch all hubs (${sessions.length})`}
+              </button>
+            )}
+            <button className={`btn ${embedded ? 'btn-primary' : 'btn-outline-secondary'}`}
+              onClick={doPatch} disabled={!rows.length}
               title="Copy an ExcelScript patch for LinksMap.FromLinkEndContext* (changed rows only) — paste it into the Office Scripts code editor">
               <span className="material-icons small-icon align-middle">{patchCopied ? 'check' : 'content_copy'}</span>
-              {patchCopied ? 'Copied!' : 'Copy Patch Script'}
+              {patchCopied ? 'Copied!' : embedded ? 'Patch this hub' : 'Copy Patch Script'}
             </button>
-            <button className="btn btn-primary" onClick={doExport} disabled={done}>
-              Confirm &amp; export CSV
-            </button>
+            {!embedded && (
+              <button className="btn btn-primary" onClick={doExport} disabled={done}>
+                Confirm &amp; export CSV
+              </button>
+            )}
           </div>
         </div>
       </div>

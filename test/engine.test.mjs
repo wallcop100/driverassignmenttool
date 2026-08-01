@@ -244,3 +244,26 @@ test('demo dataset opens with HUB-A fully unassigned', () => {
   assert.deepEqual(assignedInHubA, [], 'no HUB-A node has assignments');
   assert.ok(m.links.some((l) => l.zone === 'HUB-A'), 'HUB-A links still present (they land in the tray)');
 });
+
+test('generatePatchScriptMulti merges hubs into one script', () => {
+  const mk = (elementRef, linkRef) => ({
+    model: { baseline: { [`${elementRef}|OP.1`]: { refs: [] } } },
+    assignments: { [`${elementRef}|OP.1`]: { refs: [linkRef] } },
+    addedDrivers: [],
+  });
+  const a = mk('E1', 'X1');
+  const b = mk('E2', 'X2');
+
+  const one = engine.generatePatchScriptMulti([a]);
+  const both = engine.generatePatchScriptMulti([a, b]);
+
+  // single-session path is unchanged by the refactor
+  assert.equal(one, engine.generatePatchScript(a.model, a.assignments, a.addedDrivers));
+
+  // merged script patches both hubs, with exactly one header/footer
+  for (const ref of ['X1', 'X2']) assert.ok(both.includes(`"${ref}"`), `${ref} missing`);
+  assert.equal(both.split('//--DB Merge--//').length - 1, 1);
+  assert.equal(one.includes('X2'), false);
+
+  assert.equal(engine.generatePatchScriptMulti([]).includes('X1'), false);
+});

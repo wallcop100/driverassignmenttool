@@ -22,7 +22,7 @@ https://designdb.example.com,https://staging.designdb.example.com
 
 > **Not the tool's own origin.** This answers "who is allowed to embed me", not
 > "where do I live". If the tool is on `wallcop100.github.io` and the design
-> page is on `kaizen.example.com`, this variable holds **`kaizen.example.com`**.
+> page is on `example.com`, this variable holds **`example.com`**.
 
 Vite inlines the value at **build time**, so setting the variable does nothing
 until the deploy workflow runs again. Set it first, then re-run the workflow.
@@ -82,7 +82,7 @@ window.addEventListener('message', (e) => {
 
   switch (m.type) {
     case 'dat:ready':  sendInit(); break;
-    case 'dat:dirty':  unsavedChanges = m.changeCount; break;
+    case 'dat:dirty':  unsavedChanges = m.changeCount; break;   // label only — do not block close
     case 'dat:export': receiveExport(m); break;
     case 'dat:error':  showError(m.message); break;
   }
@@ -95,7 +95,7 @@ function sendInit() {
     form:  formCsvText,     // raw text, not a File, not base64
     links: linksCsvText,
     focusZone: 'HUB-B1',
-    context: { systemSetId: 108835, hubRef: 'p50123', hubLabel: 'HUB-B1' },
+    context: { branchId: 10470, systemSetId: 108835, hubRef: 'p50123', hubLabel: 'HUB-B1' },
   }, CHILD_ORIGIN);         // never '*'
 }
 ```
@@ -120,13 +120,16 @@ without reloading the frame) — it fully replaces the model.
 
 ```js
 context: {
-  systemSetId: 108835,   // point-in-time token — see §5
-  hubRef: 'p50123',      // opaque to the tool; passed through, never parsed
-  hubLabel: 'HUB-B1',    // shown in the header so the user can see which hub/set
+  branchId:    10470,    // which branch the design belongs to — see §5
+  systemSetId: 108835,   // point-in-time token, sequential within the branch
+  hubRef:      'p50123', // opaque to the tool; passed through, never parsed
+  hubLabel:    'HUB-B1', // shown in the header so the user can see which hub/set
 }
 ```
 
-`systemSetId` and `hubRef` are the session key (§5). `hubLabel` is display only.
+`branchId` + `systemSetId` + `hubRef` are the session key (§5). `hubLabel` is
+display only. **Send all three of the first three** — they are what makes resume
+and the all-hubs patch work, and omitting any one of them degrades both.
 
 ### `focusZone`
 
@@ -140,33 +143,50 @@ Typically you send only that hub's rows, so the model contains one zone and the
 
 ---
 
-## 5. `systemSetId` — resume across a flaky frame
+## 5. `branchId` + `systemSetId` — resume across a flaky frame
 
 The tool autosaves the whole working session to `localStorage`, keyed:
 
 ```
-driverassignmenttool.session.v1:<systemSetId>:<hubRef>
+driverassignmenttool.session.v1:<branchId>:<systemSetId>:<hubRef>
 ```
 
 That key is the whole contract for resume:
 
-- **Same `systemSetId` + same `hubRef`** → returning user is offered
-  *"Previous session found · 3 changes · 14:22 — [Resume] [Start fresh]"* over the
-  live data. Their work comes back.
+- **Same three** → **the work comes back silently.** Embedded, the tool does not
+  ask; a flaky frame means returning to your own work is the expected outcome,
+  not a question. A **"Reset to current set"** button in the toolbar discards the
+  saved work and reloads exactly what you posted.
 - **Different `hubRef`** → different slot. Hub-by-hub posting into the same frame
   never cross-contaminates.
-- **Bumped `systemSetId`** → the point in time moved, so the old work is *not*
-  offered against new data. This is the point of the token: send a new one
-  whenever the upstream design data changes, and stale sessions retire themselves.
+- **Higher `systemSetId`, same `branchId`** → every stored session for that
+  branch below the new id is **deleted**. Sets are sequential, so a newer one
+  supersedes the older ones and the tool cleans up after itself.
+- **Different `branchId`** → untouched. Branches never evict each other.
 
-Send the same `systemSetId` for the same point in time, and a new one when the
-data behind it changes. If you omit `context` entirely, every hub shares one slot
-and the resume offer will be wrong.
+### How to fill in `branchId`
+
+Send the id of the branch the design belongs to — whatever your system already
+calls it, as a plain number or string. The tool never parses it; it only compares
+it for equality and groups sessions by it.
+
+Two things depend on you sending it:
+
+1. **Eviction is scoped.** Without `branchId` every branch shares one namespace,
+   so opening a newer set in branch A would silently wipe unsaved work in
+   branch B.
+2. **The all-hubs patch.** §6 — the tool gathers every stored hub in the current
+   `branchId` + `systemSetId`. If branch is missing, that set is wrong.
+
+`systemSetId` must increase as the design data moves forward — that ordering is
+what the eviction relies on. A non-numeric value disables eviction (the tool
+won't guess an order and won't delete what it can't compare), but resume still
+works.
 
 **Storage caveat:** third-party iframe storage is partitioned per top-level site
 in Chrome and blocked outright under Safari ITP and Firefox strict mode. The tool
-degrades to "no resume offered" rather than erroring. Don't build anything that
-depends on resume working.
+degrades to "no resume, no all-hubs patch" rather than erroring. Don't build
+anything that depends on either working.
 
 **Resume never navigates.** Because your modal is hub-specific, resuming restores
 the work but keeps the user on the hub you opened them on.
@@ -177,24 +197,33 @@ the work but keeps the user on the hub you opened them on.
 
 Chrome blocks downloads initiated from a sandboxed cross-origin iframe, sometimes
 silently, and `navigator.clipboard` needs `allow="clipboard-write"`. So embedded,
-both outputs come to you instead:
+the output comes to you instead:
 
 ```js
 { type: 'dat:export', version: 1,
-  kind: 'csv' | 'patch',
-  filename: 'DriverAssignmentForm-20260801.csv',
-  content: '<the whole file as text>' }
+  kind: 'patch',
+  filename: 'DriverAssignmentPatch.osts',
+  content: '<the ExcelScript source>' }
 ```
 
-- **`kind: 'csv'`** — the full Driver Assignment CSV, same columns and row order
-  as the one you sent, with `ToEntityRefs` updated. Round-trips losslessly; it can
-  be re-imported into the standalone tool.
-- **`kind: 'patch'`** — an **ExcelScript / Office Scripts macro**, not data. A
-  human pastes it into the Office Scripts editor and runs it against the workbook.
-  Receiving it does not close that loop — surface it as copyable text, don't try
-  to apply it.
+**Embedded, `kind` is always `'patch'`.** The CSV export is hidden in this mode —
+that format can't be ingested back into the workbook, so offering it would only
+produce a file with nowhere to go. The standalone page still exports CSV; only
+the embedded UI drops it.
 
-Save it, offer it as a download, POST it upstream — the tool has done its part.
+The patch is an **ExcelScript / Office Scripts macro**, not data. A human pastes
+it into the Office Scripts editor and runs it against the workbook. Receiving it
+does not close that loop — surface it as copyable text, don't try to apply it.
+
+### Patching every hub at once
+
+The Review dialog offers **"Patch all hubs (N)"** whenever more than one hub of
+the current `branchId` + `systemSetId` has saved work. It emits a single
+`dat:export` covering all of them — one script, one paste, rather than one per
+hub. Handle it exactly like the single-hub patch; only the size differs.
+
+This is read straight from the tool's own storage, which is why §5's
+`branchId` matters: it's what scopes "all hubs" to the right set.
 
 ---
 

@@ -6,3 +6,5 @@ __pycache__/
 *.pyc
 .vscode/
 /sample-data
+host-overlay.js
+EMBEDDING.md

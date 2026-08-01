@@ -4,11 +4,11 @@
 // It is baked into each rendered design page, so a page rendered before an
 // edit here keeps running the old copy — re-run the DJ after changing it.
 //
-// Two fixes over the previous version:
+// Changes over the previous version:
 //
 //   1. TOOL_ORIGIN is prepended to the iframe src. A bare
 //      "/driverassignmenttool/api/..." is relative to the *parent* document, so
-//      it resolved against kaizen.ideaworksgroup.co.uk and hit IIS instead of
+//      it resolved agains example.com and hit IIS instead of
 //      GitHub Pages. An iframe src authored in the parent must be absolute.
 //
 //   2. No `if (!window.__datOpen)` guard. Every hub button carries its own copy
@@ -16,13 +16,29 @@
 //      and every later copy — including a corrected one — was silently skipped.
 //      One stale button poisoned the whole page. Last definition wins now.
 //
+//   3. context.branchId is sent, so the tool can scope and retire saved work
+//      per branch. See the __datOpen signature below.
+//
+//   4. No close confirmation, and exports are always the patch script — the
+//      tool suppresses its CSV output when embedded.
+//
 // Note: the tool's own asset paths stay relative (../assets/...) and that is
 // correct — inside the frame they resolve against the frame's own URL.
 
 var TOOL_ORIGIN = 'https://wallcop100.github.io';
 var TOOL_PATH = '/driverassignmenttool/api/';
 
-window.__datOpen = function (ref, hub, ver) {
+// __datOpen(hubRef, hubLabel, systemSetId, branchId)
+//
+// branchId + systemSetId together scope the tool's saved work. systemSetIds are
+// sequential within a branch, so when the user opens a newer set the tool drops
+// every stored session for that branch below it — no stale work, no manual
+// cleanup. Send the branch the design belongs to, as a plain id; the tool never
+// parses it beyond comparing equality.
+//
+// Both must be present for that to work. Omit branchId and every branch shares
+// one namespace, so a newer set in branch A would wipe branch B's work.
+window.__datOpen = function (ref, hub, ver, branch) {
   var src = TOOL_ORIGIN + TOOL_PATH + '?parentOrigin=' + encodeURIComponent(location.origin);
 
   var f = document.getElementById('datf_' + ref);
@@ -71,13 +87,6 @@ window.__datOpen = function (ref, hub, ver) {
     if (!ready) st.textContent = 'no response from tool - check console';
   }, 8000);
 
-  function save(n, c) {
-    var u = URL.createObjectURL(new Blob([c], { type: 'text/plain' }));
-    var a = document.createElement('a');
-    a.href = u; a.download = n; a.click();
-    URL.revokeObjectURL(u);
-  }
-
   function onMsg(e) {
     if (e.source !== fr.contentWindow) return;
     if (e.origin !== TOOL_ORIGIN) return;
@@ -94,7 +103,7 @@ window.__datOpen = function (ref, hub, ver) {
         form: form,
         links: links,
         focusZone: hub,
-        context: { systemSetId: ver, hubRef: ref, hubLabel: hub },
+        context: { branchId: branch, systemSetId: ver, hubRef: ref, hubLabel: hub },
       }, TOOL_ORIGIN);
     }
     if (m.type === 'dat:dirty') {
@@ -102,20 +111,19 @@ window.__datOpen = function (ref, hub, ver) {
       st.textContent = dirty ? dirty + ' unsaved' : '';
     }
     if (m.type === 'dat:error') IWalertmessage('Driver tool: ' + m.message);
+    // Embedded, the tool only ever emits kind:'patch' — the CSV round-trip is
+    // disabled there because this workbook cannot ingest that format.
     if (m.type === 'dat:export') {
-      if (m.kind === 'patch') {
-        copyToClipboard(m.content);
-        IWalertmessage('Patch script copied - paste it into the Office Scripts editor');
-      } else {
-        save(m.filename, m.content);
-        IWalertmessage('Exported ' + m.filename);
-      }
+      copyToClipboard(m.content);
+      IWalertmessage('Patch script copied - paste it into the Office Scripts editor');
     }
   }
   window.addEventListener('message', onMsg);
 
+  // No close confirmation: work is autosaved per hub and resumes silently when
+  // the hub is reopened, so closing loses nothing. The 'N unsaved' label stays
+  // as a reminder that the patch has not been taken yet.
   function shut() {
-    if (dirty && !confirm(dirty + ' unsaved change(s). Close anyway?')) return;
     clearTimeout(watchdog);
     window.removeEventListener('message', onMsg);
     back.remove(); pan.remove();

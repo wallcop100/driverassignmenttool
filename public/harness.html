@@ -25,7 +25,9 @@
 
     <label>focusZone</label>
     <input id="zone" value="HUB-B1" />
-    <label>systemSetId <span class="note">(point in time)</span></label>
+    <label>branchId</label>
+    <input id="branch" value="10470" />
+    <label>systemSetId <span class="note">(sequential within branch)</span></label>
     <input id="set" value="108835" />
     <label>hubRef</label>
     <input id="hub" value="p50123" />
@@ -80,13 +82,14 @@ const sendInit = async () => {
     links,
     focusZone: $('zone').value || undefined,
     context: {
+      branchId: Number($('branch').value),
       systemSetId: Number($('set').value),
       hubRef: $('hub').value,
       hubLabel: $('label').value,
     },
   };
   frame.contentWindow.postMessage(msg, location.origin);
-  log(`→ dat:init v${msg.version} focusZone=${msg.focusZone} set=${msg.context.systemSetId} hub=${msg.context.hubRef}`);
+  log(`→ dat:init v${msg.version} focusZone=${msg.focusZone} branch=${msg.context.branchId} set=${msg.context.systemSetId} hub=${msg.context.hubRef}`);
 };
 
 window.addEventListener('message', (e) => {

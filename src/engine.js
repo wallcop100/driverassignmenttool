@@ -466,9 +466,17 @@ function patchBlock(ref, elementRef, node) {
 `;
 }
 
-export function generatePatchScript(model, assignments, addedDrivers) {
-  const body = changedRows(model, assignments, addedDrivers)
+// One script from several saved sessions — the hubs of a branch/set are worked
+// one frame at a time, but the workbook is patched once. The body is a flat list
+// of per-link blocks, so merging is just concatenation in hub order.
+export function generatePatchScriptMulti(sessions) {
+  const body = (sessions || [])
+    .flatMap((s) => changedRows(s.model, s.assignments, s.addedDrivers))
     .flatMap((row) => row.refs.map((ref) => patchBlock(ref, row.elementRef, row.node)))
     .join('');
   return PATCH_HEADER + body + PATCH_FOOTER;
+}
+
+export function generatePatchScript(model, assignments, addedDrivers) {
+  return generatePatchScriptMulti([{ model, assignments, addedDrivers }]);
 }

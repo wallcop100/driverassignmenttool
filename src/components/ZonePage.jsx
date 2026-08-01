@@ -26,7 +26,7 @@ function buildFlagIndex(flags) {
   return { byDriver, byNode, byLink };
 }
 
-export default function ZonePage({ state, dispatch, zone }) {
+export default function ZonePage({ state, dispatch, zone, onResetToCurrentSet }) {
   const { model, assignments, addedDrivers, flags, eligibility, focusNode } = state;
   const [showAdd, setShowAdd] = useState(false);
   const [showReview, setShowReview] = useState(false);
@@ -170,6 +170,19 @@ export default function ZonePage({ state, dispatch, zone }) {
         <button className="btn btn-sm btn-primary" data-tour="review" onClick={() => setShowReview(true)}>
           Review{pendingCount > 0 && <span className="badge text-bg-light ms-1">{pendingCount}</span>}
         </button>
+        {/* embedded, resume is silent — this is the only way back to the data the
+            host posted, so it stays visible rather than hiding behind a menu */}
+        {onResetToCurrentSet && (
+          <button className="btn btn-sm btn-outline-secondary ms-auto"
+            title="Discard your saved work for this hub and reload the data the host sent"
+            onClick={() => {
+              if (pendingCount && !window.confirm(
+                'Discard your changes for this hub and reload the current set?')) return;
+              onResetToCurrentSet();
+            }}>
+            <span className="material-icons small-icon align-middle">restart_alt</span> Reset to current set
+          </button>
+        )}
       </div>
 
       {distNote && (

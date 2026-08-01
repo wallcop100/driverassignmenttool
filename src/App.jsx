@@ -2,7 +2,6 @@ import { useEffect, useReducer, useRef, useState } from 'react';
 import * as api from './api.js';
 import ImportScreen from './components/ImportScreen.jsx';
 import Landing from './components/Landing.jsx';
-import ResumeBanner from './components/ResumeBanner.jsx';
 import Tutorial from './components/Tutorial.jsx';
 import ZonePage from './components/ZonePage.jsx';
 import * as embed from './embed.js';
@@ -21,9 +20,9 @@ export default function App() {
   const [notice, setNotice] = useState(null);
   const [fatal, setFatal] = useState(null);
 
-  // Embedded, the host opened this frame on one specific hub and the modal
-  // around us is hub-specific — so stay put. Only follow the saved view if the
-  // restored model actually still has that zone.
+  // Standalone keeps the ask-first banner. Embedded resumes silently — the frame
+  // is flaky by nature, so coming back to your own work is the expected outcome,
+  // not a question. "Reset to current set" in the toolbar is the way out.
   const resume = () => {
     const pin = embedded && state.view.page === 'zone'
       && saved.model?.zones?.includes(state.view.zone) ? state.view : undefined;
@@ -31,6 +30,14 @@ export default function App() {
     setSaved(null);
   };
   const discard = () => { clearSession(); setSaved(null); };
+
+  // the host's payload as posted, so reset can go back to it without a reload
+  const fresh = useRef(null);
+  const resetToCurrentSet = () => {
+    if (!fresh.current) return;
+    clearSession();
+    dispatch({ type: 'INIT', ...fresh.current });
+  };
 
   // the message handler below is mounted once, so it can't close over `model`
   const hasModel = useRef(false);
@@ -49,14 +56,19 @@ export default function App() {
         // what this tool exists to fix. Land on the list with a notice instead.
         const matched = focus && model.zones.includes(focus);
         if (focus && !matched) setNotice(`${focus} isn't in the data the host sent — showing everything it did send.`);
-        setSessionKey(msg.context?.systemSetId, msg.context?.hubRef);
-        setSaved(loadSession());
-        dispatch({
-          type: 'INIT',
+        setSessionKey(msg.context?.branchId, msg.context?.systemSetId, msg.context?.hubRef);
+        const init = {
           model,
           context: msg.context ?? null,
           view: matched ? { page: 'zone', zone: focus } : undefined,
-        });
+        };
+        fresh.current = init;
+        dispatch({ type: 'INIT', ...init });
+
+        // Silent resume: the host's data is loaded first so the frame is never
+        // blank, then prior work replaces it in the same tick if there is any.
+        const prior = loadSession();
+        if (prior?.model) dispatch({ type: 'RESTORE', saved: prior, view: init.view });
       } catch (e) {
         // a bad re-init when we already have working data is a notice, not a
         // wipe — don't take the user's zone away from them
@@ -98,17 +110,10 @@ export default function App() {
   // autosave the whole session (#3) — this already observes every mutation, so
   // it is also where the host gets told the change count (no reducer side effects).
   //
-  // Embedded, while a resume offer is unanswered, we must NOT save: the host's
-  // fresh model has already loaded underneath the banner, and writing it would
-  // overwrite the very session being offered — two flaky reloads would then
-  // silently destroy the user's work. Answering it either way clears `saved`
-  // and autosave takes over. (Standalone the offer only exists on the import
-  // screen, where there is no model to save, so nothing changes there.)
   useEffect(() => {
-    if (embedded && saved) return;
     saveSession(state);
     if (embedded && model) embed.send({ type: 'dat:dirty', changeCount: diffRows(state).length });
-  }, [model, assignments, addedDrivers, state.prefs, state.view, saved]);
+  }, [model, assignments, addedDrivers, state.prefs, state.view]);
 
   useEffect(() => {
     const onKey = (e) => {
@@ -137,14 +142,14 @@ export default function App() {
   } else if (!model) {
     screen = <ImportScreen dispatch={dispatch} saved={saved} onResume={resume} onDiscard={discard} />;
   } else if (state.view.page === 'zone') {
-    screen = <ZonePage state={state} dispatch={dispatch} zone={state.view.zone} />;
+    screen = <ZonePage state={state} dispatch={dispatch} zone={state.view.zone}
+      onResetToCurrentSet={embedded ? resetToCurrentSet : null} />;
   } else {
     screen = <Landing state={state} dispatch={dispatch} />;
   }
   return (
     <LabelContext.Provider value={state.prefs.label}>
       <div className="app-shell">
-      {embedded && model && <ResumeBanner saved={saved} onResume={resume} onDiscard={discard} />}
       {notice && (
         <div className="alert alert-warning d-flex align-items-center gap-2 py-2 mb-0">
           <span className="material-icons">info</span>
