@@ -267,3 +267,23 @@ test('generatePatchScriptMulti merges hubs into one script', () => {
 
   assert.equal(engine.generatePatchScriptMulti([]).includes('X1'), false);
 });
+
+test('parseDriverRestrictions tolerates spacing and case around the separator', () => {
+  // A whitespace difference used to yield powerType:null, which reads as
+  // "type undeclared" and makes the driver match nothing in the inventory —
+  // surfacing as "N x CV-24V nowhere to go / no matching driver type".
+  for (const v of ['180W | 24V', '180W|24V', '180W  |  24V', '180W | 24v', '180W | 24 V', '180 W | 24V']) {
+    const r = engine.parseDriverRestrictions(v);
+    assert.equal(r.powerType, 'CV', v);
+    assert.equal(r.outputVoltageV, 24, v);
+    assert.equal(r.maxPowerW, 180, v);
+  }
+  const cc = engine.parseDriverRestrictions('100w|0.7a');
+  assert.equal(cc.powerType, 'CC');
+  assert.equal(cc.currentA, 0.7);
+
+  // genuinely different shapes still decline to guess
+  for (const v of ['180W', '', '24V | 180W']) {
+    assert.equal(engine.parseDriverRestrictions(v).powerType, null, v);
+  }
+});

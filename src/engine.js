@@ -5,9 +5,15 @@ import Papa from 'papaparse';
 
 const CURRENT_TOLERANCE = 0.10;
 
-const DRIVER_RE = /(?<Watts>\d+(\.\d+)?)W(\s\|\s(?<Value>\d+(\.\d+)?)(?<Unit>[AV]))?/;
-const NODE_FV_RE = /(?<FV>\d+(\.\d+)?)fV/;
-const NODE_W_RE = /(?<W>\d+(\.\d+)?)W/;
+// Tolerant of spacing and case around the separator. The strict form
+// (/(\d+)W(\s\|\s(\d+)([AV]))?/) silently produced powerType:null on "180W|24V"
+// or "180W | 24v", which reads downstream as "driver type undeclared" — the
+// driver then matches nothing in the inventory and its cables report "nowhere
+// to go". Exporters vary here; a whitespace difference must not look like
+// missing data.
+const DRIVER_RE = /(?<Watts>\d+(\.\d+)?)\s*W(\s*\|\s*(?<Value>\d+(\.\d+)?)\s*(?<Unit>[AV]))?/i;
+const NODE_FV_RE = /(?<FV>\d+(\.\d+)?)\s*fV/i;
+const NODE_W_RE = /(?<W>\d+(\.\d+)?)\s*W/i;
 
 // Only the signature columns are required — everything else is read defensively,
 // so adding columns to future CSVs (or dropping optional ones) won't break old
@@ -48,7 +54,8 @@ export function parseDriverRestrictions(raw) {
   const m = DRIVER_RE.exec(raw || '');
   if (!m) return { powerType: null, maxPowerW: null, currentA: null, outputVoltageV: null };
   const watts = Number(m.groups.Watts);
-  const { Unit, Value } = m.groups;
+  const { Value } = m.groups;
+  const Unit = m.groups.Unit?.toUpperCase(); // case-insensitive match above
   if (Unit === 'A') return { powerType: 'CC', maxPowerW: watts, currentA: Number(Value), outputVoltageV: null };
   if (Unit === 'V') return { powerType: 'CV', maxPowerW: watts, currentA: null, outputVoltageV: Number(Value) };
   return { powerType: null, maxPowerW: watts, currentA: null, outputVoltageV: null };
