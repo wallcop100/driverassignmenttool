@@ -13,12 +13,19 @@ is what this build speaks.
 ## 1. Configure the allowlist (one-time, before anything works)
 
 The tool refuses to talk to an origin it hasn't been built to trust. Set the
-GitHub repo variable **`ALLOWED_PARENT_ORIGINS`** to your host origin(s),
-comma-separated, no trailing slash, then redeploy:
+GitHub repo variable **`ALLOWED_PARENT_ORIGINS`** to the origin of the **page
+that embeds the tool** — comma-separated, no trailing slash — then redeploy:
 
 ```
 https://designdb.example.com,https://staging.designdb.example.com
 ```
+
+> **Not the tool's own origin.** This answers "who is allowed to embed me", not
+> "where do I live". If the tool is on `wallcop100.github.io` and the design
+> page is on `kaizen.example.com`, this variable holds **`kaizen.example.com`**.
+
+Vite inlines the value at **build time**, so setting the variable does nothing
+until the deploy workflow runs again. Set it first, then re-run the workflow.
 
 Unset means embed mode is off — the iframe will show
 *"This tool was opened without a recognised host."* If you see that message,
