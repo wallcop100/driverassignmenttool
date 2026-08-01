@@ -1,18 +1,12 @@
 import { useRef, useState } from 'react';
 import * as api from '../api.js';
+import ResumeBanner from './ResumeBanner.jsx';
 
 export default function ImportScreen({ dispatch, saved, onResume, onDiscard }) {
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
   const [dragOver, setDragOver] = useState(false);
-  const [dismissed, setDismissed] = useState(false);
   const fileInput = useRef(null);
-
-  const showResume = saved && !dismissed;
-  const changeCount = saved
-    ? Object.entries(saved.assignments || {}).filter(([k, v]) =>
-        (v.refs || []).join() !== (saved.model?.baseline?.[k]?.refs || []).join()).length
-    : 0;
 
   const loadFiles = async (files) => {
     const csvs = [...files].filter((f) => /\.csv$/i.test(f.name));
@@ -50,18 +44,7 @@ export default function ImportScreen({ dispatch, saved, onResume, onDiscard }) {
             A previously exported Driver Assignment CSV can be re-loaded to resume.
           </p>
 
-          {showResume && (
-            <div className="alert alert-primary d-flex align-items-center gap-2 py-2">
-              <span className="material-icons">history</span>
-              <div className="flex-grow-1 small">
-                Previous session found{changeCount > 0 ? ` · ${changeCount} change${changeCount > 1 ? 's' : ''}` : ''}
-                {saved.savedAt ? ` · ${new Date(saved.savedAt).toLocaleString()}` : ''}
-              </div>
-              <button className="btn btn-sm btn-primary" onClick={onResume}>Resume</button>
-              <button className="btn btn-sm btn-outline-secondary"
-                onClick={() => { onDiscard(); setDismissed(true); }}>Start fresh</button>
-            </div>
-          )}
+          <ResumeBanner saved={saved} onResume={onResume} onDiscard={onDiscard} className="mb-3" />
 
           <div
             className={`dropzone ${dragOver ? 'is-over' : ''}`}

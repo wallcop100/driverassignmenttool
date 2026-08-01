@@ -29,6 +29,7 @@ export const initialState = {
   distributeNodes: [],   // node keys marked as distribution targets
   prefs: DEFAULT_PREFS, // persisted UI prefs (label config)
   demo: false,          // demo dataset loaded → show the tutorial
+  context: null,        // embed mode: { systemSetId, hubRef, hubLabel } from the host
   view: { page: 'landing' },
 };
 
@@ -55,6 +56,8 @@ export function reducer(state, action) {
         model: action.model,
         assignments: cloneAssignments(action.model.baseline),
         demo: !!action.demo,
+        context: action.context ?? null,
+        view: action.view ?? initialState.view, // embed opens straight on focusZone
       };
 
     case 'MOVE': {
@@ -159,7 +162,12 @@ export function reducer(state, action) {
         assignments: action.saved.assignments,
         addedDrivers: action.saved.addedDrivers ?? [],
         prefs: { ...DEFAULT_PREFS, ...(action.saved.prefs ?? {}) },
-        view: action.saved.view ?? { page: 'landing' },
+        context: state.context, // host context outlives a resume
+        // action.view pins where to land. Embedded that is the hub the host
+        // opened this frame on: a resume must restore the *work*, not navigate
+        // somewhere else, because the surrounding modal is hub-specific and the
+        // user has no way back.
+        view: action.view ?? action.saved.view ?? { page: 'landing' },
       };
 
     case 'SET_PREFS':
@@ -232,6 +240,25 @@ export function isPending(key, assignments, baseline) {
   const now = assignments[key]?.refs ?? [];
   const was = baseline[key]?.refs ?? [];
   return now.length !== was.length || now.some((r, i) => r !== was[i]);
+}
+
+// Every node that differs from the imported baseline, plus every node of a
+// driver added in the UI. This is the "Review changes (N)" list; it is also the
+// changeCount reported to an embedding host, so there is one definition.
+export function diffRows(state) {
+  const { assignments, addedDrivers, model } = state;
+  const added = new Set(addedDrivers.map((d) => d.ref));
+  const rows = [];
+  const keys = new Set([...Object.keys(model.baseline), ...Object.keys(assignments)]);
+  for (const key of [...keys].sort()) {
+    const oldRefs = model.baseline[key]?.refs ?? [];
+    const newRefs = assignments[key]?.refs ?? [];
+    const isNew = added.has(key.split('|')[0]);
+    if (isNew || oldRefs.join() !== newRefs.join()) {
+      rows.push({ key, oldRefs, newRefs, isNew });
+    }
+  }
+  return rows;
 }
 
 export function zoneStats(zone, model, assignments, addedDrivers, flags) {

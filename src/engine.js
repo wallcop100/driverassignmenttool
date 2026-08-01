@@ -299,12 +299,6 @@ function suggestCtx(ctx, linkRef, assignments) {
   return targets;
 }
 
-export function suggest(model, linkRef, assignments, added) {
-  const ctx = makeCtx(model);
-  ctx._drivers = effectiveDrivers(ctx, added);
-  return suggestCtx(ctx, linkRef, assignments || {});
-}
-
 export function eligibility(model, zone, assignments, added) {
   const ctx = makeCtx(model);
   ctx._drivers = effectiveDrivers(ctx, added);

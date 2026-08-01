@@ -10,6 +10,7 @@ import IssuesBadge from './IssuesBadge.jsx';
 import LabelConfig from './LabelConfig.jsx';
 import ReviewModal from './ReviewModal.jsx';
 import Search from './Search.jsx';
+import Tooltip from './Tooltip.jsx';
 import Tray from './Tray.jsx';
 
 function buildFlagIndex(flags) {
@@ -99,26 +100,54 @@ export default function ZonePage({ state, dispatch, zone }) {
   return (
     <div className={`zone-page ${state.draggingLink ? 'is-dragging' : ''}`} style={{ '--zone-accent': accent }}>
       <header className="zone-header">
-        <button className="btn btn-sm btn-outline-secondary d-flex align-items-center"
-          onClick={() => dispatch({ type: 'SET_VIEW', view: { page: 'landing' } })}>
-          <span className="material-icons small-icon">arrow_back</span> Zones
-        </button>
+        {/* a one-zone model (the usual embedded payload) has no list to go back to */}
+        {model.zones.length > 1 && (
+          <button className="btn btn-sm btn-outline-secondary d-flex align-items-center"
+            onClick={() => dispatch({ type: 'SET_VIEW', view: { page: 'landing' } })}>
+            <span className="material-icons small-icon">arrow_back</span> Zones
+          </button>
+        )}
+        {/* embedded there is no import screen, so this is the only place the user
+            can tell which hub and which point in time they are looking at */}
+        {state.context && (
+          <span className="badge badge-context" title="Sent by the host system">
+            {state.context.hubLabel ?? state.context.hubRef} · Set {state.context.systemSetId}
+          </span>
+        )}
         <span className="zone-dot" style={{ background: accent }} />
         <h5 className="mb-0">{zone}</h5>
-        <span className={`ms-2 fw-semibold ${stats.pct > 100 ? 'text-danger' : 'text-secondary'}`}>
+        {/* completion, tray and drivers-needed used to live only on Landing —
+            which an embedded, single-hub user never sees. Same numbers, same copy. */}
+        <Tooltip content="Cables assigned to a driver node">
+          <span className="fw-semibold text-secondary">
+            {stats.completionPct}% · {stats.assignedCount}/{stats.cableCount} cables
+          </span>
+        </Tooltip>
+        <span className={`fw-semibold ${stats.pct > 100 ? 'text-danger' : 'text-secondary'}`}>
           {stats.pct}% usage
         </span>
+        {allTray.length > 0 && (
+          <Tooltip content="Cables not yet assigned to any driver node">
+            <span className="badge badge-tray">{allTray.length} tray</span>
+          </Tooltip>
+        )}
+        {orphans.length > 0 && (
+          <Tooltip content="Fingerprint clusters with no eligible node — drivers needed">
+            <span className="badge badge-warn">{orphans.length} need</span>
+          </Tooltip>
+        )}
         <IssuesBadge issues={zoneIssues} />
         {stats.warns > 0 && <span className="badge badge-info-muted">{stats.warns} info</span>}
         <div className="ms-auto d-flex align-items-center gap-3">
           <Search model={model} dispatch={dispatch} />
           <LabelConfig fields={state.prefs.label} dispatch={dispatch} />
-          <div className="form-check form-switch mb-0">
+          {/* titles carry the meaning when the labels collapse under 900px */}
+          <div className="form-check form-switch mb-0" title="Info warnings">
             <input className="form-check-input" type="checkbox" id="showInfo"
               checked={showInfo} onChange={(e) => setShowInfo(e.target.checked)} />
             <label className="form-check-label small" htmlFor="showInfo">Info warnings</label>
           </div>
-          <div className="form-check form-switch mb-0">
+          <div className="form-check form-switch mb-0" title="Problems only">
             <input className="form-check-input" type="checkbox" id="problemsOnly"
               checked={problemsOnly} onChange={(e) => setProblemsOnly(e.target.checked)} />
             <label className="form-check-label small" htmlFor="problemsOnly">Problems only</label>

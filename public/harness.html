@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>DAT embed harness</title>
+  <style>
+    body { font: 13px/1.5 system-ui, sans-serif; margin: 0; display: flex; height: 100vh; }
+    #side { width: 340px; flex-shrink: 0; padding: 14px; border-right: 1px solid #ddd; overflow-y: auto; }
+    #stage { flex: 1; padding: 14px; background: #f1f5f9; overflow: auto; }
+    iframe { border: 1px solid #94a3b8; background: #fff; display: block; }
+    label { display: block; margin-top: 10px; font-weight: 600; }
+    input, select, button { font: inherit; width: 100%; padding: 4px 6px; box-sizing: border-box; }
+    button { margin-top: 12px; cursor: pointer; }
+    #log { margin-top: 14px; font-family: ui-monospace, monospace; font-size: 11px;
+           white-space: pre-wrap; word-break: break-all; }
+    #log div { padding: 3px 0; border-top: 1px solid #eee; }
+    .in { color: #0369a1; } .err { color: #b91c1c; } .note { color: #64748b; }
+  </style>
+</head>
+<body>
+  <div id="side">
+    <strong>Embed harness</strong>
+    <div class="note">Stands in for the host page. Serves the same handshake the
+      real host will: /api/ + parentOrigin, then dat:init.</div>
+
+    <label>focusZone</label>
+    <input id="zone" value="HUB-B1" />
+    <label>systemSetId <span class="note">(point in time)</span></label>
+    <input id="set" value="108835" />
+    <label>hubRef</label>
+    <input id="hub" value="p50123" />
+    <label>hubLabel</label>
+    <input id="label" value="HUB-B1" />
+    <label>version <span class="note">(bump to test mismatch)</span></label>
+    <input id="ver" value="1" />
+    <label>iframe size</label>
+    <select id="size">
+      <option value="900x700">900 × 700 (target popup)</option>
+      <option value="600x500">600 × 500 (small)</option>
+      <option value="1400x900">1400 × 900 (wide)</option>
+    </select>
+
+    <button id="send">Send dat:init</button>
+    <button id="reload">Reload iframe (simulate flaky frame)</button>
+    <div id="log"></div>
+  </div>
+  <div id="stage"><iframe id="frame" width="900" height="700"></iframe></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const frame = $('frame');
+const log = (msg, cls = '') => {
+  const d = document.createElement('div');
+  d.className = cls;
+  d.textContent = `${new Date().toLocaleTimeString()}  ${msg}`;
+  $('log').prepend(d);
+};
+
+// same origin as the iframe here, but the code path is identical cross-origin:
+// the child only ever posts to the parentOrigin it was handed and validated.
+const SRC = `/api/?parentOrigin=${encodeURIComponent(location.origin)}`;
+let csvs = null;
+
+const loadCsvs = async () => {
+  if (csvs) return csvs;
+  const [form, links] = await Promise.all([
+    fetch('/src/demo/form.csv').then((r) => r.text()),
+    fetch('/src/demo/links.csv').then((r) => r.text()),
+  ]);
+  csvs = { form, links };
+  return csvs;
+};
+
+const sendInit = async () => {
+  const { form, links } = await loadCsvs();
+  const msg = {
+    type: 'dat:init',
+    version: Number($('ver').value),
+    form,
+    links,
+    focusZone: $('zone').value || undefined,
+    context: {
+      systemSetId: Number($('set').value),
+      hubRef: $('hub').value,
+      hubLabel: $('label').value,
+    },
+  };
+  frame.contentWindow.postMessage(msg, location.origin);
+  log(`→ dat:init v${msg.version} focusZone=${msg.focusZone} set=${msg.context.systemSetId} hub=${msg.context.hubRef}`);
+};
+
+window.addEventListener('message', (e) => {
+  if (e.source !== frame.contentWindow) return;
+  const m = e.data;
+  if (!m || typeof m !== 'object') return;
+  if (m.type === 'dat:ready') { log('← dat:ready', 'in'); sendInit(); }
+  else if (m.type === 'dat:dirty') log(`← dat:dirty changeCount=${m.changeCount}`, 'in');
+  else if (m.type === 'dat:error') log(`← dat:error ${m.message}`, 'err');
+  else if (m.type === 'dat:export') {
+    log(`← dat:export ${m.kind} ${m.filename} (${m.content.length} chars)`, 'in');
+    console.log(m.content);
+  }
+});
+
+$('send').onclick = sendInit;
+$('reload').onclick = () => { frame.src = SRC; log('iframe reloaded', 'note'); };
+$('size').onchange = (e) => {
+  const [w, h] = e.target.value.split('x');
+  frame.width = w; frame.height = h;
+};
+frame.src = SRC;
+</script>
+</body>
+</html>

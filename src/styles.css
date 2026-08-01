@@ -103,12 +103,21 @@ body { background: #f6f8fb; }
 .tag-impossible { background: #eef2f7; color: #64748b; }
 .tag-full { background: #fdecc8; color: #a86b00; }
 
+/* ---- app shell ----
+   banners (resume, notices) stack above the screen; the screen takes the rest.
+   Inside an iframe 100vh is the iframe's height, which is what we want. */
+.app-shell { display: flex; flex-direction: column; height: 100vh; }
+.app-shell > .zone-page { height: auto; flex: 1; min-height: 0; }
+.app-shell > .container { overflow-y: auto; }
+
 /* ---- zone page layout ---- */
 .zone-page { display: flex; flex-direction: column; height: 100vh; }
 .zone-header {
   display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
   padding: 10px 16px; background: #fff; border-bottom: 1px solid #e3e8ef;
 }
+/* which hub, and which point in time — the embedded user has no other cue */
+.badge-context { background: #eef2f7; color: #475569; font-weight: 600; }
 
 /* ---- zone toolbar (actions moved out of the tray) ---- */
 .zone-toolbar {
@@ -226,7 +235,6 @@ body { background: #f6f8fb; }
   display: inline-flex; align-items: baseline; gap: 5px; padding: 3px 8px;
   flex-wrap: wrap; white-space: normal; word-break: break-word; min-width: 0;
 }
-.block-fv { font-size: 10px; font-weight: 500; opacity: 0.7; }
 .cable-block.is-selected { outline: 3px solid var(--zone-accent); outline-offset: 1px; }
 .cable-block.is-pending { border-style: dashed; }
 .cable-block.is-pending::after {
@@ -326,3 +334,18 @@ body { background: #f6f8fb; }
 
 /* ---- modals ---- */
 .modal-backdrop-custom { background: rgba(15, 23, 42, 0.45); }
+
+/* ---- popup-sized iframe (~900x700) ----
+   header/toolbar/grid already flex-wrap, so nothing breaks when narrow — it
+   just wraps into extra rows, and vertical space is what a 700px popup hasn't
+   got. Tighten until header + toolbar fit two rows; the driver grid gets the rest. */
+@media (max-width: 900px) {
+  .zone-header { padding: 6px 10px; gap: 6px; }
+  .zone-toolbar { padding: 6px 10px; gap: 6px; }
+  .driver-grid { padding: 10px; gap: 10px; }
+  .zone-header h5 { font-size: 1rem; }
+  .zone-header .fw-semibold { font-size: 13px; }
+  .global-search input { width: 110px; }
+  /* the switch alone is the control; its label is the first thing to go */
+  .zone-header .form-check-label { display: none; }
+}

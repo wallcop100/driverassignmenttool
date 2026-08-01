@@ -2,7 +2,7 @@
 // restore). state.js is pure (no React), so it runs directly under node.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { cgColor, initialState, reducer, severityOf, zoneControlGroups } from '../src/state.js';
+import { cgColor, diffRows, initialState, reducer, severityOf, zoneControlGroups } from '../src/state.js';
 
 const model = {
   baseline: {
@@ -124,4 +124,43 @@ test('zoneControlGroups + cgColor: distinct groups get evenly-spaced, distinguis
   const hues = groups.map((g) => cgColor(g, groups).border);
   assert.equal(new Set(hues).size, 3); // all distinct
   assert.deepEqual(cgColor(null, groups), { border: '#94a3b8', bg: '#eef2f7', text: '#64748b' });
+});
+
+// ---- embed mode ----
+
+test('INIT carries the host view and context; RESTORE keeps the context', () => {
+  const view = { page: 'zone', zone: 'HUB-B1' };
+  const context = { systemSetId: 108835, hubRef: 'p50123', hubLabel: 'HUB-B1' };
+  const s = reducer(initialState, { type: 'INIT', model, view, context });
+  assert.deepEqual(s.view, view);         // embedded opens straight on focusZone
+  assert.deepEqual(s.context, context);
+  // a resume must not blank out which hub/set the host said we are looking at
+  const r = reducer(s, { type: 'RESTORE', saved: { model, assignments: {}, view } });
+  assert.deepEqual(r.context, context);
+});
+
+test('INIT without a view falls back to the landing page (standalone unchanged)', () => {
+  const s = reducer(initialState, { type: 'INIT', model });
+  assert.deepEqual(s.view, { page: 'landing' });
+  assert.equal(s.context, null);
+});
+
+test('diffRows counts changed nodes — the number reported to the host as dat:dirty', () => {
+  let s = init();
+  assert.equal(diffRows(s).length, 0);                 // baseline is not dirty
+  s = reducer(s, { type: 'MOVE_MANY', linkRefs: ['X1'], toKey: 'D|OP.2' });
+  assert.equal(diffRows(s).length, 2);                 // moved out of one node, into another
+  s = reducer(s, { type: 'UNDO' });
+  assert.equal(diffRows(s).length, 0);
+});
+
+test('RESTORE pins the view when told to — an embedded resume must not leave the hub', () => {
+  const here = { page: 'zone', zone: 'HUB-B1' };
+  const elsewhere = { page: 'zone', zone: 'HUB-D' };
+  const s = reducer(initialState, { type: 'INIT', model, view: here });
+  // the saved session was left on a different screen; embedded we ignore that
+  const saved = { model, assignments: {}, view: elsewhere };
+  assert.deepEqual(reducer(s, { type: 'RESTORE', saved, view: here }).view, here);
+  // standalone (no pin) still follows the saved view
+  assert.deepEqual(reducer(s, { type: 'RESTORE', saved }).view, elsewhere);
 });

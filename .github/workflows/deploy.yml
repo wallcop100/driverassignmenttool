@@ -25,6 +25,11 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
+        env:
+          # Origins allowed to embed /api/ (comma-separated, no trailing slash).
+          # Set the repo variable ALLOWED_PARENT_ORIGINS to the real host origin.
+          # Unset => embed mode is off and the standalone page is unaffected.
+          VITE_ALLOWED_PARENT_ORIGINS: ${{ vars.ALLOWED_PARENT_ORIGINS }}
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist

@@ -1,21 +1,6 @@
 import { useState } from 'react';
 import * as api from '../api.js';
-
-function diffRows(state) {
-  const { assignments, addedDrivers, model } = state;
-  const added = new Set(addedDrivers.map((d) => d.ref));
-  const rows = [];
-  const keys = new Set([...Object.keys(model.baseline), ...Object.keys(assignments)]);
-  for (const key of [...keys].sort()) {
-    const oldRefs = model.baseline[key]?.refs ?? [];
-    const newRefs = assignments[key]?.refs ?? [];
-    const isNew = added.has(key.split('|')[0]);
-    if (isNew || oldRefs.join() !== newRefs.join()) {
-      rows.push({ key, oldRefs, newRefs, isNew });
-    }
-  }
-  return rows;
-}
+import { diffRows } from '../state.js';
 
 export default function ReviewModal({ state, dispatch, onClose }) {
   const [error, setError] = useState(null);
@@ -37,11 +22,13 @@ export default function ReviewModal({ state, dispatch, onClose }) {
 
   // copy/paste, not a download — the script is pasted straight into the
   // Office Scripts / ExcelScript code editor, no file to save or import.
+  // (embedded, api.copyPatch hands it to the host instead; the clipboard is
+  // not reliably ours inside an iframe)
   const doPatch = async () => {
     setError(null);
     try {
       const script = await api.generatePatch(state.assignments, state.addedDrivers);
-      await navigator.clipboard.writeText(script);
+      await api.copyPatch(script);
       setPatchCopied(true);
       setTimeout(() => setPatchCopied(false), 2000);
     } catch (e) {
