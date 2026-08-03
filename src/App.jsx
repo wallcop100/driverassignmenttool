@@ -39,9 +39,13 @@ export default function App() {
     dispatch({ type: 'INIT', ...fresh.current });
   };
 
-  // the message handler below is mounted once, so it can't close over `model`
+  // the message handler below is mounted once, so it can't close over state
   const hasModel = useRef(false);
   hasModel.current = !!model;
+  const stateRef = useRef(state);
+  stateRef.current = state;
+  const types = useRef(null);              // driver type library, from dat:types
+  const payload = useRef(null);            // last {form, links}, for a types rebuild
 
   // Embed mode: the host posts both CSVs in over postMessage. Announce readiness
   // only after mount — iframe.onload fires well before React is listening.
@@ -50,7 +54,8 @@ export default function App() {
     const off = embed.onInit((msg, error) => {
       if (error) { if (hasModel.current) setNotice(error); else setFatal(error); return; }
       try {
-        const model = api.parseText(msg.form, msg.links);
+        payload.current = { form: msg.form, links: msg.links };
+        const model = api.parseText(msg.form, msg.links, types.current);
         const focus = msg.focusZone;
         // No match is a legitimate state — a hub with no drivers yet is exactly
         // what this tool exists to fix. Land on the list with a notice instead.
@@ -75,6 +80,20 @@ export default function App() {
         if (hasModel.current) setNotice(e.message); else setFatal(e.message);
         embed.sendError(e.message);
       }
+    },
+    // dat:types normally lands just before dat:init. If it arrives late the only
+    // way to fold it in is to rebuild, so do that ONLY while the model is still
+    // pristine — rebuilding would otherwise discard the user's work.
+    (typesText) => {
+      types.current = typesText;
+      if (!hasModel.current || !payload.current) return;
+      if (diffRows(stateRef.current).length) {
+        setNotice('Driver type definitions arrived after your changes — reopen this hub to apply them.');
+        return;
+      }
+      const init = { ...fresh.current, model: api.parseText(payload.current.form, payload.current.links, typesText) };
+      fresh.current = init;
+      dispatch({ type: 'INIT', ...init });
     });
     embed.sendReady();
     return off;

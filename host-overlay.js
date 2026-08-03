@@ -46,6 +46,14 @@ window.__datOpen = function (ref, hub, ver, branch) {
   if (!f || !l) { IWalertmessage('No data block for ' + ref); return; }
   var form = f.textContent, links = l.textContent;
 
+  // Driver type library — ONE block for the whole page, not one per hub. The
+  // per-hub rows carry no "Driver Restrictions"; the tool joins the ratings on
+  // ElementTypeRef from here. Optional: without it the tool still works, but
+  // every driver reads as "type undeclared" and Add Driver can only offer the
+  // types the hub already contains.
+  var ty = document.getElementById('dat_types');
+  var types = ty ? ty.textContent : '';
+
   // The CSVs must keep their line breaks. If the overlay writer ever collapses
   // them, the tool sees one row and reports a column error — catch it here
   // instead, where the message can name the cause.
@@ -97,6 +105,12 @@ window.__datOpen = function (ref, hub, ver, branch) {
       ready = true;
       clearTimeout(watchdog);
       st.textContent = '';
+      // Types BEFORE init. postMessage preserves order from one source, so
+      // sending them in this order is enough — no ack needed. Arriving after
+      // init still works, but only while the user has made no changes yet.
+      if (types) {
+        fr.contentWindow.postMessage({ type: 'dat:types', version: 1, types: types }, TOOL_ORIGIN);
+      }
       fr.contentWindow.postMessage({
         type: 'dat:init',
         version: 1,

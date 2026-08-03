@@ -287,3 +287,77 @@ test('parseDriverRestrictions tolerates spacing and case around the separator', 
     assert.equal(engine.parseDriverRestrictions(v).powerType, null, v);
   }
 });
+
+// ---- driver type library (dat:types) ----
+
+const TYPES_PER_NODE = `ElementTypeRef,Node,Driver Restrictions,Node Restrictions
+ET-CCR-D-300-1CH-01,OP.1,300W | 0.3A,150W | 48fV
+ET-CVR-D-24-2CH-01,OP.1,180W | 24V,90W
+ET-CVR-D-24-2CH-01,OP.2,180W | 24V,90W
+`;
+const HUB_FORM = `Pullzone,ElementRef,ElementTypeRef,Driver Restrictions,Node Restrictions,Node,ToEntityType,ToEntityRefs
+HUB-C1,E1,ET-CCR-D-300-1CH-01,,,OP.1,,
+`;
+const HUB_LINKS = `PullZone,LinkRef,LinkTypeRef,LinkSumPower(W),LinkCurrent,LinkVoltage(V),SecondaryPowerType
+HUB-C1,X1,CC-SC,11.8,0.3,,CC
+`;
+
+test('type library fills blank hub restrictions, joined on ElementTypeRef', () => {
+  const bare = engine.buildModel(HUB_FORM, HUB_LINKS);
+  assert.equal(bare.drivers[0].powerType, null);      // today: nothing to go on
+  assert.equal(bare.drivers[0].undetermined, true);
+
+  const m = engine.buildModel(HUB_FORM, HUB_LINKS, TYPES_PER_NODE);
+  const d = m.drivers[0];
+  assert.equal(d.powerType, 'CC');
+  assert.equal(d.maxPowerW, 300);
+  assert.equal(d.currentA, 0.3);
+  assert.equal(d.undetermined, false);
+  assert.equal(d.nodes[0].maxLoadW, 150);             // node limits join too
+  assert.equal(d.nodes[0].maxFvV, 48);
+});
+
+test('catalogue offers library types the hub does not contain', () => {
+  const m = engine.buildModel(HUB_FORM, HUB_LINKS, TYPES_PER_NODE);
+  const refs = m.inventory.map((t) => t.typeRef);
+  assert.deepEqual(refs, ['ET-CCR-D-300-1CH-01', 'ET-CVR-D-24-2CH-01']);
+  const cv = m.inventory.find((t) => t.typeRef === 'ET-CVR-D-24-2CH-01');
+  assert.equal(cv.powerType, 'CV');
+  assert.equal(cv.outputVoltageV, 24);
+  assert.equal(cv.nodes.length, 2);                   // 2CH from two rows
+});
+
+test('a value stated on the hub row wins over the library', () => {
+  const overridden = HUB_FORM.replace(',ET-CCR-D-300-1CH-01,,', ',ET-CCR-D-300-1CH-01,100W | 0.1A,');
+  const d = engine.buildModel(overridden, HUB_LINKS, TYPES_PER_NODE).drivers[0];
+  assert.equal(d.maxPowerW, 100);
+  assert.equal(d.currentA, 0.1);
+});
+
+test('type library also accepts one row per type with a channel count', () => {
+  const flat = `ElementTypeRef,Channels,Driver Restrictions
+ET-CVR-D-24-4CH-01,4,320W | 24V
+ET-CCR-D-300-1CH-01,,300W | 0.3A
+`;
+  const inv = engine.parseTypes(flat);
+  assert.equal(inv.find((t) => t.typeRef === 'ET-CVR-D-24-4CH-01').nodes.length, 4);
+  assert.equal(inv.find((t) => t.typeRef === 'ET-CCR-D-300-1CH-01').nodes.length, 1); // default
+  assert.deepEqual(inv[0].nodes.map((n) => n.name), ['OP.1']);
+});
+
+test('no library leaves the model byte-identical', () => {
+  assert.deepEqual(engine.buildModel(HUB_FORM, HUB_LINKS, ''), engine.buildModel(HUB_FORM, HUB_LINKS));
+});
+
+test('library ratings win, but the longer node list survives', () => {
+  // a thin library row must not shrink a type the hub demonstrably has 2CH of
+  const form = `Pullzone,ElementRef,ElementTypeRef,Driver Restrictions,Node,ToEntityType,ToEntityRefs
+HUB-C1,E1,ET-P,,OP.1,,
+HUB-C1,E1,ET-P,,OP.2,,
+`;
+  const thin = 'ElementTypeRef,Node,Driver Restrictions\nET-P,OP.1,180W | 24V\n';
+  const t = engine.buildModel(form, HUB_LINKS, thin).inventory.find((x) => x.typeRef === 'ET-P');
+  assert.equal(t.nodes.length, 2);        // from the hub rows
+  assert.equal(t.powerType, 'CV');        // from the library
+  assert.equal(t.maxPowerW, 180);
+});

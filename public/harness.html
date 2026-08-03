@@ -42,6 +42,10 @@
       <option value="1400x900">1400 × 900 (wide)</option>
     </select>
 
+    <label style="font-weight:400;margin-top:12px">
+      <input type="checkbox" id="sendTypes" checked style="width:auto" /> send dat:types first
+    </label>
+
     <button id="send">Send dat:init</button>
     <button id="reload">Reload iframe (simulate flaky frame)</button>
     <div id="log"></div>
@@ -73,8 +77,19 @@ const loadCsvs = async () => {
   return csvs;
 };
 
+const TYPES_CSV = `ElementTypeRef,Node,Driver Restrictions,Node Restrictions
+ET-CVR-D-24-2CH-01,OP.1,180W | 24V,90W
+ET-CVR-D-24-2CH-01,OP.2,180W | 24V,90W
+ET-CCR-D-300-1CH-01,OP.1,300W | 0.3A,150W | 48fV
+ET-CVR-D-24-4CH-01,OP.1,320W | 24V,80W
+`;
+
 const sendInit = async () => {
   const { form, links } = await loadCsvs();
+  if ($('sendTypes').checked) {
+    frame.contentWindow.postMessage({ type: 'dat:types', version: 1, types: TYPES_CSV }, location.origin);
+    log('→ dat:types (' + (TYPES_CSV.trim().split(/\r?\n/).length - 1) + ' type rows)');
+  }
   const msg = {
     type: 'dat:init',
     version: Number($('ver').value),

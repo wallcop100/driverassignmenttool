@@ -335,6 +335,26 @@ body { background: #f6f8fb; }
 /* ---- modals ---- */
 .modal-backdrop-custom { background: rgba(15, 23, 42, 0.45); }
 
+/* ---- driver type catalogue (Add driver) ---- */
+.type-list { display: flex; flex-direction: column; border-top: 1px solid #eef1f6; }
+.type-row {
+  display: grid; grid-template-columns: 42px 1fr auto 46px; align-items: center; gap: 10px;
+  width: 100%; padding: 9px 14px; background: none; border: 0; border-bottom: 1px solid #f1f4f9;
+  text-align: left; font-size: 13px; color: #1f2937; cursor: pointer;
+}
+.type-row:hover { background: #f6f9fd; }
+.type-row.is-selected { background: #e8f1ff; box-shadow: inset 3px 0 0 #2563eb; }
+.type-power {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.03em; text-align: center;
+  padding: 2px 0; border-radius: 5px;
+}
+.type-power.is-cc { background: #e0f2fe; color: #0369a1; }
+.type-power.is-cv { background: #dcfce7; color: #15803d; }
+.type-power.is-unknown { background: #eef2f7; color: #94a3b8; }
+.type-ref { font-weight: 600; overflow-wrap: anywhere; }
+.type-spec { color: #475569; white-space: nowrap; }
+.type-ch { color: #64748b; text-align: right; font-variant-numeric: tabular-nums; }
+
 /* ---- popup-sized iframe (~900x700) ----
    header/toolbar/grid already flex-wrap, so nothing breaks when narrow — it
    just wraps into extra rows, and vertical space is what a 700px popup hasn't

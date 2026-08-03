@@ -15,17 +15,31 @@ export function isEmbedded() {
 // Returns { ok } or { ok: false, reason, mismatch? } — callers DROP, never throw,
 // and never echo the payload back.
 export function validateInit(msg, origin, allowedOrigin) {
+  const env = validateEnvelope(msg, origin, allowedOrigin, 'dat:init');
+  if (!env.ok) return env;
+  if (typeof msg.form !== 'string' || !msg.form.trim()) return { ok: false, reason: 'missing form CSV' };
+  if (typeof msg.links !== 'string' || !msg.links.trim()) return { ok: false, reason: 'missing links CSV' };
+  return { ok: true };
+}
+
+// The driver type library, sent once before dat:init. Same envelope rules.
+export function validateTypes(msg, origin, allowedOrigin) {
+  const env = validateEnvelope(msg, origin, allowedOrigin, 'dat:types');
+  if (!env.ok) return env;
+  if (typeof msg.types !== 'string' || !msg.types.trim()) return { ok: false, reason: 'missing types CSV' };
+  return { ok: true };
+}
+
+function validateEnvelope(msg, origin, allowedOrigin, type) {
   if (!allowedOrigin) return { ok: false, reason: 'no allowed parent origin' };
   if (origin !== allowedOrigin) return { ok: false, reason: 'origin not allowed' };
   if (!msg || typeof msg !== 'object') return { ok: false, reason: 'malformed message' };
-  if (msg.type !== 'dat:init') return { ok: false, reason: 'not an init message' };
+  if (msg.type !== type) return { ok: false, reason: `not a ${type} message` };
   // version is checked, not decorative: an unknown version renders an explicit
   // mismatch state rather than guessing at the payload shape.
   if (msg.version !== VERSION) {
     return { ok: false, mismatch: true, reason: `host speaks version ${msg.version}, this build speaks ${VERSION}` };
   }
-  if (typeof msg.form !== 'string' || !msg.form.trim()) return { ok: false, reason: 'missing form CSV' };
-  if (typeof msg.links !== 'string' || !msg.links.trim()) return { ok: false, reason: 'missing links CSV' };
   return { ok: true };
 }
 
@@ -44,10 +58,15 @@ export function parentOrigin() {
 // cb(msg, error) — error is a string when a message reached us but failed
 // validation in a way worth surfacing (version mismatch). Everything else is
 // dropped silently; a page gets plenty of postMessage traffic that isn't ours.
-export function onInit(cb) {
+//
+// onTypes is optional: the driver type library, normally posted just before
+// dat:init. postMessage preserves order from one source, so a host that sends
+// them in order gets them in order.
+export function onInit(cb, onTypes) {
   const target = parentOrigin();
   if (!target) { cb(null, 'This tool was opened without a recognised host.'); return () => {}; }
   const handler = (e) => {
+    if (onTypes && validateTypes(e.data, e.origin, target).ok) { onTypes(e.data.types); return; }
     const r = validateInit(e.data, e.origin, target);
     if (r.ok) cb(e.data, null);
     else if (r.mismatch) cb(null, r.reason);

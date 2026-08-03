@@ -62,6 +62,7 @@ this step is why.
 
 ```
 child  →  dat:ready          (after React mounts — NOT iframe.onload)
+host   →  dat:types          (driver type library — optional, but send it FIRST)
 host   →  dat:init           (the payload)
 child  →  dat:dirty          (0, then on every change)
 child  →  dat:export         (when the user exports)
@@ -81,12 +82,20 @@ window.addEventListener('message', (e) => {
   if (!m || typeof m !== 'object') return;
 
   switch (m.type) {
-    case 'dat:ready':  sendInit(); break;
+    case 'dat:ready':  sendTypes(); sendInit(); break;   // types first
     case 'dat:dirty':  unsavedChanges = m.changeCount; break;   // label only — do not block close
     case 'dat:export': receiveExport(m); break;
     case 'dat:error':  showError(m.message); break;
   }
 });
+
+function sendTypes() {
+  frame.contentWindow.postMessage({
+    type: 'dat:types',
+    version: 1,
+    types: typeLibraryCsvText,   // one library for the whole page — see §4a
+  }, CHILD_ORIGIN);
+}
 
 function sendInit() {
   frame.contentWindow.postMessage({
@@ -130,6 +139,88 @@ context: {
 `branchId` + `systemSetId` + `hubRef` are the session key (§5). `hubLabel` is
 display only. **Send all three of the first three** — they are what makes resume
 and the all-hubs patch work, and omitting any one of them degrades both.
+
+---
+
+## 4a. `dat:types` — the driver type library
+
+The per-hub export names an `ElementTypeRef` per driver but leaves
+`Driver Restrictions` blank. Without the ratings the tool treats every driver as
+**undetermined**: capacity is never checked, cables show as "nowhere to go" with
+"no matching driver type in inventory", and Add Driver has nothing to describe.
+
+Send the type library once and the tool joins it on `ElementTypeRef`.
+
+```js
+{ type: 'dat:types', version: 1, types: '<raw type-library CSV text>' }
+```
+
+**Send it before `dat:init`.** `postMessage` preserves order from a single
+source, so posting them in sequence is sufficient — there is no ack to wait for.
+Arriving after `dat:init` still works, but only while the user has made no
+changes yet; once there are edits the tool keeps them and tells the user to
+reopen the hub rather than rebuilding underneath them.
+
+It is **optional**. Omit it and behaviour is exactly as it is today.
+
+### Where to put it
+
+One block for the whole page, not one per hub — the library is identical for
+every button, so duplicating it per hub is pure page weight:
+
+```html
+<!-- once per page -->
+<script type="text/plain" id="dat_types">…type library CSV…</script>
+
+<!-- per hub, as now -->
+<script type="text/plain" id="datf_P50003">…</script>
+<script type="text/plain" id="datl_P50003">…</script>
+```
+
+### Columns
+
+Required: **`ElementTypeRef`**. Everything else is read defensively.
+
+| Column | Used for |
+|---|---|
+| `ElementTypeRef` | the join key against the hub rows |
+| `Driver Restrictions` | the rating — `300W \| 0.3A` (CC) or `180W \| 24V` (CV) |
+| `Node Restrictions` | per-node `<n>W` / `<n>fV` limits |
+| `Node` | node name, if one row per type+node |
+| `Channels` | channel count, if one row per type |
+
+Two row shapes are accepted, whichever your exporter produces:
+
+```csv
+# one row per type+node — node limits can differ per channel
+ElementTypeRef,Node,Driver Restrictions,Node Restrictions
+ET-CVR-D-24-2CH-01,OP.1,180W | 24V,90W
+ET-CVR-D-24-2CH-01,OP.2,180W | 24V,90W
+
+# one row per type — nodes are generated as OP.1…OP.n
+ElementTypeRef,Channels,Driver Restrictions
+ET-CVR-D-24-2CH-01,2,180W | 24V
+```
+
+`Channels` is also read as `Nodes`, `NodeCount` or `ChannelCount`; absent, the
+type gets one node.
+
+### Two effects worth expecting
+
+1. **Add Driver lists the whole library**, not just the types the hub already
+   contains — so a hub can be given a type it does not currently have. That is
+   the fix for "no matching driver type in inventory".
+2. **Validation starts doing real work.** Drivers that were "undetermined" now
+   have declared capacity, so genuine overload and CC/CV mismatches will surface
+   where previously everything was a benign warning. Expect new errors on
+   existing designs; they were always there, just unverifiable.
+
+If a hub row *does* state its own `Driver Restrictions`, that wins — an explicit
+instance value is treated as a deliberate override, and the library only fills
+blanks. This is also why adding a library can never change how standalone data
+behaves.
+
+---
 
 ### `focusZone`
 

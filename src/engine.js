@@ -67,6 +67,76 @@ export function parseNodeRestrictions(raw) {
   return { maxLoadW: w ? Number(w.groups.W) : null, maxFvV: fv ? Number(fv.groups.FV) : null };
 }
 
+// ---- driver type library ----
+// The per-hub export carries no "Driver Restrictions": the hub rows name an
+// ElementTypeRef and the ratings live in a type library exported once. This
+// parses that library into inventory-shaped entries, joined on ElementTypeRef.
+//
+// Two row shapes are accepted, because the tool does not get to pick the
+// exporter's: one row per type+Node (same shape as the form CSV, node limits
+// per row), or one row per type with a channel count. Anything without a Node
+// column is treated as the latter.
+const TYPE_ESSENTIAL = ['ElementTypeRef'];
+const channelCount = (row) => {
+  const n = num(row.Channels ?? row.Nodes ?? row.NodeCount ?? row.ChannelCount);
+  return n && n > 0 ? Math.floor(n) : 1;
+};
+
+export function parseTypes(text) {
+  const { rows } = readCsv(text, TYPE_ESSENTIAL, 'Driver Type CSV');
+  const types = new Map();
+  for (const row of rows) {
+    const typeRef = s(row.ElementTypeRef);
+    if (!typeRef) continue;
+    const node = s(row.Node);
+    if (!types.has(typeRef)) {
+      const d = parseDriverRestrictions(row['Driver Restrictions']);
+      types.set(typeRef, {
+        typeRef,
+        powerType: d.powerType, maxPowerW: d.maxPowerW,
+        currentA: d.currentA, outputVoltageV: d.outputVoltageV,
+        undetermined: d.maxPowerW == null,
+        driverRestrictions: s(row['Driver Restrictions']),
+        nodeRestrictions: s(row['Node Restrictions']),
+        nodes: [],
+      });
+    }
+    const t = types.get(typeRef);
+    const n = parseNodeRestrictions(row['Node Restrictions']);
+    if (node) {
+      if (!t.nodes.some((x) => x.name === node)) t.nodes.push({ name: node, ...n });
+    } else if (!t.nodes.length) {
+      for (let i = 1; i <= channelCount(row); i += 1) t.nodes.push({ name: `OP.${i}`, ...n });
+    }
+  }
+  return [...types.values()].sort((a, b) => a.typeRef.localeCompare(b.typeRef));
+}
+
+// Fill each driver's blank ratings from its type. A value stated on the hub row
+// is an explicit override and is left alone — which is also why loading a
+// library can never change how existing (standalone) data behaves.
+function applyTypes(drivers, library) {
+  const byType = Object.fromEntries(library.map((t) => [t.typeRef, t]));
+  for (const d of drivers) {
+    const t = byType[d.typeRef];
+    if (!t) continue;
+    if (d.maxPowerW == null) {
+      d.powerType = t.powerType;
+      d.maxPowerW = t.maxPowerW;
+      d.currentA = t.currentA;
+      d.outputVoltageV = t.outputVoltageV;
+      d.undetermined = t.undetermined;
+      d.driverRestrictions = d.driverRestrictions || t.driverRestrictions;
+    }
+    for (const node of d.nodes) {
+      const tn = t.nodes.find((x) => x.name === node.name) ?? t.nodes[0];
+      if (!tn) continue;
+      if (node.maxLoadW == null) node.maxLoadW = tn.maxLoadW;
+      if (node.maxFvV == null) node.maxFvV = tn.maxFvV;
+    }
+  }
+}
+
 function parseForm(text) {
   const { rows, fields } = readCsv(text, FORM_ESSENTIAL, 'Driver Assignment CSV');
   const drivers = new Map();
@@ -134,11 +204,25 @@ function buildInventory(drivers) {
   return inv;
 }
 
-export function buildModel(formText, linksText) {
+export function buildModel(formText, linksText, typesText) {
   const { drivers, baseline, originalRows, fieldnames } = parseForm(formText);
   const links = parseLinks(linksText);
+  const library = typesText ? parseTypes(typesText) : [];
+  if (library.length) applyTypes(drivers, library);
   const zones = [...new Set([...drivers.map((d) => d.zone), ...links.map((l) => l.zone)])].sort();
+
+  // The catalogue is the whole library plus any type only seen in the hub rows,
+  // so a hub can be given a driver type it does not currently contain — the
+  // per-hub payload alone could only ever offer what was already there.
+  //
+  // Where both describe a type, the library supplies the ratings but the node
+  // list is whichever is longer — same rule buildInventory already uses, so an
+  // observed 2CH instance is not reduced to 1CH by a thinner library row.
   const inventory = buildInventory(drivers);
+  for (const t of library) {
+    const seen = inventory.get(t.typeRef);
+    inventory.set(t.typeRef, seen && seen.nodes.length > t.nodes.length ? { ...t, nodes: seen.nodes } : t);
+  }
   return {
     zones, drivers, links, baseline, originalRows, fieldnames,
     inventory: [...inventory.values()].sort((a, b) => a.typeRef.localeCompare(b.typeRef)),

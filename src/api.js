@@ -11,8 +11,8 @@ let model = null;
 // The one ingest path: everything that produces a model goes through here, so
 // the module-level `model` above is always set. Host-posted CSVs (embed mode)
 // and dropped files land in the same place.
-export function parseText(formText, linksText) {
-  model = engine.buildModel(formText, linksText);
+export function parseText(formText, linksText, typesText) {
+  model = engine.buildModel(formText, linksText, typesText);
   return model;
 }
 
