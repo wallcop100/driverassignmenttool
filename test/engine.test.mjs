@@ -504,3 +504,84 @@ test('forward voltage alone can drive the count on real-shaped ratings', () => {
   assert.equal(p.drivers.length, 3);
   assert.deepEqual(p.unplaced, []);
 });
+
+// ---- driver type presets: patched or invented in the UI ----
+const preset = (over = {}) => ({
+  typeRef: 'T100', powerType: 'CC', maxPowerW: 100, currentA: 0.35,
+  channels: 2, nodeMaxLoadW: 100, nodeMaxFvV: 55, invented: false, ...over,
+});
+
+test('a preset overrides the library and re-rates existing drivers of that type', () => {
+  // TBIG declares only "185W": no CC/CV, no current, no fV. The hub has a driver
+  // of that type, and it stays unusable until a human says what it is.
+  const lib = `${GF_TYPES}TBIG,185W,,1\n`;
+  const form = 'Pullzone,ElementRef,ElementTypeRef,Node,ToEntityType,ToEntityRefs\nHUB-G,E1,TBIG,OP.1,,\n';
+  const links = GF_HEAD + gfLinks(2) + '\n';
+  const before = engine.buildModel(form, links, lib);
+  assert.equal(before.drivers[0].powerType, null);
+
+  const after = engine.buildModel(form, links, lib,
+    [preset({ typeRef: 'TBIG', maxPowerW: 185, currentA: 1.05, channels: 1, nodeMaxFvV: 60 })]);
+  const d = after.drivers[0];
+  assert.equal(d.powerType, 'CC');
+  assert.equal(d.currentA, 1.05);
+  assert.equal(d.nodes[0].maxFvV, 60);
+  const t = after.inventory.find((x) => x.typeRef === 'TBIG');
+  assert.equal(t.driverRestrictions, '185W | 1.05A'); // composed, so exports match a library row
+  assert.equal(t.nodes.length, 1);
+});
+
+test('a preset rescues a bucket that no library type could take', () => {
+  const links = GF_HEAD + [...Array(3)].map((_, i) => `L${i + 1},HUB-G,20,1.05,10,CC,CG1`).join('\n') + '\n';
+  const bare = engine.planDrivers(engine.buildModel(null, links, GF_TYPES), {}, [], 'HUB-G');
+  assert.equal(bare.unmatched.length, 1);           // 1.05A cables, 0.35A library
+  assert.deepEqual(bare.drivers, []);
+
+  const withPreset = engine.buildModel(null, links, GF_TYPES,
+    [preset({ typeRef: 'ET-CCR-D-1050-2CH-01', currentA: 1.05, invented: true })]);
+  const p = engine.planDrivers(withPreset, {}, [], 'HUB-G');
+  assert.deepEqual(p.unmatched, []);
+  assert.equal(p.proposals[0].typeRef, 'ET-CCR-D-1050-2CH-01');
+});
+
+test('nextTypeRef composes from the ratings, and reuses a sibling stem', () => {
+  const inv = engine.buildModel(null, GF_HEAD + gfLinks(1) + '\n', GF_TYPES).inventory;
+  // nothing like it in the library -> composed from CC / mA / channels
+  assert.equal(engine.nextTypeRef(inv, { powerType: 'CC', currentA: 0.7, channels: 2 }),
+    'ET-CCR-D-700-2CH-01');
+  assert.equal(engine.nextTypeRef(inv, { powerType: 'CV', outputVoltageV: 24, channels: 1 }),
+    'ET-CVR-D-24-1CH-01');
+  // a sibling exists -> its stem wins, next free serial
+  const sib = [{ typeRef: 'ET-CCR-D-700-2CH-01', powerType: 'CC', currentA: 0.7, nodes: [1, 2] }];
+  assert.equal(engine.nextTypeRef(sib, { powerType: 'CC', currentA: 0.7, channels: 2 }),
+    'ET-CCR-D-700-2CH-02');
+  // incomplete draft proposes nothing
+  assert.equal(engine.nextTypeRef(inv, { powerType: 'CC', channels: 2 }), '');
+});
+
+test('the patch writes ElementTypes columns, current in mA, IsPropertiesTBC on both', () => {
+  const m = gfModel(gfLinks(2));
+  const added = [{ ref: 'E5000X', typeRef: 'T-NEW', zone: 'HUB-G' }];
+  const script = engine.generatePatchScript(m, {}, added, [
+    preset({ typeRef: 'T100', currentA: 0.35 }),                    // patch: type is in the library
+    preset({ typeRef: 'T-NEW', currentA: 0.7, invented: true }),    // invented, and used by E5000X
+  ]);
+  assert.match(script, /let ElementTypes=DB\.getWorksheet\("ElementTypes"\)/);
+  assert.match(script, /find\("MaxPower\(W\)",\{completeMatch:true\}\)/);
+  assert.match(script, /ET_CurrentRange\)\.setValue\(350\)/);       // 0.35A -> 350mA
+  assert.match(script, /ET_CurrentRange\)\.setValue\(700\)/);
+  assert.equal(script.split('ET_IsPropertiesTBC).setValue("Y")').length - 1, 2);
+  // append path for a type that isn't there, patch path for one that is
+  assert.match(script, /let r=f\?f\.getRowIndex\(\):ElementTypes\.getUsedRange\(\)\.getRowCount\(\)/);
+  // the note is stamped on the new type only (the header declaration doesn't count)
+  assert.equal(script.split('getCell(r,ET_InternalNotes)').length - 1, 1);
+  assert.match(script, /Defined in the Driver Assignment Tool - 2CH/);
+});
+
+test('presets nobody uses are not patched, and no presets means the old script exactly', () => {
+  const m = gfModel(gfLinks(2));
+  const orphanPreset = [preset({ typeRef: 'T-UNUSED', invented: true })];
+  assert.ok(!engine.generatePatchScript(m, {}, [], orphanPreset).includes('T-UNUSED'));
+  assert.ok(!engine.generatePatchScript(m, {}, [], orphanPreset).includes('ElementTypes'));
+  assert.equal(engine.generatePatchScript(m, {}, [], []), engine.generatePatchScript(m, {}, []));
+});

@@ -343,11 +343,31 @@ body { background: #f6f8fb; }
 
 .type-list { display: flex; flex-direction: column; border-top: 1px solid #eef1f6; }
 .type-row {
+  display: flex; align-items: center; width: 100%;
+  border-bottom: 1px solid #f1f4f9; font-size: 13px; color: #1f2937;
+}
+.type-main {
   display: grid; grid-template-columns: 42px 1fr auto 46px; align-items: center; gap: 10px;
-  width: 100%; padding: 9px 14px; background: none; border: 0; border-bottom: 1px solid #f1f4f9;
-  text-align: left; font-size: 13px; color: #1f2937; cursor: pointer;
+  flex: 1 1 auto; min-width: 0; padding: 9px 4px 9px 14px;
+  background: none; border: 0; text-align: left; color: inherit; font: inherit; cursor: pointer;
 }
 .type-row:hover { background: #f6f9fd; }
+/* the edit affordance is there only when you are looking at the row */
+.type-edit {
+  flex: 0 0 auto; padding: 6px 12px 6px 4px; background: none; border: 0; line-height: 1;
+  color: #94a3b8; opacity: 0; transition: opacity .12s;
+}
+.type-row:hover .type-edit, .type-edit:focus-visible { opacity: 1; }
+.type-edit:hover { color: #2563eb; }
+.preset-badge { font-size: 10px; vertical-align: middle; }
+.define-type-link {
+  display: block; width: 100%; padding: 10px 14px; background: none; border: 0;
+  text-align: left; font-size: 12px; color: #94a3b8; cursor: pointer;
+}
+.define-type-link:hover { color: #2563eb; background: #f6f9fd; }
+.preset-editor { background: #fffdf5; border-top: 1px solid #f1e6c8; }
+.preset-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.preset-field { display: flex; flex-direction: column; gap: 2px; font-size: 12px; color: #64748b; }
 .type-row.is-selected { background: #e8f1ff; box-shadow: inset 3px 0 0 #2563eb; }
 .type-power {
   font-size: 10px; font-weight: 700; letter-spacing: 0.03em; text-align: center;

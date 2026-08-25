@@ -7,12 +7,31 @@ import * as embed from './embed.js';
 import * as engine from './engine.js';
 
 let model = null;
+// The raw CSVs are kept so the model can be rebuilt when a driver type preset is
+// added or changed, without asking for the files again (embedded, there is
+// nobody to ask). `applied` is what the current model was built with.
+let raw = { form: null, links: null, types: null };
+let applied = '[]';
 
 // The one ingest path: everything that produces a model goes through here, so
 // the module-level `model` above is always set. Host-posted CSVs (embed mode)
 // and dropped files land in the same place.
 export function parseText(formText, linksText, typesText) {
+  raw = { form: formText, links: linksText, types: typesText };
+  applied = '[]';
   model = engine.buildModel(formText, linksText, typesText);
+  return model;
+}
+
+// Returns a fresh model when the presets differ from the ones already baked in,
+// null when there is nothing to do — so the caller can dispatch unconditionally
+// without looping.
+export function rebuild(presets) {
+  const list = Object.values(presets || {});
+  const key = JSON.stringify(list);
+  if (key === applied || !raw.links) return null;
+  model = engine.buildModel(raw.form, raw.links, raw.types, list);
+  applied = key;
   return model;
 }
 
@@ -34,8 +53,7 @@ export async function parseAuto(files) {
 }
 
 export function loadDemo() {
-  model = engine.buildModel(demoForm, demoLinks);
-  return model;
+  return parseText(demoForm, demoLinks);
 }
 
 export async function validate(assignments, addedDrivers) {
@@ -58,8 +76,8 @@ export async function exportCsv(assignments, addedDrivers) {
   return engine.exportCsv(model, assignments, addedDrivers);
 }
 
-export async function generatePatch(assignments, addedDrivers) {
-  return engine.generatePatchScript(model, assignments, addedDrivers);
+export async function generatePatch(assignments, addedDrivers, presets) {
+  return engine.generatePatchScript(model, assignments, addedDrivers, Object.values(presets || {}));
 }
 
 // One script covering every hub saved in this branch+set. The hub on screen is

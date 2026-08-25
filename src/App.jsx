@@ -99,6 +99,15 @@ export default function App() {
     return off;
   }, []);
 
+  // A preset changes what the catalogue says a type is, so the model is rebuilt
+  // from the CSVs api.js kept. Assignments and added drivers are untouched —
+  // they key on refs, not on model identity.
+  useEffect(() => {
+    if (!model) return;
+    const rebuilt = api.rebuild(state.presets);
+    if (rebuilt) dispatch({ type: 'SET_MODEL', model: rebuilt });
+  }, [model, state.presets]);
+
   useEffect(() => {
     if (!model) return;
     let stale = false;
@@ -132,7 +141,7 @@ export default function App() {
   useEffect(() => {
     saveSession(state);
     if (embedded && model) embed.send({ type: 'dat:dirty', changeCount: diffRows(state).length });
-  }, [model, assignments, addedDrivers, state.prefs, state.view]);
+  }, [model, assignments, addedDrivers, state.prefs, state.presets, state.view]);
 
   useEffect(() => {
     const onKey = (e) => {

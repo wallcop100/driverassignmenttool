@@ -36,6 +36,7 @@ export const initialState = {
   distributeGroup: null, // ControlGroup being distributed across marked nodes (#2)
   distributeNodes: [],   // node keys marked as distribution targets
   prefs: DEFAULT_PREFS, // persisted UI prefs (label config)
+  presets: {},          // typeRef -> driver type preset patched/invented here
   demo: false,          // demo dataset loaded → show the tutorial
   context: null,        // embed mode: { systemSetId, hubRef, hubLabel } from the host
   view: { page: 'landing' },
@@ -192,6 +193,7 @@ export function reducer(state, action) {
         assignments: action.saved.assignments,
         addedDrivers: action.saved.addedDrivers ?? [],
         prefs: { ...DEFAULT_PREFS, ...(action.saved.prefs ?? {}) },
+        presets: action.saved.presets ?? {},
         context: state.context, // host context outlives a resume
         // action.view pins where to land. Embedded that is the hub the host
         // opened this frame on: a resume must restore the *work*, not navigate
@@ -199,6 +201,20 @@ export function reducer(state, action) {
         // user has no way back.
         view: action.view ?? action.saved.view ?? { page: 'landing' },
       };
+
+    // Presets are catalogue-level, like prefs: they change what CAN be built, not
+    // what has been. Keeping them out of the undo stack means Ctrl+Z stays about
+    // cable moves, and a preset cannot be silently un-defined under a driver
+    // that is using it.
+    case 'SET_PRESET':
+      return { ...state, presets: { ...state.presets, [action.preset.typeRef]: action.preset } };
+    case 'DELETE_PRESET': {
+      const presets = { ...state.presets };
+      delete presets[action.typeRef];
+      return { ...state, presets };
+    }
+    case 'SET_MODEL': // rebuilt with the current presets; assignments survive
+      return { ...state, model: action.model };
 
     case 'SET_PREFS':
       return { ...state, prefs: { ...state.prefs, ...action.prefs } };
@@ -426,6 +442,22 @@ export function orphanClusters(trayLinks, eligibility, inventory) {
     return true;
   });
   return Object.values(clusters).map((c) => ({ ...c, type: matchType(c) }));
+}
+
+// Types whose ratings were supplied here rather than read from DesignDB, with
+// how many drivers now depend on each. Shown in Review so whoever runs the
+// export knows a rating was assumed — the same list the patch writes as
+// IsPropertiesTBC.
+export function provisionalTypes(state) {
+  const { presets, model, addedDrivers } = state;
+  const all = [...model.drivers, ...addedDrivers];
+  return Object.values(presets ?? {})
+    .map((p) => ({
+      typeRef: p.typeRef,
+      invented: !!p.invented,
+      drivers: all.filter((d) => d.typeRef === p.typeRef).length,
+    }))
+    .sort((a, b) => a.typeRef.localeCompare(b.typeRef));
 }
 
 // Ordered around the colour wheel so neighbouring hubs get pleasantly distinct,

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import * as api from '../api.js';
 import { isEmbedded } from '../embed.js';
 import { listSessions } from '../persist.js';
-import { diffRows, outRef } from '../state.js';
+import { diffRows, outRef, provisionalTypes } from '../state.js';
 
 const embedded = isEmbedded();
 
@@ -12,6 +12,7 @@ export default function ReviewModal({ state, dispatch, onClose }) {
   const [patchCopied, setPatchCopied] = useState(false);
   const [allCopied, setAllCopied] = useState(false);
   const rows = diffRows(state);
+  const provisional = provisionalTypes(state);
 
   // Embedded, other hubs of this branch+set are sitting in storage with their
   // own models, so the workbook can be patched once for all of them.
@@ -37,7 +38,7 @@ export default function ReviewModal({ state, dispatch, onClose }) {
   const doPatch = async () => {
     setError(null);
     try {
-      const script = await api.generatePatch(state.assignments, state.addedDrivers);
+      const script = await api.generatePatch(state.assignments, state.addedDrivers, state.presets);
       await api.copyPatch(script);
       setPatchCopied(true);
       setTimeout(() => setPatchCopied(false), 2000);
@@ -66,6 +67,21 @@ export default function ReviewModal({ state, dispatch, onClose }) {
             <button className="btn-close" onClick={onClose} />
           </div>
           <div className="modal-body">
+            {provisional.length > 0 && (
+              <div className="alert alert-warning py-2 small">
+                <span className="material-icons small-icon align-middle">science</span>{' '}
+                <b>Ratings supplied here, not read from DesignDB.</b> The patch marks each
+                row <code>IsPropertiesTBC</code> — confirm before commit.
+                <ul className="mb-0 mt-1">
+                  {provisional.map((t) => (
+                    <li key={t.typeRef}>
+                      <b>{t.typeRef}</b>{t.invented ? ' — new type, not in the library' : ''}
+                      {t.drivers > 0 && ` · ${t.drivers} driver${t.drivers > 1 ? 's' : ''}`}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
             {!rows.length && <p className="text-secondary">No changes against the imported baseline.</p>}
             {rows.length > 0 && (
               <table className="table table-sm align-middle">
@@ -108,7 +124,7 @@ export default function ReviewModal({ state, dispatch, onClose }) {
               </button>
             )}
             <button className={`btn ${embedded ? 'btn-primary' : 'btn-outline-secondary'}`}
-              onClick={doPatch} disabled={!rows.length}
+              onClick={doPatch} disabled={!rows.length && !provisional.length}
               title="Copy an ExcelScript patch for LinksMap.FromLinkEndContext* (changed rows only) — paste it into the Office Scripts code editor">
               <span className="material-icons small-icon align-middle">{patchCopied ? 'check' : 'content_copy'}</span>
               {patchCopied ? 'Copied!' : embedded ? 'Patch this hub' : 'Copy Patch Script'}

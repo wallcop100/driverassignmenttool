@@ -69,6 +69,7 @@ export function saveSession(state) {
     assignments: state.assignments,
     addedDrivers: state.addedDrivers,
     prefs: state.prefs,
+    presets: state.presets,
     view: state.view,
     savedAt: Date.now(),
   });

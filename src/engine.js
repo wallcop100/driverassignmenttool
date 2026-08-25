@@ -227,14 +227,16 @@ const EMPTY_FORM = { drivers: [], baseline: {}, originalRows: [], fieldnames: DE
 // formText is optional: a hub can start with cables and no drivers at all — that
 // is the case this tool exists to fix. Without it the type library is the only
 // possible source of inventory, so it becomes required instead.
-export function buildModel(formText, linksText, typesText) {
-  if (!formText?.trim() && !typesText?.trim()) {
+export function buildModel(formText, linksText, typesText, presets) {
+  const presetTypes = (presets || []).map(presetToType);
+  if (!formText?.trim() && !typesText?.trim() && !presetTypes.length) {
     throw new Error('No Driver Assignment CSV and no driver type library — nothing to build drivers from.');
   }
   const { drivers, baseline, originalRows, fieldnames } = formText?.trim() ? parseForm(formText) : EMPTY_FORM;
   const links = parseLinks(linksText);
   const library = typesText ? parseTypes(typesText) : [];
   if (library.length) applyTypes(drivers, library);
+  if (presetTypes.length) applyPresets(drivers, presetTypes);
   const zones = [...new Set([...drivers.map((d) => d.zone), ...links.map((l) => l.zone)])].sort();
 
   // The catalogue is the whole library plus any type only seen in the hub rows,
@@ -249,6 +251,9 @@ export function buildModel(formText, linksText, typesText) {
     const seen = inventory.get(t.typeRef);
     inventory.set(t.typeRef, seen && seen.nodes.length > t.nodes.length ? { ...t, nodes: seen.nodes } : t);
   }
+  // A preset overrides outright, node list included: the channel count was typed
+  // in, so a longer observed one is stale data, not extra information.
+  for (const t of presetTypes) inventory.set(t.typeRef, t);
   return {
     zones, drivers, links, baseline, originalRows, fieldnames,
     inventory: [...inventory.values()].sort((a, b) => a.typeRef.localeCompare(b.typeRef)),
@@ -493,6 +498,90 @@ export function distributeGroup(model, assignments, added, linkRefs, nodeKeys, m
   return { placements, unplaced };
 }
 
+// ---- driver type presets (patched or invented in the UI) ----
+// The type library is exported from DesignDB and is often thinner than the
+// hardware: a type that declares only "185W" can hold cables but can't be sized
+// against (see sizingCandidates). A preset is the missing declaration, supplied
+// by a human here and patched back into the ElementTypes sheet.
+const nodeList = (p) => Array.from(
+  { length: Math.max(1, Math.floor(p.channels || 1)) },
+  (_, i) => ({ name: `OP.${i + 1}`, maxLoadW: p.nodeMaxLoadW ?? null, maxFvV: p.nodeMaxFvV ?? null }),
+);
+
+// Restriction strings are composed, not stored: exportCsv writes them into the
+// form CSV for added drivers, so a preset has to look exactly like a library row.
+export function presetToType(p) {
+  const rating = p.powerType === 'CC' && p.currentA != null ? `${g(p.currentA)}A`
+    : p.powerType === 'CV' && p.outputVoltageV != null ? `${g(p.outputVoltageV)}V` : null;
+  return {
+    typeRef: p.typeRef,
+    powerType: p.powerType ?? null,
+    maxPowerW: p.maxPowerW ?? null,
+    currentA: p.powerType === 'CC' ? p.currentA ?? null : null,
+    outputVoltageV: p.powerType === 'CV' ? p.outputVoltageV ?? null : null,
+    undetermined: p.maxPowerW == null,
+    driverRestrictions: p.maxPowerW == null ? ''
+      : `${g(p.maxPowerW)}W${rating ? ` | ${rating}` : ''}`,
+    nodeRestrictions: [
+      p.nodeMaxLoadW != null ? `${g(p.nodeMaxLoadW)}W` : null,
+      p.nodeMaxFvV != null ? `${g(p.nodeMaxFvV)}fV` : null,
+    ].filter(Boolean).join(' | '),
+    nodes: nodeList(p),
+    preset: true,
+    invented: !!p.invented,
+  };
+}
+
+// A preset is an explicit human statement, so unlike the library it OVERWRITES
+// rather than fills blanks — including on drivers already in the hub. Patching
+// a type and then watching its five existing drivers keep warning would read as
+// the patch not having worked.
+function applyPresets(drivers, presetTypes) {
+  const byType = Object.fromEntries(presetTypes.map((t) => [t.typeRef, t]));
+  for (const d of drivers) {
+    const t = byType[d.typeRef];
+    if (!t) continue;
+    d.powerType = t.powerType;
+    d.maxPowerW = t.maxPowerW;
+    d.currentA = t.currentA;
+    d.outputVoltageV = t.outputVoltageV;
+    d.undetermined = t.undetermined;
+    d.driverRestrictions = t.driverRestrictions || d.driverRestrictions;
+    for (const node of d.nodes) {
+      const tn = t.nodes.find((x) => x.name === node.name) ?? t.nodes[0];
+      if (!tn) continue;
+      node.maxLoadW = tn.maxLoadW;
+      node.maxFvV = tn.maxFvV;
+    }
+  }
+}
+
+// The ref IS the spec in this library (ET-CCR-D-350-2CH-01 = CC, 350mA, 2CH), so
+// the next free one is composed from the ratings being entered rather than a
+// counter. A sibling's stem wins when there is one: naming is per-project and
+// the library's own convention beats anything hardcoded here.
+export function nextTypeRef(inventory, draft) {
+  const { powerType, currentA, outputVoltageV, channels } = draft || {};
+  const mA = currentA != null ? Math.round(currentA * 1000) : null;
+  const rating = powerType === 'CV' ? outputVoltageV : mA;
+  if (!powerType || rating == null || !channels) return '';
+  const inv = inventory || [];
+  const sibling = inv.find((t) => t.powerType === powerType
+    && t.nodes.length === Math.floor(channels)
+    && !isEmergency(t.typeRef)
+    && (powerType === 'CV'
+      ? t.outputVoltageV === outputVoltageV
+      : t.currentA != null && Math.round(t.currentA * 1000) === mA));
+  const stem = sibling ? sibling.typeRef.replace(/-\d+$/, '')
+    : `ET-${powerType === 'CV' ? 'CVR' : 'CCR'}-D-${g(rating)}-${Math.floor(channels)}CH`;
+  const taken = new Set(inv.map((t) => t.typeRef));
+  for (let n = 1; n <= 99; n += 1) {
+    const ref = `${stem}-${String(n).padStart(2, '0')}`;
+    if (!taken.has(ref)) return ref;
+  }
+  return `${stem}-XX`;
+}
+
 // ---- driver sizing (greenfield / bulk add) ----
 // Placeholder ref for a driver that doesn't exist in DesignDB yet. Deliberately
 // not a number: it is resolved by a human later, and a made-up ElementRef that
@@ -707,6 +796,82 @@ function main(DB:ExcelScript.Workbook) {
 `;
 const PATCH_FOOTER = '}';
 
+// ---- type presets -> ElementTypes patch ----
+// Column names are the DesignDB schema's own (schema_reference > ElementTypes),
+// found by header like every other column here, so a reordered sheet still works.
+//
+// CurrentRange and NodeCurrent are in **mA** on the sheet; this app holds current
+// in amps throughout (it parses "0.3A"). Convert on the way out, once, here.
+//
+// ponytail: channel count is NOT written. ElementTypes has per-node limit columns
+// but no node-count column I could confirm, and inventing one would corrupt a
+// real sheet — an invented type carries "2CH" in its note for a human to set.
+const TYPE_SHEET = 'ElementTypes';
+const TYPE_FIELDS = [
+  ['ET_Ref', 'Ref'],
+  ['ET_Name', 'Name'],
+  ['ET_MaxPower', 'MaxPower(W)'],
+  ['ET_OutputVoltage', 'OutputVoltage(V)'],
+  ['ET_CurrentRange', 'CurrentRange'],
+  ['ET_NodeMaxPower', 'NodeMaxPower(W)'],
+  ['ET_NodeMaxFv', 'NodeMaxForwardVoltage(fV)'],
+  ['ET_IsPropertiesTBC', 'IsPropertiesTBC'],
+  ['ET_InternalNotes', 'InternalNotesText'],
+];
+
+const typeHeader = () => `\t\t//${TYPE_SHEET}\n`
+  + `\t\tlet ${TYPE_SHEET}=DB.getWorksheet("${TYPE_SHEET}");\n`
+  + TYPE_FIELDS.map(([v, col]) =>
+    `\t\t\tlet ${v}=${TYPE_SHEET}.getCell(0,0).getEntireRow().find("${col}",{completeMatch:true}).getColumnIndex();\n`).join('')
+  + '\n';
+
+// One block does patch-or-append: find the Ref, and when it isn't there write a
+// new row at the end of the used range instead. Both cases mark the row
+// IsPropertiesTBC — a rating typed into this tool is provisional either way.
+function typeBlock(t) {
+  const ref = esc(t.typeRef);
+  const set = (v, val) => `\t\t${TYPE_SHEET}.getCell(r,${v}).setValue(${val})\n`;
+  const q = (x) => `"${esc(x)}"`;
+  let out = `\t\t//${ref}\n\t\t{\n`
+    + `\t\tlet f=${TYPE_SHEET}.getCell(0,ET_Ref).getEntireColumn().find("${ref}",{completeMatch:true});\n`
+    + `\t\tlet r=f?f.getRowIndex():${TYPE_SHEET}.getUsedRange().getRowCount();\n`
+    + `\t\tif(!f){${TYPE_SHEET}.getCell(r,ET_Ref).setValue("${ref}")}\n`;
+  if (t.invented) out += `\t\tif(!f){${TYPE_SHEET}.getCell(r,ET_Name).setValue("${ref}")}\n`;
+  if (t.maxPowerW != null) out += set('ET_MaxPower', g(t.maxPowerW));
+  if (t.powerType === 'CV' && t.outputVoltageV != null) out += set('ET_OutputVoltage', g(t.outputVoltageV));
+  if (t.powerType === 'CC' && t.currentA != null) out += set('ET_CurrentRange', g(Math.round(t.currentA * 1000)));
+  const node = t.nodes[0] ?? {};
+  if (node.maxLoadW != null) out += set('ET_NodeMaxPower', g(node.maxLoadW));
+  if (node.maxFvV != null) out += set('ET_NodeMaxFv', g(node.maxFvV));
+  out += set('ET_IsPropertiesTBC', '"Y"');
+  // Only a type that did not exist gets a note: patching an existing row's blanks
+  // is a correction, and overwriting someone's notes to say so would lose more
+  // than it explains.
+  if (t.invented) {
+    out += `\t\tif(!f){${TYPE_SHEET}.getCell(r,ET_InternalNotes).setValue(`
+      + q(`Defined in the Driver Assignment Tool - ${t.nodes.length}CH. `
+        + 'Ratings supplied by hand, not read from a datasheet. Set the channel count and confirm before commit.')
+      + ')}\n';
+  }
+  return `${out}\t\t}\n\n`;
+}
+
+// Presets worth patching: a correction to a type that really exists, or an
+// invented type something actually uses. A preset typed and then abandoned is
+// not a change to the workbook.
+function patchablePresets(sessions) {
+  const out = new Map();
+  for (const sn of sessions || []) {
+    const known = new Set((sn.model?.inventory ?? []).map((t) => t.typeRef));
+    const used = new Set((sn.addedDrivers ?? []).map((d) => d.typeRef));
+    for (const p of sn.presets ?? []) {
+      const t = presetToType(p);
+      if (t.invented ? used.has(t.typeRef) : known.has(t.typeRef)) out.set(t.typeRef, t);
+    }
+  }
+  return [...out.values()].sort((a, b) => a.typeRef.localeCompare(b.typeRef));
+}
+
 function patchBlock(ref, elementRef, node) {
   const r = esc(ref);
   return `		//${r}
@@ -725,9 +890,14 @@ export function generatePatchScriptMulti(sessions) {
     .flatMap((s) => changedRows(s.model, s.assignments, s.addedDrivers))
     .flatMap((row) => row.refs.map((ref) => patchBlock(ref, row.elementRef, row.node)))
     .join('');
-  return PATCH_HEADER + body + PATCH_FOOTER;
+  // The ElementTypes preamble is emitted only when something needs it: those
+  // column lookups throw on a workbook that hasn't got them, and a session with
+  // no presets must keep producing exactly the script it produced before.
+  const presets = patchablePresets(sessions);
+  const types = presets.length ? typeHeader() + presets.map(typeBlock).join('') : '';
+  return PATCH_HEADER + body + types + PATCH_FOOTER;
 }
 
-export function generatePatchScript(model, assignments, addedDrivers) {
-  return generatePatchScriptMulti([{ model, assignments, addedDrivers }]);
+export function generatePatchScript(model, assignments, addedDrivers, presets) {
+  return generatePatchScriptMulti([{ model, assignments, addedDrivers, presets }]);
 }
