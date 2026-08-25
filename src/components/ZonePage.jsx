@@ -243,7 +243,8 @@ export default function ZonePage({ state, dispatch, zone, onResetToCurrentSet })
         </div>
       </div>
 
-      {showAdd && <AddDriverModal state={state} zone={zone} dispatch={dispatch} onClose={() => setShowAdd(false)} />}
+      {showAdd && <AddDriverModal state={state} zone={zone} dispatch={dispatch}
+        canSuggest={!zoneDrivers.length} onClose={() => setShowAdd(false)} />}
       {showReview && <ReviewModal state={state} dispatch={dispatch} onClose={() => setShowReview(false)} />}
     </div>
   );

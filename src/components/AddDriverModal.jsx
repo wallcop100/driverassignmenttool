@@ -10,7 +10,11 @@ function rating(t) {
   return null;
 }
 
-export default function AddDriverModal({ state, zone, dispatch, onClose }) {
+// canSuggest: the hub has no drivers at all. Sizing a hub from scratch is a
+// different job from adding one driver to a hub someone already designed —
+// there the existing drivers carry decisions this tool cannot see, so it does
+// not get to propose a layout over the top of them.
+export default function AddDriverModal({ state, zone, dispatch, onClose, canSuggest }) {
   const { model, assignments, addedDrivers, prefs } = state;
   const [typeRef, setTypeRef] = useState(model.inventory[0]?.typeRef ?? '');
   const [plan, setPlan] = useState(null);
@@ -19,13 +23,14 @@ export default function AddDriverModal({ state, zone, dispatch, onClose }) {
   // Re-planned on every knob turn: the preview IS the plan that gets applied,
   // so there is no way for the two to disagree.
   useEffect(() => {
+    if (!canSuggest) return undefined;
     let stale = false;
     api.plan(zone, assignments, addedDrivers, {
       restrictControlGroup: prefs.restrictControlGroup,
       margin: prefs.margin,
     }).then((p) => !stale && setPlan(p)).catch(console.error);
     return () => { stale = true; };
-  }, [zone, assignments, addedDrivers, prefs.restrictControlGroup, prefs.margin]);
+  }, [canSuggest, zone, assignments, addedDrivers, prefs.restrictControlGroup, prefs.margin]);
 
   const applyPlan = () => {
     dispatch({ type: 'APPLY_PLAN', drivers: plan.drivers, placements: plan.placements });
@@ -43,6 +48,7 @@ export default function AddDriverModal({ state, zone, dispatch, onClose }) {
             <button className="btn-close" onClick={onClose} />
           </div>
           <div className="modal-body p-0">
+            {canSuggest && (
             <div className="suggest-panel px-3 pt-3">
               <div className="d-flex align-items-center gap-3 flex-wrap">
                 <strong className="small">Suggest from the unassigned cables</strong>
@@ -88,9 +94,11 @@ export default function AddDriverModal({ state, zone, dispatch, onClose }) {
                 Add {plan?.drivers.length ?? 0} driver{plan?.drivers.length === 1 ? '' : 's'} and place cables
               </button>
             </div>
+            )}
 
             <p className="text-secondary small px-3 pt-1 mb-2">
-              Or add one by hand. Every added driver exports as the placeholder ref E5000X, resolved in DesignDB later.
+              {canSuggest ? 'Or add one by hand. ' : ''}
+              Every added driver exports as the placeholder ref E5000X, resolved in DesignDB later.
             </p>
             <div className="type-list" role="listbox">
               {model.inventory.map((t) => {

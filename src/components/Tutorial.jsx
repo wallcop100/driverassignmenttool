@@ -10,6 +10,8 @@ const STEPS = [
     body: 'Expand a group and click a cable — valid driver nodes light up green and incompatible drivers dim. Drag or click a node to place. Ctrl/⌘-click for several at once.' },
   { title: 'Drivers', target: '[data-tour="grid"]', view: { page: 'zone', zone: 'HUB-A' },
     body: 'Each driver shows its total capacity and per-node bars. Red means over/mismatch; info warnings stay collapsed.' },
+  { title: 'A hub with no drivers', target: '[data-tour="grid"]', view: { page: 'zone', zone: 'HUB-B1' },
+    body: 'HUB-B1 has cables and nothing to plug them into. “Add drivers” sizes them from the load and forward voltage — keeping each ControlGroup on its own driver, with 5% headroom.' },
   { title: 'Review & export', target: '[data-tour="review"]', view: { page: 'zone', zone: 'HUB-A' },
     body: 'When you’re happy, Review shows the diff and exports an updated CSV. Undo/redo anytime. That’s it — have a play!' },
 ];
