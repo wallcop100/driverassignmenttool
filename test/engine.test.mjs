@@ -465,3 +465,36 @@ test('reordering a row back to its baseline set is not a change', () => {
   assert.ok(engine.sameRefs(['a', 'b'], ['b', 'a']));
   assert.ok(!engine.sameRefs(['a'], ['a', 'b']));
 });
+
+test('a type that declares nothing is not a sizing candidate', () => {
+  // "185W" alone: no CC/CV, no current, no node fV. It passes every
+  // compatibility test by default and its blank limits read as infinite, so it
+  // used to win every bucket — the biggest driver with no fV ceiling.
+  const lib = `${GF_TYPES}TBIG,185W,,1\n`;
+  const m = engine.buildModel(null, GF_HEAD + gfLinks(5) + '\n', lib);
+  const p = engine.planDrivers(m, {}, [], 'HUB-G');
+  assert.deepEqual(p.proposals.map((x) => x.typeRef), ['T100']);
+
+  // ...and on its own it is no candidate at all, rather than a silent bad pick
+  const only = engine.buildModel(null, GF_HEAD + gfLinks(5) + '\n', 'ElementTypeRef,Driver Restrictions\nTBIG,185W\n');
+  const p2 = engine.planDrivers(only, {}, [], 'HUB-G');
+  assert.deepEqual(p2.drivers, []);
+  assert.equal(p2.unmatched.length, 1);
+});
+
+test('an emergency type loses a tie to an ordinary one', () => {
+  const lib = 'ElementTypeRef,Driver Restrictions,Node Restrictions,Channels\n'
+    + 'T-EM-01,100W | 0.35A,100W | 55fV,2\nT-STD-01,100W | 0.35A,100W | 55fV,2\n';
+  const m = engine.buildModel(null, GF_HEAD + gfLinks(2) + '\n', lib);
+  assert.deepEqual(engine.planDrivers(m, {}, [], 'HUB-G').proposals.map((x) => x.typeRef), ['T-STD-01']);
+});
+
+test('forward voltage alone can drive the count on real-shaped ratings', () => {
+  // 5 × 11.8W/35fV cables: 59W fits one 50W... no — but fV is the tighter one,
+  // 55fV a node means one cable per node, so it takes three 2CH drivers.
+  const lib = 'ElementTypeRef,Driver Restrictions,Node Restrictions,Channels\nT-CC,50W | 0.3A,55fV,2\n';
+  const body = [...Array(5)].map((_, i) => `L${i + 1},HUB-G,11.8,0.3,35,CC,CG1`).join('\n');
+  const p = engine.planDrivers(engine.buildModel(null, GF_HEAD + body + '\n', lib), {}, [], 'HUB-G');
+  assert.equal(p.drivers.length, 3);
+  assert.deepEqual(p.unplaced, []);
+});

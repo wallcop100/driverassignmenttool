@@ -518,9 +518,34 @@ export function nextDriverRef(taken) {
 const fpKey = (l) => (l.powerType === 'CC' ? `CC·${g(l.currentA ?? 0)}A` : `CV·${g(l.voltageV ?? 0)}V`);
 const sum = (xs) => xs.reduce((a, b) => a + b, 0);
 
-// Choose the type that needs the fewest drivers for this bucket, then the one
-// that wastes the least capacity. Types that can't take the single biggest cable
-// are out — no amount of them would ever fit it.
+// Emergency drivers are stock for the emergency circuit, not spare capacity —
+// they lose every tie against an ordinary type that fits just as well.
+// ponytail: recognised by ref, the only signal the export carries.
+const isEmergency = (ref) => /(^|[-_ ])EM([-_ ]|\d|$)/i.test(String(ref));
+
+// Sizing is only as honest as the ratings, so a type has to DECLARE them to be a
+// candidate: CC/CV, its current or output voltage, and a max power. An
+// undeclared type passes every compatibility test by default and its blank node
+// limits read as infinite — that made the least-documented type in the library
+// win every bucket (most watts, no fV ceiling, so always the fewest drivers).
+// It is still fine to *hold* cables (validation only warns); it is not fine to
+// recommend buying one.
+function sizingCandidates(inventory, links) {
+  return inventory.filter((t) => {
+    if (!t.powerType || t.maxPowerW == null || !t.nodes.length) return false;
+    if (t.powerType === 'CC' && t.currentA == null) return false;
+    if (t.powerType === 'CV' && t.outputVoltageV == null) return false;
+    return links.every((l) => l.powerType === t.powerType && fingerprintCompatible(l, t));
+  });
+}
+
+// Choose the type that needs the fewest drivers for this bucket, then an
+// ordinary type over an emergency one, then the one that wastes the least
+// capacity. Types that can't take the single biggest cable are out — no amount
+// of them would ever fit it.
+// fewest drivers → ordinary before emergency → least wasted capacity
+const betterFit = (a, b) => a.count - b.count || a.em - b.em || a.waste - b.waste;
+
 function pickType(inventory, links, margin) {
   const keep = (1 - margin);
   const totalW = sum(links.map((l) => l.loadW ?? 0));
@@ -528,9 +553,7 @@ function pickType(inventory, links, margin) {
   const maxW = Math.max(...links.map((l) => l.loadW ?? 0));
   const maxFv = Math.max(...links.map((l) => l.fvV ?? 0));
   let best = null;
-  for (const t of inventory) {
-    if (t.undetermined || t.maxPowerW == null || !t.nodes.length) continue;
-    if (!links.every((l) => fingerprintCompatible(l, t))) continue;
+  for (const t of sizingCandidates(inventory, links)) {
     const nodeW = Math.min(...t.nodes.map((n) => n.maxLoadW ?? Infinity), t.maxPowerW) * keep;
     const nodeFv = Math.min(...t.nodes.map((n) => n.maxFvV ?? Infinity)) * keep;
     if (maxW > nodeW || maxFv > nodeFv) continue;
@@ -538,8 +561,8 @@ function pickType(inventory, links, margin) {
     const perDriverFv = nodeFv * t.nodes.length;
     const count = Math.max(1, Math.ceil(totalW / perDriverW),
       Number.isFinite(perDriverFv) ? Math.ceil(totalFv / perDriverFv) : 1);
-    const waste = count * perDriverW - totalW;
-    if (!best || count < best.count || (count === best.count && waste < best.waste)) best = { t, count, waste };
+    const cand = { t, count, waste: count * perDriverW - totalW, em: isEmergency(t.typeRef) ? 1 : 0 };
+    if (!best || betterFit(cand, best) < 0) best = cand;
   }
   return best;
 }
