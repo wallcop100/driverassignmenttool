@@ -534,6 +534,11 @@ export function presetToType(p) {
       p.nodeMaxFvV != null ? `${g(p.nodeMaxFvV)}fV` : null,
     ].filter(Boolean).join(' | '),
     nodes: nodeList(p),
+    // Straight from the datasheet when the preset came from the stock catalogue;
+    // undefined on a hand-typed one, and then simply not written.
+    nodeCurrentA: p.nodeCurrentA ?? null,
+    ballast: p.ballast ?? null,
+    controlType: p.controlType ?? null,
     preset: true,
     invented: !!p.invented,
   };
@@ -563,12 +568,34 @@ function applyPresets(drivers, presetTypes) {
   }
 }
 
+// The drivers page 135910 tabulates as known-good, ready to be added to a hub
+// whose type library has never heard of them. Values are that page's own "Copy a
+// driver's values" table, unchanged - amps in CurrentRange, node list in
+// Parameters. `stem` is carried because the naming is not fully derivable: the
+// unswitched supply is ET-CVR-**S**-…, not -D-.
+//
+// The two CC drivers are one current each, as the page says to do (one
+// ElementType per current you actually use) - the editor opens on that value and
+// the ref follows whatever it is changed to.
+export const STOCK_TYPES = [
+  { name: 'SoloDrive 360/A', powerType: 'CC', maxPowerW: 30, currentA: 0.3,
+    channels: 1, nodeMaxFvV: 55, ballast: 1, controlType: 'DALI' },
+  { name: 'DualDrive 560/A', powerType: 'CC', maxPowerW: 50, currentA: 0.35,
+    channels: 2, nodeMaxFvV: 55, ballast: 2, controlType: 'DALI' },
+  { name: 'LinearDrive 220D + HLG-185-24', powerType: 'CV', maxPowerW: 185, outputVoltageV: 24,
+    channels: 2, ballast: 2, controlType: 'DALI' },
+  { name: 'LinearDrive 720D + HLG-600-24', powerType: 'CV', maxPowerW: 600, outputVoltageV: 24,
+    channels: 4, nodeMaxLoadW: 144, nodeCurrentA: 6, ballast: 4, controlType: 'DALI' },
+  { name: 'PowerLED PCV24100', powerType: 'CV', maxPowerW: 100, outputVoltageV: 24,
+    channels: 1, controlType: 'Local', stem: 'ET-CVR-S-24-1CH' },
+];
+
 // The ref IS the spec in this library (ET-CCR-D-350-2CH-01 = CC, 350mA, 2CH), so
 // the next free one is composed from the ratings being entered rather than a
 // counter. A sibling's stem wins when there is one: naming is per-project and
 // the library's own convention beats anything hardcoded here.
 export function nextTypeRef(inventory, draft) {
-  const { powerType, currentA, outputVoltageV, channels } = draft || {};
+  const { powerType, currentA, outputVoltageV, channels, stem: given } = draft || {};
   const mA = currentA != null ? Math.round(currentA * 1000) : null;
   const rating = powerType === 'CV' ? outputVoltageV : mA;
   if (!powerType || rating == null || !channels) return '';
@@ -579,8 +606,8 @@ export function nextTypeRef(inventory, draft) {
     && (powerType === 'CV'
       ? t.outputVoltageV === outputVoltageV
       : t.currentA != null && Math.round(t.currentA * 1000) === mA));
-  const stem = sibling ? sibling.typeRef.replace(/-\d+$/, '')
-    : `ET-${powerType === 'CV' ? 'CVR' : 'CCR'}-D-${g(rating)}-${Math.floor(channels)}CH`;
+  const stem = given || (sibling ? sibling.typeRef.replace(/-\d+$/, '')
+    : `ET-${powerType === 'CV' ? 'CVR' : 'CCR'}-D-${g(rating)}-${Math.floor(channels)}CH`);
   const taken = new Set(inv.map((t) => t.typeRef));
   for (let n = 1; n <= 99; n += 1) {
     const ref = `${stem}-${String(n).padStart(2, '0')}`;
@@ -824,6 +851,9 @@ const TYPE_FIELDS = [
   ['ET_OutputVoltage', 'OutputVoltage(V)'],
   ['ET_CurrentRange', 'CurrentRange'],
   ['ET_NodeMaxPower', 'NodeMaxPower(W)'],
+  ['ET_NodeCurrent', 'NodeCurrent'],
+  ['ET_Ballast', 'BallastCountPerUoM'],
+  ['ET_ControlType', 'ControlType'],
   ['ET_NodeMaxFv', 'NodeMaxForwardVoltage(fV)'],
   ['ET_IsPropertiesTBC', 'IsPropertiesTBC'],
   ['ET_InternalNotes', 'InternalNotesText'],
@@ -853,6 +883,9 @@ function typeBlock(t) {
   out += set('ET_Parameters', q(`{${t.nodes.map((n) => `<${n.name}`).join(',')}}`));
   const node = t.nodes[0] ?? {};
   if (node.maxLoadW != null) out += set('ET_NodeMaxPower', g(node.maxLoadW));
+  if (t.nodeCurrentA != null) out += set('ET_NodeCurrent', g(t.nodeCurrentA));
+  if (t.ballast != null) out += set('ET_Ballast', g(t.ballast));
+  if (t.controlType) out += set('ET_ControlType', q(t.controlType));
   if (node.maxFvV != null) out += set('ET_NodeMaxFv', g(node.maxFvV));
   out += set('ET_IsPropertiesTBC', '"Y"');
   // Only a type that did not exist gets a note: patching an existing row's blanks

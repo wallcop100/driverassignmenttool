@@ -600,3 +600,40 @@ test('a preset keeps the type\'s own node names — Parameters must not rename o
   const script = engine.generatePatchScript(m, {}, [], [preset({ typeRef: 'T-ODD', nodeNames: ['A', 'B'] })]);
   assert.match(script, /ET_Parameters\)\.setValue\("\{<A,<B\}"\)/);
 });
+
+test('stock catalogue: the page-135910 drivers are addable and patch their datasheet columns', () => {
+  const solo = engine.STOCK_TYPES.find((t) => t.name === 'SoloDrive 360/A');
+  const local = engine.STOCK_TYPES.find((t) => t.name === 'PowerLED PCV24100');
+  assert.equal(engine.STOCK_TYPES.length, 5);
+  assert.equal(solo.currentA, 0.3);          // amps, as the page tabulates them
+  assert.equal(local.stem, 'ET-CVR-S-24-1CH'); // unswitched is -S-, not derivable
+
+  // an empty library still gets a usable type out of the catalogue
+  const links = GF_HEAD + [...Array(4)].map((_, i) => `L${i + 1},HUB-G,6,0.3,25,CC,CG1`).join('\n') + '\n';
+  const p = { ...solo, typeRef: 'ET-CCR-D-300-1CH-01', invented: true };
+  const m = engine.buildModel(null, links, null, [p]);
+  assert.equal(m.inventory.length, 1);
+  const plan = engine.planDrivers(m, {}, [], 'HUB-G');
+  assert.equal(plan.drivers.length, 2);      // 55fV a node, 25fV a cable -> 2 per driver
+  assert.deepEqual(plan.unplaced, []);
+
+  const script = engine.generatePatchScript(m, {}, [{ ref: 'E5000X', typeRef: p.typeRef, zone: 'HUB-G' }], [p]);
+  assert.match(script, /ET_CurrentRange\)\.setValue\(0\.3\)/);
+  assert.match(script, /ET_Ballast\)\.setValue\(1\)/);
+  assert.match(script, /ET_ControlType\)\.setValue\("DALI"\)/);
+  assert.match(script, /ET_Parameters\)\.setValue\("\{<OP\.1\}"\)/);
+  // the 720D is the one with per-node limits on top of the shared budget
+  const four = engine.STOCK_TYPES.find((t) => t.channels === 4);
+  const s4 = engine.generatePatchScript(m, {}, [{ ref: 'E5000X', typeRef: 'T4', zone: 'HUB-G' }],
+    [{ ...four, typeRef: 'T4', invented: true }]);
+  assert.match(s4, /ET_NodeMaxPower\)\.setValue\(144\)/);
+  assert.match(s4, /ET_NodeCurrent\)\.setValue\(6\)/);
+  assert.match(s4, /ET_Parameters\)\.setValue\("\{<OP\.1,<OP\.2,<OP\.3,<OP\.4\}"\)/);
+});
+
+test('nextTypeRef honours a stock stem', () => {
+  assert.equal(
+    engine.nextTypeRef([], { powerType: 'CV', outputVoltageV: 24, channels: 1, stem: 'ET-CVR-S-24-1CH' }),
+    'ET-CVR-S-24-1CH-01',
+  );
+});

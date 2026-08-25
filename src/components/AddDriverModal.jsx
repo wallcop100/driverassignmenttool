@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import * as api from '../api.js';
-import { nextTypeRef } from '../engine.js';
+import { nextTypeRef, STOCK_TYPES } from '../engine.js';
 import { assignedRefs, isProvision } from '../state.js';
 
 // Ratings come from the driver type library when the host sends one; without it
@@ -29,6 +29,24 @@ const draftFrom = (t) => ({
 
 const numOrNull = (v) => (v === '' || v == null ? null : Number(v));
 
+// The page-135910 drivers, as an editor draft. Blank cells stay blank — on that
+// page a blank means "no check", and inventing a limit here would invent a rule.
+const draftFromStock = (t) => ({
+  typeRef: '', invented: true, stock: t.name,
+  powerType: t.powerType,
+  maxPowerW: t.maxPowerW ?? '',
+  currentA: t.currentA ?? '',
+  outputVoltageV: t.outputVoltageV ?? '',
+  channels: t.channels,
+  nodeNames: null,
+  nodeMaxLoadW: t.nodeMaxLoadW ?? '',
+  nodeMaxFvV: t.nodeMaxFvV ?? '',
+  nodeCurrentA: t.nodeCurrentA ?? null,
+  ballast: t.ballast ?? null,
+  controlType: t.controlType ?? null,
+  stem: t.stem ?? null,
+});
+
 // Saved shape — numbers, not form strings.
 const toPreset = (d) => ({
   typeRef: d.typeRef.trim(),
@@ -38,6 +56,9 @@ const toPreset = (d) => ({
   outputVoltageV: d.powerType === 'CV' ? numOrNull(d.outputVoltageV) : null,
   channels: Math.max(1, Number(d.channels) || 1),
   nodeNames: d.nodeNames ?? null,
+  nodeCurrentA: d.nodeCurrentA ?? null,
+  ballast: d.ballast ?? null,
+  controlType: d.controlType ?? null,
   nodeMaxLoadW: numOrNull(d.nodeMaxLoadW),
   nodeMaxFvV: numOrNull(d.nodeMaxFvV),
   invented: !!d.invented,
@@ -61,6 +82,7 @@ function PresetEditor({ draft, setDraft, inventory, onSave, onCancel, onDelete }
       currentA: numOrNull(draft.currentA),
       outputVoltageV: numOrNull(draft.outputVoltageV),
       channels: Math.max(1, Number(draft.channels) || 1),
+      stem: draft.stem,
     });
     if (next && next !== draft.typeRef) set({ typeRef: next });
   }, [draft.powerType, draft.currentA, draft.outputVoltageV, draft.channels, ownRef]);
@@ -79,6 +101,19 @@ function PresetEditor({ draft, setDraft, inventory, onSave, onCancel, onDelete }
         <strong className="small">{draft.invented ? 'New driver type' : `Ratings for ${draft.typeRef}`}</strong>
         <span className="badge text-bg-warning ms-auto">provisional</span>
       </div>
+
+      {draft.invented && (
+        <div className="stock-row mb-2">
+          <span className="text-secondary">Start from</span>
+          {STOCK_TYPES.map((t) => (
+            <button key={t.name} type="button"
+              className={`stock-chip ${draft.stock === t.name ? 'is-on' : ''}`}
+              onClick={() => setDraft({ ...draftFromStock(t), typeRef: '' })}>
+              {t.name}
+            </button>
+          ))}
+        </div>
+      )}
 
       {draft.invented && (
         <label className="preset-field mb-2 w-100">
@@ -110,6 +145,7 @@ function PresetEditor({ draft, setDraft, inventory, onSave, onCancel, onDelete }
         Patched into the workbook’s <code>ElementTypes</code> row and marked
         <code> IsPropertiesTBC</code>. Current is written in amps, and the channels
         become <code>Parameters</code> — <code>{'{<OP.1,<OP.2}'}</code>.
+        {draft.stock && ' Values are the documented ones for this driver; a blank cell means no check.'}
       </p>
 
       <div className="d-flex gap-2">
