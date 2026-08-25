@@ -559,7 +559,7 @@ test('nextTypeRef composes from the ratings, and reuses a sibling stem', () => {
   assert.equal(engine.nextTypeRef(inv, { powerType: 'CC', channels: 2 }), '');
 });
 
-test('the patch writes ElementTypes columns, current in mA, IsPropertiesTBC on both', () => {
+test('the patch writes ElementTypes columns, current in AMPS, IsPropertiesTBC on both', () => {
   const m = gfModel(gfLinks(2));
   const added = [{ ref: 'E5000X', typeRef: 'T-NEW', zone: 'HUB-G' }];
   const script = engine.generatePatchScript(m, {}, added, [
@@ -568,14 +568,19 @@ test('the patch writes ElementTypes columns, current in mA, IsPropertiesTBC on b
   ]);
   assert.match(script, /let ElementTypes=DB\.getWorksheet\("ElementTypes"\)/);
   assert.match(script, /find\("MaxPower\(W\)",\{completeMatch:true\}\)/);
-  assert.match(script, /ET_CurrentRange\)\.setValue\(350\)/);       // 0.35A -> 350mA
-  assert.match(script, /ET_CurrentRange\)\.setValue\(700\)/);
+  // amps, not mA: page 135910 is explicit, and NodeCurrent 6 on a 144W/24V output
+  // could only ever be 6A. mA survives in the type ref alone.
+  assert.match(script, /ET_CurrentRange\)\.setValue\(0\.35\)/);
+  assert.match(script, /ET_CurrentRange\)\.setValue\(0\.7\)/);
+  assert.ok(!script.includes('setValue(350)'));
+  // the node list IS the channel count
+  assert.equal(script.split('ET_Parameters).setValue("{<OP.1,<OP.2}")').length - 1, 2);
   assert.equal(script.split('ET_IsPropertiesTBC).setValue("Y")').length - 1, 2);
   // append path for a type that isn't there, patch path for one that is
   assert.match(script, /let r=f\?f\.getRowIndex\(\):ElementTypes\.getUsedRange\(\)\.getRowCount\(\)/);
   // the note is stamped on the new type only (the header declaration doesn't count)
   assert.equal(script.split('getCell(r,ET_InternalNotes)').length - 1, 1);
-  assert.match(script, /Defined in the Driver Assignment Tool - 2CH/);
+  assert.match(script, /Defined in the Driver Assignment Tool\./);
 });
 
 test('presets nobody uses are not patched, and no presets means the old script exactly', () => {
@@ -584,4 +589,14 @@ test('presets nobody uses are not patched, and no presets means the old script e
   assert.ok(!engine.generatePatchScript(m, {}, [], orphanPreset).includes('T-UNUSED'));
   assert.ok(!engine.generatePatchScript(m, {}, [], orphanPreset).includes('ElementTypes'));
   assert.equal(engine.generatePatchScript(m, {}, [], []), engine.generatePatchScript(m, {}, []));
+});
+
+test('a preset keeps the type\'s own node names — Parameters must not rename outputs', () => {
+  const lib = 'ElementTypeRef,Node,Driver Restrictions,Node Restrictions\n'
+    + 'T-ODD,A,50W | 0.35A,55fV\nT-ODD,B,50W | 0.35A,55fV\n';
+  const m = engine.buildModel(null, GF_HEAD + gfLinks(2) + '\n', lib,
+    [preset({ typeRef: 'T-ODD', nodeNames: ['A', 'B'] })]);
+  assert.deepEqual(m.inventory.find((t) => t.typeRef === 'T-ODD').nodes.map((n) => n.name), ['A', 'B']);
+  const script = engine.generatePatchScript(m, {}, [], [preset({ typeRef: 'T-ODD', nodeNames: ['A', 'B'] })]);
+  assert.match(script, /ET_Parameters\)\.setValue\("\{<A,<B\}"\)/);
 });

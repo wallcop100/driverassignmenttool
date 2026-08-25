@@ -503,9 +503,16 @@ export function distributeGroup(model, assignments, added, linkRefs, nodeKeys, m
 // hardware: a type that declares only "185W" can hold cables but can't be sized
 // against (see sizingCandidates). A preset is the missing declaration, supplied
 // by a human here and patched back into the ElementTypes sheet.
+// OP.n is the house convention, but a type that already names its outputs keeps
+// those names: the preset is a statement about ratings, not about node identity,
+// and renaming a node would strand every Element pointing at the old one.
 const nodeList = (p) => Array.from(
   { length: Math.max(1, Math.floor(p.channels || 1)) },
-  (_, i) => ({ name: `OP.${i + 1}`, maxLoadW: p.nodeMaxLoadW ?? null, maxFvV: p.nodeMaxFvV ?? null }),
+  (_, i) => ({
+    name: p.nodeNames?.[i] ?? `OP.${i + 1}`,
+    maxLoadW: p.nodeMaxLoadW ?? null,
+    maxFvV: p.nodeMaxFvV ?? null,
+  }),
 );
 
 // Restriction strings are composed, not stored: exportCsv writes them into the
@@ -800,16 +807,19 @@ const PATCH_FOOTER = '}';
 // Column names are the DesignDB schema's own (schema_reference > ElementTypes),
 // found by header like every other column here, so a reordered sheet still works.
 //
-// CurrentRange and NodeCurrent are in **mA** on the sheet; this app holds current
-// in amps throughout (it parses "0.3A"). Convert on the way out, once, here.
+// CurrentRange is in AMPS here, the same unit this app holds — a 350mA driver is
+// 0.35. schema_reference says milliamps and is wrong: page 135910 states amps
+// outright, and its worked example settles it physically (NodeCurrent 6 on an
+// output capped at 144W/24V is 6A, not 6mA). No conversion. The mA form appears
+// only in the type REF (ET-CCR-D-350-2CH-01), never in a cell.
 //
-// ponytail: channel count is NOT written. ElementTypes has per-node limit columns
-// but no node-count column I could confirm, and inventing one would corrupt a
-// real sheet — an invented type carries "2CH" in its note for a human to set.
+// The node list lives in Parameters as {<OP.1,<OP.2} — one <-prefixed node per
+// LED output. That is the channel count, written like any other column.
 const TYPE_SHEET = 'ElementTypes';
 const TYPE_FIELDS = [
   ['ET_Ref', 'Ref'],
   ['ET_Name', 'Name'],
+  ['ET_Parameters', 'Parameters'],
   ['ET_MaxPower', 'MaxPower(W)'],
   ['ET_OutputVoltage', 'OutputVoltage(V)'],
   ['ET_CurrentRange', 'CurrentRange'],
@@ -839,7 +849,8 @@ function typeBlock(t) {
   if (t.invented) out += `\t\tif(!f){${TYPE_SHEET}.getCell(r,ET_Name).setValue("${ref}")}\n`;
   if (t.maxPowerW != null) out += set('ET_MaxPower', g(t.maxPowerW));
   if (t.powerType === 'CV' && t.outputVoltageV != null) out += set('ET_OutputVoltage', g(t.outputVoltageV));
-  if (t.powerType === 'CC' && t.currentA != null) out += set('ET_CurrentRange', g(Math.round(t.currentA * 1000)));
+  if (t.powerType === 'CC' && t.currentA != null) out += set('ET_CurrentRange', g(t.currentA));
+  out += set('ET_Parameters', q(`{${t.nodes.map((n) => `<${n.name}`).join(',')}}`));
   const node = t.nodes[0] ?? {};
   if (node.maxLoadW != null) out += set('ET_NodeMaxPower', g(node.maxLoadW));
   if (node.maxFvV != null) out += set('ET_NodeMaxFv', g(node.maxFvV));
@@ -849,8 +860,8 @@ function typeBlock(t) {
   // than it explains.
   if (t.invented) {
     out += `\t\tif(!f){${TYPE_SHEET}.getCell(r,ET_InternalNotes).setValue(`
-      + q(`Defined in the Driver Assignment Tool - ${t.nodes.length}CH. `
-        + 'Ratings supplied by hand, not read from a datasheet. Set the channel count and confirm before commit.')
+      + q('Defined in the Driver Assignment Tool. Ratings supplied by hand, '
+        + 'not read from a datasheet - confirm against it before commit.')
       + ')}\n';
   }
   return `${out}\t\t}\n\n`;

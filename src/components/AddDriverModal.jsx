@@ -21,6 +21,7 @@ const draftFrom = (t) => ({
   currentA: t.currentA ?? '',
   outputVoltageV: t.outputVoltageV ?? '',
   channels: t.nodes?.length ?? 1,
+  nodeNames: t.nodes?.map((n) => n.name) ?? null,
   nodeMaxLoadW: t.nodes?.[0]?.maxLoadW ?? '',
   nodeMaxFvV: t.nodes?.[0]?.maxFvV ?? '',
   invented: false,
@@ -36,6 +37,7 @@ const toPreset = (d) => ({
   currentA: d.powerType === 'CC' ? numOrNull(d.currentA) : null,
   outputVoltageV: d.powerType === 'CV' ? numOrNull(d.outputVoltageV) : null,
   channels: Math.max(1, Number(d.channels) || 1),
+  nodeNames: d.nodeNames ?? null,
   nodeMaxLoadW: numOrNull(d.nodeMaxLoadW),
   nodeMaxFvV: numOrNull(d.nodeMaxFvV),
   invented: !!d.invented,
@@ -106,8 +108,8 @@ function PresetEditor({ draft, setDraft, inventory, onSave, onCancel, onDelete }
 
       <p className="text-secondary mt-2 mb-2" style={{ fontSize: '12px' }}>
         Patched into the workbook’s <code>ElementTypes</code> row and marked
-        <code> IsPropertiesTBC</code>. Current is written in mA. Channel count has no
-        column I could confirm — it goes in the row’s notes for a human to set.
+        <code> IsPropertiesTBC</code>. Current is written in amps, and the channels
+        become <code>Parameters</code> — <code>{'{<OP.1,<OP.2}'}</code>.
       </p>
 
       <div className="d-flex gap-2">
