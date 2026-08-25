@@ -11,7 +11,13 @@ const CURRENT_TOLERANCE = 0.10;
 // driver then matches nothing in the inventory and its cables report "nowhere
 // to go". Exporters vary here; a whitespace difference must not look like
 // missing data.
-const DRIVER_RE = /(?<Watts>\d+(\.\d+)?)\s*W(\s*\|\s*(?<Value>\d+(\.\d+)?)\s*(?<Unit>[AV]))?/i;
+// mA is accepted and normalised to amps. The cells hold amps (schema page 137573)
+// and so does this app, but the ref, the datasheets and half the humans say
+// milliamps, so "50W | 350mA" turns up. It used to fail the unit group and read
+// as "driver type undeclared" — which now means the type is refused for sizing
+// and quietly disappears from the catalogue. Same class of bug as the spacing
+// one above: a notation difference must not look like missing data.
+const DRIVER_RE = /(?<Watts>\d+(\.\d+)?)\s*W(\s*\|\s*(?<Value>\d+(\.\d+)?)\s*(?<Unit>m?[AV]))?/i;
 const NODE_FV_RE = /(?<FV>\d+(\.\d+)?)\s*fV/i;
 const NODE_W_RE = /(?<W>\d+(\.\d+)?)\s*W/i;
 
@@ -69,7 +75,9 @@ export function parseDriverRestrictions(raw) {
   const { Value } = m.groups;
   const Unit = m.groups.Unit?.toUpperCase(); // case-insensitive match above
   if (Unit === 'A') return { powerType: 'CC', maxPowerW: watts, currentA: Number(Value), outputVoltageV: null };
+  if (Unit === 'MA') return { powerType: 'CC', maxPowerW: watts, currentA: Number(Value) / 1000, outputVoltageV: null };
   if (Unit === 'V') return { powerType: 'CV', maxPowerW: watts, currentA: null, outputVoltageV: Number(Value) };
+  if (Unit === 'MV') return { powerType: 'CV', maxPowerW: watts, currentA: null, outputVoltageV: Number(Value) / 1000 };
   return { powerType: null, maxPowerW: watts, currentA: null, outputVoltageV: null };
 }
 

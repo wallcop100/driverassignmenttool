@@ -373,6 +373,7 @@ body { background: #f6f8fb; }
 }
 .stock-chip:hover { border-color: #c9a227; }
 .stock-chip.is-on { background: #f6e7b8; border-color: #c9a227; font-weight: 600; }
+.preset-hint { grid-column: 1 / -1; font-size: 11.5px; color: #a86b00; }
 .preset-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 .preset-field { display: flex; flex-direction: column; gap: 2px; font-size: 12px; color: #64748b; }
 .type-row.is-selected { background: #e8f1ff; box-shadow: inset 3px 0 0 #2563eb; }

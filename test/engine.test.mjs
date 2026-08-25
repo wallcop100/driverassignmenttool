@@ -637,3 +637,19 @@ test('nextTypeRef honours a stock stem', () => {
     'ET-CVR-S-24-1CH-01',
   );
 });
+
+test('mA notation parses as amps — a unit variation is not missing data', () => {
+  for (const raw of ['50W | 350mA', '50W|350 mA', '50W | 350MA']) {
+    assert.deepEqual(engine.parseDriverRestrictions(raw),
+      { powerType: 'CC', maxPowerW: 50, currentA: 0.35, outputVoltageV: null }, raw);
+  }
+  // amps still mean amps, and the CV forms are untouched
+  assert.equal(engine.parseDriverRestrictions('50W | 0.35A').currentA, 0.35);
+  assert.equal(engine.parseDriverRestrictions('180W | 24V').outputVoltageV, 24);
+
+  // and such a type is now a sizing candidate rather than silently refused
+  const lib = 'ElementTypeRef,Driver Restrictions,Node Restrictions,Channels\nT-MA,50W | 350mA,50W | 55fV,2\n';
+  const m = engine.buildModel(null, GF_HEAD + gfLinks(2) + '\n', lib);
+  assert.equal(m.inventory[0].currentA, 0.35);
+  assert.deepEqual(engine.planDrivers(m, {}, [], 'HUB-G').unmatched, []);
+});

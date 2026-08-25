@@ -136,6 +136,13 @@ function PresetEditor({ draft, setDraft, inventory, onSave, onCancel, onDelete }
         {draft.powerType === 'CC'
           ? field('Current (A)', 'currentA')
           : field('Output (V)', 'outputVoltageV')}
+        {/* No silent divide: a driver really rated 20A+ exists, so say what this
+            looks like and let the person decide. */}
+        {draft.powerType === 'CC' && numOrNull(draft.currentA) > 20 && (
+          <span className="preset-hint">
+            {draft.currentA}A — did you mean {numOrNull(draft.currentA) / 1000}A ({draft.currentA}mA)?
+          </span>
+        )}
         {field('Channels', 'channels', { min: '1', step: '1' })}
         {field('Node max (W)', 'nodeMaxLoadW')}
         {field('Node max fV', 'nodeMaxFvV')}
