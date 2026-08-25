@@ -385,6 +385,12 @@ test('links-only model: no drivers, library is the inventory, export still works
   assert.equal(engine.validate(m, a, added).filter((f) => f.level === 'FAIL').length, 0);
 });
 
+test('an empty form CSV is the same as none — the overlay sends a blank block', () => {
+  const m = engine.buildModel('', GF_HEAD + gfLinks(2) + '\n', GF_TYPES);
+  assert.deepEqual(m.drivers, []);
+  assert.deepEqual(m.inventory.map((t) => t.typeRef), ['T100']);
+});
+
 test('links-only without a type library is refused', () => {
   assert.throws(() => engine.buildModel(null, GF_HEAD + gfLinks(1) + '\n'), /nothing to build drivers from/);
 });

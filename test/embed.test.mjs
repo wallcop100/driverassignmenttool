@@ -36,6 +36,8 @@ for (const [name, msg, origin, allowed] of [
 // is a legitimate payload (the tool sizes the drivers from the type library).
 test('accepts an init with no form CSV — the greenfield hub', () => {
   assert.deepEqual(validateInit({ ...good, form: undefined }, HOST, HOST), { ok: true });
+  // what the overlay actually sends: an empty <script> block, not a missing key
+  assert.deepEqual(validateInit({ ...good, form: '' }, HOST, HOST), { ok: true });
 });
 
 test('a version mismatch is flagged for an explicit UI state, not silently ignored', () => {
