@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { cgColor, driverLoad, driverStatus, isPending, keyOf, severityOf } from '../state.js';
+import { cgColor, driverLoad, driverStatus, isPending, keyOf, outRef, severityOf } from '../state.js';
 import Block from './Block.jsx';
 import KebabMenu from './KebabMenu.jsx';
 import Tooltip from './Tooltip.jsx';
@@ -127,7 +127,7 @@ export default function DriverBin({ driver, state, dispatch, links, accent, flag
       fail && 'is-fail', !fail && mismatch && 'is-mismatch'].filter(Boolean).join(' ')}
       style={{ width, '--zone-accent': accent }}>
       <div className="bin-header">
-        <span className="fw-bold">{driver.ref}</span>
+        <span className="fw-bold">{outRef(driver.ref)}</span>
         {driver.added && <span className="badge text-bg-info">NEW</span>}
         <span className={`type-chip type-${driver.powerType ?? 'unknown'}`}>
           {driver.powerType ?? '?'}{driver.powerType === 'CC' && driver.currentA ? ` ${driver.currentA}A`

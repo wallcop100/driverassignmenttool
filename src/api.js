@@ -16,21 +16,21 @@ export function parseText(formText, linksText, typesText) {
   return model;
 }
 
-// Drop both files at once, autodetect which is which (#10).
+// Drop the files at once, autodetect which is which (#10). Links are the only
+// hard requirement: links + a driver type library is the greenfield case (no
+// drivers yet), links + form is a hub that already has some.
 export async function parseAuto(files) {
   const texts = await Promise.all([...files].map((f) => f.text()));
-  let formText = null;
-  let linksText = null;
+  const found = { form: null, links: null, types: null };
   for (const t of texts) {
     const kind = engine.detectKind(t);
-    if (kind === 'form') formText = t;
-    else if (kind === 'links') linksText = t;
+    if (kind) found[kind] = t;
   }
-  if (!formText || !linksText) {
-    const missing = !formText ? 'a Driver Assignment CSV' : 'a Links Assignment CSV';
-    throw new Error(`Couldn't detect ${missing}. Drop one of each (order doesn't matter).`);
+  if (!found.links) throw new Error("Couldn't detect a Links Assignment CSV. Drop that one at least.");
+  if (!found.form && !found.types) {
+    throw new Error('Links only: add the Driver Assignment CSV, or the driver type library to size new drivers from.');
   }
-  return parseText(formText, linksText);
+  return parseText(found.form, found.links, found.types);
 }
 
 export function loadDemo() {
@@ -48,6 +48,10 @@ export async function eligibility(zone, assignments, addedDrivers) {
 
 export async function distribute(assignments, addedDrivers, linkRefs, nodeKeys) {
   return engine.distributeGroup(model, assignments, addedDrivers, linkRefs, nodeKeys);
+}
+
+export async function plan(zone, assignments, addedDrivers, opts) {
+  return engine.planDrivers(model, assignments, addedDrivers, zone, opts);
 }
 
 export async function exportCsv(assignments, addedDrivers) {

@@ -220,15 +220,30 @@ export default function ZonePage({ state, dispatch, zone, onResetToCurrentSet })
             <DriverBin key={d.ref} driver={d} state={state} dispatch={dispatch}
               links={links} accent={accent} flagIndex={flagIndex} onNodeClick={onNodeClick} groups={cgGroups} />
           ))}
-          {!shownDrivers.length && (
+          {/* A hub that starts with cables and no drivers lands here first: the
+              empty grid is the main surface, so the way forward goes on it. */}
+          {!shownDrivers.length && (problemsOnly || trayFilter !== 'all' ? (
             <p className="text-secondary p-4">
-              {problemsOnly ? 'No drivers with problems in this zone.' : 'No drivers in this zone — add one.'}
+              {problemsOnly ? 'No drivers with problems in this zone.' : 'No drivers match this filter.'}
             </p>
-          )}
+          ) : (
+            <div className="empty-grid">
+              <span className="material-icons empty-grid-icon">power</span>
+              <div className="fw-semibold mb-1">No drivers in {zone} yet</div>
+              <p className="text-secondary small mb-3">
+                {allTray.length
+                  ? `${allTray.length} cable${allTray.length > 1 ? 's' : ''} waiting — size the drivers from their load and forward voltage.`
+                  : 'Add a driver to start assigning cables.'}
+              </p>
+              <button className="btn btn-lg btn-primary" onClick={() => setShowAdd(true)}>
+                <span className="material-icons align-middle">add</span> Add drivers
+              </button>
+            </div>
+          ))}
         </div>
       </div>
 
-      {showAdd && <AddDriverModal model={model} zone={zone} dispatch={dispatch} onClose={() => setShowAdd(false)} />}
+      {showAdd && <AddDriverModal state={state} zone={zone} dispatch={dispatch} onClose={() => setShowAdd(false)} />}
       {showReview && <ReviewModal state={state} dispatch={dispatch} onClose={() => setShowReview(false)} />}
     </div>
   );

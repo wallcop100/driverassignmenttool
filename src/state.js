@@ -1,3 +1,9 @@
+import { nextDriverRef, outRef, sameRefs } from './engine.js';
+
+// Added drivers all export as the same placeholder ref; outRef strips the
+// internal tag that keeps them apart. Re-exported so components have one import.
+export { outRef };
+
 export const keyOf = (driverRef, node) => `${driverRef}|${node}`;
 
 // available cable-label fields (block face) — order here is display order
@@ -11,7 +17,9 @@ export const LABEL_FIELDS = [
   { key: 'location', label: 'Location' },
   { key: 'positionType', label: 'Position type' },
 ];
-export const DEFAULT_PREFS = { label: ['loadW', 'fvV'] }; // current behaviour
+// label: current behaviour. The two sizing knobs live here so they survive a
+// reload like every other UI pref.
+export const DEFAULT_PREFS = { label: ['loadW', 'fvV'], restrictControlGroup: true, margin: 0.05 };
 
 export const initialState = {
   model: null,
@@ -127,9 +135,7 @@ export function reducer(state, action) {
         ...state.model.drivers.map((d) => d.ref),
         ...state.addedDrivers.map((d) => d.ref),
       ]);
-      let n = 90001;
-      while (taken.has(`E${n}`)) n += 1;
-      const ref = `E${n}`;
+      const ref = nextDriverRef(taken);
       const template = state.model.inventory.find((t) => t.typeRef === typeRef);
       const assignments = cloneAssignments(state.assignments);
       for (const node of template.nodes) {
@@ -138,6 +144,30 @@ export function reducer(state, action) {
       return withUndo(state, {
         assignments,
         addedDrivers: [...state.addedDrivers, { ref, typeRef, zone }],
+      });
+    }
+
+    case 'APPLY_PLAN': {
+      // A whole suggestion — drivers plus their cables — is ONE undo step: it was
+      // one decision, and undoing it a driver at a time would be unusable.
+      const { drivers, placements } = action;
+      if (!drivers.length) return state;
+      const byType = Object.fromEntries(state.model.inventory.map((t) => [t.typeRef, t]));
+      const moving = new Set(Object.values(placements).flat());
+      const assignments = cloneAssignments(state.assignments);
+      for (const entry of Object.values(assignments)) entry.refs = entry.refs.filter((r) => !moving.has(r));
+      for (const d of drivers) {
+        for (const node of byType[d.typeRef]?.nodes ?? []) {
+          assignments[keyOf(d.ref, node.name)] = { toEntityType: '', refs: [] };
+        }
+      }
+      for (const [key, refs] of Object.entries(placements)) {
+        assignments[key] = { toEntityType: refs.length ? 'Link' : '', refs: [...refs] };
+      }
+      return withUndo(state, {
+        assignments,
+        addedDrivers: [...state.addedDrivers, ...drivers],
+        ...CLEAR_MODES,
       });
     }
 
@@ -236,10 +266,10 @@ export function assignedRefs(assignments) {
   return set;
 }
 
+// Order-insensitive: pulling a cable off a node and dropping it back leaves the
+// row exactly as imported, so it must not read as pending.
 export function isPending(key, assignments, baseline) {
-  const now = assignments[key]?.refs ?? [];
-  const was = baseline[key]?.refs ?? [];
-  return now.length !== was.length || now.some((r, i) => r !== was[i]);
+  return !sameRefs(assignments[key]?.refs, baseline[key]?.refs);
 }
 
 // Every node that differs from the imported baseline, plus every node of a
@@ -254,7 +284,7 @@ export function diffRows(state) {
     const oldRefs = model.baseline[key]?.refs ?? [];
     const newRefs = assignments[key]?.refs ?? [];
     const isNew = added.has(key.split('|')[0]);
-    if (isNew || oldRefs.join() !== newRefs.join()) {
+    if (isNew || !sameRefs(oldRefs, newRefs)) {
       rows.push({ key, oldRefs, newRefs, isNew });
     }
   }

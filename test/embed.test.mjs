@@ -18,8 +18,7 @@ for (const [name, msg, origin, allowed] of [
   ['unknown version', { ...good, version: 99 }, HOST, HOST],
   ['missing version', { ...good, version: undefined }, HOST, HOST],
   ['wrong type', { ...good, type: 'other:thing' }, HOST, HOST],
-  ['missing form', { ...good, form: undefined }, HOST, HOST],
-  ['blank form', { ...good, form: '   ' }, HOST, HOST],
+  ['non-string form', { ...good, form: 42 }, HOST, HOST],
   ['missing links', { ...good, links: undefined }, HOST, HOST],
   ['non-string links', { ...good, links: 42 }, HOST, HOST],
   ['null message', null, HOST, HOST],
@@ -32,6 +31,12 @@ for (const [name, msg, origin, allowed] of [
     assert.equal(typeof r.reason, 'string');
   });
 }
+
+// A hub with no drivers yet has no Driver Assignment rows to send — links alone
+// is a legitimate payload (the tool sizes the drivers from the type library).
+test('accepts an init with no form CSV — the greenfield hub', () => {
+  assert.deepEqual(validateInit({ ...good, form: undefined }, HOST, HOST), { ok: true });
+});
 
 test('a version mismatch is flagged for an explicit UI state, not silently ignored', () => {
   const r = validateInit({ ...good, version: 99 }, HOST, HOST);

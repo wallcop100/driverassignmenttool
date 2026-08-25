@@ -2,7 +2,7 @@ import { useState } from 'react';
 import * as api from '../api.js';
 import { isEmbedded } from '../embed.js';
 import { listSessions } from '../persist.js';
-import { diffRows } from '../state.js';
+import { diffRows, outRef } from '../state.js';
 
 const embedded = isEmbedded();
 
@@ -76,7 +76,7 @@ export default function ReviewModal({ state, dispatch, onClose }) {
                   {rows.map((r) => (
                     <tr key={r.key} className={r.isNew ? 'table-info' : undefined}>
                       <td className="fw-semibold">
-                        {r.key.replace('|', ' · ')}
+                        {outRef(r.key).replace('|', ' · ')}
                         {r.isNew && <span className="badge text-bg-info ms-2">NEW</span>}
                       </td>
                       <td className="text-secondary">{r.oldRefs.join(', ') || '—'}</td>

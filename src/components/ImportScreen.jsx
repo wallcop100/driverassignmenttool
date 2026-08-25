@@ -42,6 +42,7 @@ export default function ImportScreen({ dispatch, saved, onResume, onDiscard }) {
           <p className="text-secondary mb-4">
             Drop your Links Assignment and Driver Assignment CSVs below — both at once, in any order.
             A previously exported Driver Assignment CSV can be re-loaded to resume.
+            No drivers yet? Drop the Links CSV with the driver type library and the tool will size them for you.
           </p>
 
           <ResumeBanner saved={saved} onResume={onResume} onDiscard={onDiscard} className="mb-3" />

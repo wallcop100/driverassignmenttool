@@ -17,7 +17,9 @@ export function isEmbedded() {
 export function validateInit(msg, origin, allowedOrigin) {
   const env = validateEnvelope(msg, origin, allowedOrigin, 'dat:init');
   if (!env.ok) return env;
-  if (typeof msg.form !== 'string' || !msg.form.trim()) return { ok: false, reason: 'missing form CSV' };
+  // form is optional: a hub with no drivers yet has no Driver Assignment rows to
+  // send. Links are the payload; a dat:init without them says nothing.
+  if (msg.form != null && typeof msg.form !== 'string') return { ok: false, reason: 'malformed form CSV' };
   if (typeof msg.links !== 'string' || !msg.links.trim()) return { ok: false, reason: 'missing links CSV' };
   return { ok: true };
 }

@@ -40,13 +40,25 @@ function readCsv(text, required, label) {
   return { rows: data, fields: meta.fields };
 }
 
-// Autodetect which CSV a dropped file is, by its header signature.
+// Autodetect which CSV a dropped file is, by its header signature. Order
+// matters: form rows also carry ElementTypeRef, so the type library is only
+// what has the type column WITHOUT the per-element one.
 export function detectKind(text) {
   const { meta } = Papa.parse(text, { header: true, preview: 1 });
   const f = meta.fields || [];
   if (f.includes('LinkRef')) return 'links';
   if (f.includes('ElementRef') && f.includes('Node')) return 'form';
+  if (f.includes('ElementTypeRef')) return 'types';
   return null;
+}
+
+// Same refs, any order. Cables come back to a node in whatever order they were
+// dropped, so an order-sensitive compare reports "changed" for a row that is
+// electrically identical to the import — and then exports and patches it.
+export function sameRefs(a, b) {
+  const x = a || [];
+  const y = b || [];
+  return x.length === y.length && [...x].sort().join() === [...y].sort().join();
 }
 
 // ---- parsing ----
@@ -204,8 +216,22 @@ function buildInventory(drivers) {
   return inv;
 }
 
+// Greenfield (links-only) export shape: exactly the columns exportCsv writes for
+// a driver added in the UI, which is all a hub with no drivers can produce.
+const DEFAULT_FIELDNAMES = [
+  'Pullzone', 'ParentElementRef', 'ElementRef', 'ElementTypeRef', 'Driver Restrictions',
+  'Node Restrictions', 'CurrentNodePowerInfo', 'Node', 'ToEntityType', 'ToEntityRefs', 'ControlGroup',
+];
+const EMPTY_FORM = { drivers: [], baseline: {}, originalRows: [], fieldnames: DEFAULT_FIELDNAMES };
+
+// formText is optional: a hub can start with cables and no drivers at all — that
+// is the case this tool exists to fix. Without it the type library is the only
+// possible source of inventory, so it becomes required instead.
 export function buildModel(formText, linksText, typesText) {
-  const { drivers, baseline, originalRows, fieldnames } = parseForm(formText);
+  if (!formText?.trim() && !typesText?.trim()) {
+    throw new Error('No Driver Assignment CSV and no driver type library — nothing to build drivers from.');
+  }
+  const { drivers, baseline, originalRows, fieldnames } = formText?.trim() ? parseForm(formText) : EMPTY_FORM;
   const links = parseLinks(linksText);
   const library = typesText ? parseTypes(typesText) : [];
   if (library.length) applyTypes(drivers, library);
@@ -407,7 +433,9 @@ export function eligibility(model, zone, assignments, added) {
 // each cable (largest first) goes to the least-loaded eligible node (water-filling),
 // respecting node watt/fV limits and the driver total, skipping incompatible nodes.
 // Returns placements per node + anything that didn't fit.
-export function distributeGroup(model, assignments, added, linkRefs, nodeKeys) {
+// `margin` (0–1) is headroom kept free on every cap — a driver run at its rated
+// maximum has nothing left for the next design revision, and real parts derate.
+export function distributeGroup(model, assignments, added, linkRefs, nodeKeys, margin = 0) {
   const ctx = makeCtx(model);
   const byRef = Object.fromEntries(effectiveDrivers(ctx, added).map((d) => [d.ref, d]));
   const a = assignments || {};
@@ -420,6 +448,7 @@ export function distributeGroup(model, assignments, added, linkRefs, nodeKeys) {
   const capFv = {};
   const drvUsedW = {};
   const drvCap = {};
+  const derate = (v) => (v == null ? Infinity : v * (1 - margin));
 
   for (const key of nodeKeys) {
     const [dref, nname] = key.split('|');
@@ -431,10 +460,10 @@ export function distributeGroup(model, assignments, added, linkRefs, nodeKeys) {
     usedW[key] = placed.reduce((s, l) => s + (l.loadW ?? 0), 0);
     usedFv[key] = placed.reduce((s, l) => s + (l.fvV ?? 0), 0);
     count[key] = placed.length;
-    capW[key] = node.maxLoadW ?? Infinity;
-    capFv[key] = node.maxFvV ?? Infinity;
+    capW[key] = derate(node.maxLoadW);
+    capFv[key] = derate(node.maxFvV);
     if (drvCap[dref] === undefined) {
-      drvCap[dref] = driver.maxPowerW ?? Infinity;
+      drvCap[dref] = derate(driver.maxPowerW);
       drvUsedW[dref] = driver.nodes.reduce((s, n) => s + loadOf(`${dref}|${n.name}`).reduce((t, l) => t + (l.loadW ?? 0), 0), 0);
     }
   }
@@ -464,6 +493,114 @@ export function distributeGroup(model, assignments, added, linkRefs, nodeKeys) {
   return { placements, unplaced };
 }
 
+// ---- driver sizing (greenfield / bulk add) ----
+// Placeholder ref for a driver that doesn't exist in DesignDB yet. Deliberately
+// not a number: it is resolved by a human later, and a made-up ElementRef that
+// looks real is worse than one that obviously isn't. EVERY added driver exports
+// as this same literal ref — they are all "to be allocated", and numbering them
+// would imply an order DesignDB never agreed to.
+export const PLACEHOLDER_REF = 'E5000X';
+
+// Internally they still need to be told apart — assignments, flags and the whole
+// UI are keyed by ref — so a second one carries a `~2` tag that never leaves the
+// app: outRef() strips it on the way out (export, patch, on-screen labels).
+// ponytail: string tag rather than a separate id field; a real id would mean
+// touching every ref-keyed map in the app for zero user-visible gain.
+export const outRef = (ref) => String(ref).split('~')[0];
+
+export function nextDriverRef(taken) {
+  if (!taken.has(PLACEHOLDER_REF)) return PLACEHOLDER_REF;
+  let n = 2;
+  while (taken.has(`${PLACEHOLDER_REF}~${n}`)) n += 1;
+  return `${PLACEHOLDER_REF}~${n}`;
+}
+
+const fpKey = (l) => (l.powerType === 'CC' ? `CC·${g(l.currentA ?? 0)}A` : `CV·${g(l.voltageV ?? 0)}V`);
+const sum = (xs) => xs.reduce((a, b) => a + b, 0);
+
+// Choose the type that needs the fewest drivers for this bucket, then the one
+// that wastes the least capacity. Types that can't take the single biggest cable
+// are out — no amount of them would ever fit it.
+function pickType(inventory, links, margin) {
+  const keep = (1 - margin);
+  const totalW = sum(links.map((l) => l.loadW ?? 0));
+  const totalFv = sum(links.map((l) => l.fvV ?? 0));
+  const maxW = Math.max(...links.map((l) => l.loadW ?? 0));
+  const maxFv = Math.max(...links.map((l) => l.fvV ?? 0));
+  let best = null;
+  for (const t of inventory) {
+    if (t.undetermined || t.maxPowerW == null || !t.nodes.length) continue;
+    if (!links.every((l) => fingerprintCompatible(l, t))) continue;
+    const nodeW = Math.min(...t.nodes.map((n) => n.maxLoadW ?? Infinity), t.maxPowerW) * keep;
+    const nodeFv = Math.min(...t.nodes.map((n) => n.maxFvV ?? Infinity)) * keep;
+    if (maxW > nodeW || maxFv > nodeFv) continue;
+    const perDriverW = t.maxPowerW * keep;
+    const perDriverFv = nodeFv * t.nodes.length;
+    const count = Math.max(1, Math.ceil(totalW / perDriverW),
+      Number.isFinite(perDriverFv) ? Math.ceil(totalFv / perDriverFv) : 1);
+    const waste = count * perDriverW - totalW;
+    if (!best || count < best.count || (count === best.count && waste < best.waste)) best = { t, count, waste };
+  }
+  return best;
+}
+
+// Suggest the drivers a zone needs for its unassigned cables, and where each
+// cable would go. Sizing is analytic (load + series forward voltage against the
+// derated ratings) with a retry: mixed cable sizes can defeat the estimate, so
+// if the packer leaves anything over, add a driver and pack again.
+export function planDrivers(model, assignments, added, zone, opts = {}) {
+  const { restrictControlGroup = true, margin = 0.05 } = opts;
+  const ctx = makeCtx(model);
+  const a = assignments || {};
+  const assigned = new Set(Object.values(a).flatMap((e) => e.refs || []));
+  const pool = model.links.filter((l) => l.zone === zone && !assigned.has(l.ref) && !!l.powerType);
+
+  const buckets = new Map();
+  for (const l of pool) {
+    // fingerprint always splits (a CC cable can't share a CV driver); the
+    // ControlGroup split is optional but on by default — check 7 FAILs a node
+    // serving two groups, so mixing them would only create work.
+    const key = restrictControlGroup ? `${l.controlGroup || '—'} · ${fpKey(l)}` : fpKey(l);
+    if (!buckets.has(key)) buckets.set(key, []);
+    buckets.get(key).push(l);
+  }
+
+  const taken = new Set([...model.drivers.map((d) => d.ref), ...(added || []).map((d) => d.ref)]);
+  const drivers = [];
+  const proposals = [];
+  const placements = {};
+  const unplaced = [];
+  const unmatched = [];
+
+  for (const [key, links] of [...buckets.entries()].sort()) {
+    const choice = pickType(ctx.model.inventory, links, margin);
+    if (!choice) { unmatched.push({ key, count: links.length }); continue; }
+    const refs = links.map((l) => l.ref);
+    let count = Math.min(choice.count, refs.length);
+    let mine = [];
+    let result = { placements: {}, unplaced: refs };
+    for (;;) {
+      mine = [];
+      const trial = new Set([...taken]);
+      for (let i = 0; i < count; i += 1) {
+        const ref = nextDriverRef(trial);
+        trial.add(ref);
+        mine.push({ ref, typeRef: choice.t.typeRef, zone });
+      }
+      const nodeKeys = mine.flatMap((d) => choice.t.nodes.map((n) => `${d.ref}|${n.name}`));
+      result = distributeGroup(model, a, [...(added || []), ...drivers, ...mine], refs, nodeKeys, margin);
+      if (!result.unplaced.length || count >= refs.length) break;
+      count += 1;
+    }
+    mine.forEach((d) => taken.add(d.ref));
+    drivers.push(...mine);
+    proposals.push({ key, typeRef: choice.t.typeRef, count: mine.length, cables: refs.length });
+    Object.assign(placements, result.placements);
+    unplaced.push(...result.unplaced);
+  }
+  return { drivers, proposals, placements, unplaced, unmatched };
+}
+
 // ---- export ----
 const quote = (v) => (v == null || v === '' ? '' : `"${String(v).replace(/"/g, '""')}"`);
 
@@ -480,7 +617,7 @@ export function exportCsv(model, assignments, added) {
     const key = `${row.ElementRef}|${row.Node}`;
     const entry = a[key];
     const out = { ...row };
-    if (entry && (entry.refs || []).join() !== (model.baseline[key]?.refs || []).join()) {
+    if (entry && !sameRefs(entry.refs, model.baseline[key]?.refs)) {
       const refs = entry.refs || [];
       out.ToEntityRefs = refs.join(',');
       out.ToEntityType = entry.toEntityType || (refs.length ? 'Link' : '');
@@ -495,7 +632,7 @@ export function exportCsv(model, assignments, added) {
     for (const node of t.nodes) {
       const refs = a[`${add.ref}|${node.name}`]?.refs || [];
       const row = {
-        Pullzone: add.zone, ParentElementRef: '', ElementRef: add.ref, ElementTypeRef: add.typeRef,
+        Pullzone: add.zone, ParentElementRef: '', ElementRef: outRef(add.ref), ElementTypeRef: add.typeRef,
         'Driver Restrictions': t.driverRestrictions, 'Node Restrictions': t.nodeRestrictions,
         CurrentNodePowerInfo: '', Node: node.name, ToEntityType: refs.length ? 'Link' : '',
         ToEntityRefs: refs.join(','), ControlGroup: derivedControlGroup(ctx, refs),
@@ -518,8 +655,8 @@ export function changedRows(model, assignments, addedDrivers) {
     const [elementRef, node] = key.split('|');
     const refs = a[key]?.refs || [];
     const was = model.baseline[key]?.refs || [];
-    if (!addedRefs.has(elementRef) && refs.join() === was.join()) continue;
-    rows.push({ key, elementRef, node, refs });
+    if (!addedRefs.has(elementRef) && sameRefs(refs, was)) continue;
+    rows.push({ key, elementRef: outRef(elementRef), node, refs });
   }
   rows.sort((x, y) => x.elementRef.localeCompare(y.elementRef) || x.node.localeCompare(y.node));
   return rows;

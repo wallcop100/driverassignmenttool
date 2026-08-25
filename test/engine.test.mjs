@@ -361,3 +361,107 @@ HUB-C1,E1,ET-P,,OP.2,,
   assert.equal(t.powerType, 'CV');        // from the library
   assert.equal(t.maxPowerW, 180);
 });
+
+// ---- greenfield: cables, a type library, and no drivers at all ----
+const GF_TYPES = 'ElementTypeRef,Driver Restrictions,Node Restrictions,Channels\nT100,100W | 0.35A,100W | 55fV,2\n';
+const gfLinks = (n, group = 'CG1', startAt = 1) => [...Array(n)].map((_, i) =>
+  `L${startAt + i},HUB-G,20,0.35,10,CC,${group}`).join('\n');
+const GF_HEAD = 'LinkRef,PullZone,LinkSumPower(W),LinkCurrent,LinkForwardVoltage(Vf),SecondaryPowerType,ControlGroupText\n';
+const gfModel = (linksBody) => engine.buildModel(null, GF_HEAD + linksBody + '\n', GF_TYPES);
+
+test('links-only model: no drivers, library is the inventory, export still works', () => {
+  const m = gfModel(gfLinks(2));
+  assert.deepEqual(m.drivers, []);
+  assert.deepEqual(m.baseline, {});
+  assert.deepEqual(m.inventory.map((t) => t.typeRef), ['T100']);
+  assert.deepEqual(m.zones, ['HUB-G']);
+
+  const added = [{ ref: 'E5000X', typeRef: 'T100', zone: 'HUB-G' }];
+  const a = { 'E5000X|OP.1': { toEntityType: 'Link', refs: ['L1', 'L2'] } };
+  const csv = engine.exportCsv(m, a, added);
+  assert.match(csv, /^"Pullzone","ParentElementRef","ElementRef"/);
+  assert.match(csv, /"E5000X","T100"/);
+  assert.match(csv, /"L1,L2"/);
+  assert.equal(engine.validate(m, a, added).filter((f) => f.level === 'FAIL').length, 0);
+});
+
+test('links-only without a type library is refused', () => {
+  assert.throws(() => engine.buildModel(null, GF_HEAD + gfLinks(1) + '\n'), /nothing to build drivers from/);
+});
+
+test('planDrivers sizes from load, and the margin costs a driver', () => {
+  const m = gfModel(gfLinks(5)); // 5 × 20W = 100W = exactly one 100W/2CH driver
+  const tight = engine.planDrivers(m, {}, [], 'HUB-G', { margin: 0 });
+  assert.deepEqual(tight.proposals.map((p) => p.count), [1]);
+  assert.deepEqual(tight.unplaced, []);
+
+  const roomy = engine.planDrivers(m, {}, [], 'HUB-G', { margin: 0.05 }); // 95W usable
+  assert.equal(roomy.drivers.length, 2);
+  assert.deepEqual(roomy.unplaced, []);
+  assert.deepEqual(roomy.drivers.map((d) => d.ref), ['E5000X', 'E5000X~2']);
+  assert.equal(Object.values(roomy.placements).flat().length, 5);
+});
+
+test('planDrivers sizes from forward voltage when fV is the binding limit', () => {
+  // 4 × 5W cables (20W — one driver on load alone) but 30fV each against a 55fV
+  // node: only one fits per node, so it takes two 2CH drivers.
+  const body = [...Array(4)].map((_, i) => `L${i + 1},HUB-G,5,0.35,30,CC,CG1`).join('\n');
+  const p = engine.planDrivers(gfModel(body), {}, [], 'HUB-G', { margin: 0.05 });
+  assert.equal(p.drivers.length, 2);
+  assert.deepEqual(p.unplaced, []);
+});
+
+test('planDrivers keeps ControlGroups apart by default, mixes them when told to', () => {
+  const body = `${gfLinks(2, 'CG1', 1)}\n${gfLinks(2, 'CG2', 3)}`;
+  const m = gfModel(body);
+  const split = engine.planDrivers(m, {}, [], 'HUB-G');
+  assert.equal(split.drivers.length, 2); // one per group, though 4 × 20W would fit on one
+  const groupOf = (r) => m.links.find((l) => l.ref === r).controlGroup;
+  for (const refs of Object.values(split.placements)) {
+    assert.equal(new Set(refs.map(groupOf)).size, 1);
+  }
+  const mixed = engine.planDrivers(m, {}, [], 'HUB-G', { restrictControlGroup: false });
+  assert.equal(mixed.drivers.length, 1);
+});
+
+test('planDrivers reports cables no type in the library can take', () => {
+  const body = 'L1,HUB-G,20,,24,CV,CG1';
+  const p = engine.planDrivers(gfModel(body), {}, [], 'HUB-G');
+  assert.deepEqual(p.drivers, []);
+  assert.equal(p.unmatched.length, 1);
+});
+
+test('placeholder refs: internally tagged, but every one exports as E5000X', () => {
+  assert.equal(engine.nextDriverRef(new Set()), 'E5000X');
+  assert.equal(engine.nextDriverRef(new Set(['E5000X'])), 'E5000X~2');
+  assert.equal(engine.nextDriverRef(new Set(['E5000X', 'E5000X~2'])), 'E5000X~3');
+  assert.equal(engine.outRef('E5000X~3'), 'E5000X');
+  assert.equal(engine.outRef('E50019'), 'E50019');
+});
+
+test('two added drivers export and patch under the one literal placeholder ref', () => {
+  const m = gfModel(gfLinks(2));
+  const added = [
+    { ref: 'E5000X', typeRef: 'T100', zone: 'HUB-G' },
+    { ref: 'E5000X~2', typeRef: 'T100', zone: 'HUB-G' },
+  ];
+  const a = {
+    'E5000X|OP.1': { toEntityType: 'Link', refs: ['L1'] },
+    'E5000X~2|OP.1': { toEntityType: 'Link', refs: ['L2'] },
+  };
+  const csv = engine.exportCsv(m, a, added);
+  assert.ok(!csv.includes('~'));
+  assert.equal(csv.split('"E5000X","T100"').length - 1, 4); // 2 drivers × 2 nodes
+  const script = engine.generatePatchScript(m, a, added);
+  assert.ok(!script.includes('~'));
+  assert.equal(script.split('setValue("E5000X")').length - 1, 2); // one per placed cable
+});
+
+test('reordering a row back to its baseline set is not a change', () => {
+  const model = { ...patchModel, baseline: { 'D1|OP.1': { toEntityType: 'Link', refs: ['X1', 'X2'] } } };
+  const reordered = { 'D1|OP.1': { toEntityType: 'Link', refs: ['X2', 'X1'] } };
+  assert.deepEqual(engine.changedRows(model, reordered, []), []);
+  assert.ok(!engine.generatePatchScript(model, reordered, []).includes('X1'));
+  assert.ok(engine.sameRefs(['a', 'b'], ['b', 'a']));
+  assert.ok(!engine.sameRefs(['a'], ['a', 'b']));
+});
