@@ -44,7 +44,8 @@ export default function AddDriverModal({ state, zone, dispatch, onClose, canSugg
   }, [model, zone, assignments]);
 
   const defineNew = () => setDraft({
-    typeRef: '', name: '', maxPowerW: '', channels: 2, nodeMaxLoadW: '', nodeMaxFvV: '',
+    typeRef: '', name: '', maxPowerW: '', outputs: 2, addresses: '',
+    nodeMaxLoadW: '', nodeMaxFvV: '', nodeCurrentA: '', controlType: '',
     invented: true, ...orphanShape,
   });
 

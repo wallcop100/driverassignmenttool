@@ -1,20 +1,20 @@
 import { useEffect, useState } from 'react';
-import { nextTypeRef, STOCK_TYPES } from '../engine.js';
+import { matchPart, nextTypeRef, PARTS, reachableW } from '../engine.js';
 
 // The driver type editor, shared by the Add-driver modal and the Driver types
-// page. A preset is a rating nobody declared, supplied here and patched back
-// into the workbook's ElementTypes row — see engine.js typeBlock.
-// Ratings come from the driver type library when the host sends one; without it
-// a per-hub payload has only the types already present, usually with no
-// restrictions declared — hence the "not declared" fallback rather than a blank.
+// page. A preset is a rating nobody declared, supplied here and patched into the
+// workbook's ElementTypes row — so the fields are that sheet's columns, named as
+// they are named there. Explanations live in tooltips, not on the page.
 export function rating(t) {
   if (t.powerType === 'CC' && t.currentA != null) return `${t.currentA}A`;
   if (t.powerType === 'CV' && t.outputVoltageV != null) return `${t.outputVoltageV}V`;
   return null;
 }
 
-// A type in the catalogue, as the editor holds it. Everything is nullable: the
-// point of the editor is that these are the values nobody declared.
+const numOrNull = (v) => (v === '' || v == null ? null : Number(v));
+const g = (n) => (Number.isInteger(n) ? n : +n.toFixed(2));
+
+// A type in the catalogue, as the editor holds it.
 export const draftFrom = (t) => ({
   typeRef: t.typeRef,
   name: t.name ?? '',
@@ -22,35 +22,34 @@ export const draftFrom = (t) => ({
   maxPowerW: t.maxPowerW ?? '',
   currentA: t.currentA ?? '',
   outputVoltageV: t.outputVoltageV ?? '',
-  channels: t.nodes?.length ?? 1,
+  outputs: t.outputs ?? t.nodes?.length ?? 1,
+  addresses: t.addresses ?? t.ballast ?? '',
   nodeNames: t.nodes?.map((n) => n.name) ?? null,
-  nodeMaxLoadW: t.nodes?.[0]?.maxLoadW ?? '',
-  nodeMaxFvV: t.nodes?.[0]?.maxFvV ?? '',
+  nodeMaxLoadW: t.nodeMaxLoadW ?? t.nodes?.[0]?.maxLoadW ?? '',
+  nodeMaxFvV: t.nodeMaxFvV ?? t.nodes?.[0]?.maxFvV ?? '',
+  nodeCurrentA: t.nodeCurrentA ?? '',
+  controlType: t.controlType ?? '',
   invented: false,
 });
 
-const numOrNull = (v) => (v === '' || v == null ? null : Number(v));
-
-// The page-135910 drivers, as an editor draft. Blank cells stay blank — on that
-// page a blank means "no check", and inventing a limit here would invent a rule.
-export const draftFromStock = (t) => ({
-  typeRef: '', invented: true, stock: t.name,
-  name: t.name,
-  powerType: t.powerType,
-  maxPowerW: t.maxPowerW ?? '',
-  currentA: t.currentA ?? '',
-  outputVoltageV: t.outputVoltageV ?? '',
-  channels: t.channels,
+// A datasheet part as a draft. Blank stays blank: on the spec pages a blank
+// means "no check", and filling one in here would invent a rule.
+export const draftFromPart = (p) => ({
+  typeRef: '', invented: true, part: p.name,
+  name: p.name,
+  powerType: p.powerType,
+  maxPowerW: p.maxPowerW ?? '',
+  currentA: '',                       // one ElementType per current — the user picks
+  outputVoltageV: p.outputV ?? '',
+  outputs: p.outputs ?? 1,
+  addresses: p.addresses ?? '',
   nodeNames: null,
-  nodeMaxLoadW: t.nodeMaxLoadW ?? '',
-  nodeMaxFvV: t.nodeMaxFvV ?? '',
-  nodeCurrentA: t.nodeCurrentA ?? null,
-  ballast: t.ballast ?? null,
-  controlType: t.controlType ?? null,
-  stem: t.stem ?? null,
+  nodeMaxLoadW: p.nodeMaxLoadW ?? '',
+  nodeMaxFvV: p.maxFvV ?? '',
+  nodeCurrentA: p.nodeCurrentA ?? '',
+  controlType: p.controlType ?? '',
 });
 
-// Saved shape — numbers, not form strings.
 export const toPreset = (d) => ({
   typeRef: d.typeRef.trim(),
   name: (d.name ?? '').trim(),
@@ -58,119 +57,180 @@ export const toPreset = (d) => ({
   maxPowerW: numOrNull(d.maxPowerW),
   currentA: d.powerType === 'CC' ? numOrNull(d.currentA) : null,
   outputVoltageV: d.powerType === 'CV' ? numOrNull(d.outputVoltageV) : null,
-  channels: Math.max(1, Number(d.channels) || 1),
+  outputs: Math.max(1, Number(d.outputs) || 1),
+  addresses: numOrNull(d.addresses),
   nodeNames: d.nodeNames ?? null,
-  nodeCurrentA: d.nodeCurrentA ?? null,
-  ballast: d.ballast ?? null,
-  controlType: d.controlType ?? null,
+  nodeCurrentA: numOrNull(d.nodeCurrentA),
+  controlType: (d.controlType ?? '').trim() || null,
   nodeMaxLoadW: numOrNull(d.nodeMaxLoadW),
   nodeMaxFvV: numOrNull(d.nodeMaxFvV),
   invented: !!d.invented,
 });
 
-// Enough to size against: without a declared type, rating and max power, the
-// planner refuses it anyway (sizingCandidates) and we would have saved a preset
-// that changes nothing.
+// Enough to size against — below this the planner refuses the type anyway.
 const isComplete = (d) => !!d.typeRef.trim() && numOrNull(d.maxPowerW) > 0
   && (d.powerType === 'CC' ? numOrNull(d.currentA) > 0 : numOrNull(d.outputVoltageV) > 0);
 
 export default function PresetEditor({ draft, setDraft, inventory, onSave, onCancel, onDelete }) {
   const set = (patch) => setDraft({ ...draft, ...patch });
-  // The ref encodes the spec in this library, so it is re-proposed as the
-  // ratings change — until the user types their own, after which it is theirs.
   const [ownRef, setOwnRef] = useState(false);
+
+  // The datasheet for whatever part the type's Name says it is. Names are free
+  // text, so this is a loose match and can be wrong — it advises, never edits.
+  const part = matchPart(draft.name || draft.typeRef);
+
   useEffect(() => {
     if (!draft.invented || ownRef) return;
     const next = nextTypeRef(inventory, {
       powerType: draft.powerType,
       currentA: numOrNull(draft.currentA),
       outputVoltageV: numOrNull(draft.outputVoltageV),
-      channels: Math.max(1, Number(draft.channels) || 1),
-      stem: draft.stem,
+      addresses: numOrNull(draft.addresses) ?? (Number(draft.outputs) || 1),
     });
     if (next && next !== draft.typeRef) set({ typeRef: next });
-  }, [draft.powerType, draft.currentA, draft.outputVoltageV, draft.channels, ownRef]);
+  }, [draft.powerType, draft.currentA, draft.outputVoltageV, draft.addresses, draft.outputs, ownRef]);
 
-  const field = (label, key, extra = {}) => (
-    <label className="preset-field">
-      <span>{label}</span>
-      <input className="form-control form-control-sm" type="number" min="0" step="any"
-        value={draft[key]} onChange={(e) => set({ [key]: e.target.value })} {...extra} />
-    </label>
-  );
+  // What the datasheet says for a field, and whether the entry disagrees.
+  const spec = {
+    maxPowerW: part?.maxPowerW,
+    outputVoltageV: part?.outputV,
+    outputs: part?.outputs,
+    addresses: part?.addresses,
+    nodeMaxFvV: part?.maxFvV,
+    nodeMaxLoadW: part?.nodeMaxLoadW,
+    nodeCurrentA: part?.nodeCurrentA,
+    controlType: part?.controlType,
+  };
+
+  const field = (col, key, tip, extra = {}) => {
+    const want = spec[key];
+    const has = numOrNull(draft[key]);
+    const off = want != null && has != null && Math.abs(has - want) > 1e-9;
+    return (
+      <label className="preset-field">
+        <span title={tip}>{col}</span>
+        <input className={`form-control form-control-sm ${off ? 'is-off' : ''}`}
+          type="number" min="0" step="any" value={draft[key]}
+          onChange={(e) => set({ [key]: e.target.value })} {...extra} />
+        {want != null && (
+          <em className={off ? 'spec-off' : 'spec-ok'}>datasheet {g(want)}</em>
+        )}
+      </label>
+    );
+  };
+
+  // CurrentRange is the driver's one current; NodeCurrent is only for a current
+  // settable per output. Getting it wrong drops the current out of Driver
+  // Restrictions entirely and the driver reads as CC/CV undeclared.
+  const currentMisplaced = draft.powerType === 'CC'
+    && !numOrNull(draft.currentA) && numOrNull(draft.nodeCurrentA);
+
+  // nCH in the ref counts DALI addresses.
+  const refCh = /-(\d+)CH/i.exec(draft.typeRef || '')?.[1];
+  const addr = numOrNull(draft.addresses);
+  const refOff = refCh && addr != null && Number(refCh) !== addr;
+
+  const outOfRange = part?.powerType === 'CC' && numOrNull(draft.currentA) != null
+    && part.minA != null
+    && (numOrNull(draft.currentA) < part.minA || numOrNull(draft.currentA) > part.maxA);
+
+  const reach = reachableW(part, numOrNull(draft.currentA));
 
   return (
     <div className="preset-editor px-3 py-3">
       <div className="d-flex align-items-center gap-2 mb-2">
-        <strong className="small">{draft.invented ? 'New driver type' : `Ratings for ${draft.typeRef}`}</strong>
-        <span className="badge text-bg-warning ms-auto">provisional</span>
+        <strong className="small">{draft.invented ? 'New ElementType' : draft.typeRef}</strong>
+        <span className="badge text-bg-warning ms-auto" title="Patched as IsPropertiesTBC">provisional</span>
       </div>
 
       {draft.invented && (
-        <div className="stock-row mb-2">
-          <span className="text-secondary">Start from</span>
-          {STOCK_TYPES.map((t) => (
-            <button key={t.name} type="button"
-              className={`stock-chip ${draft.stock === t.name ? 'is-on' : ''}`}
-              onClick={() => setDraft({ ...draftFromStock(t), typeRef: '' })}>
-              {t.name}
-            </button>
-          ))}
+        <div className="preset-grid mb-2">
+          <label className="preset-field" style={{ gridColumn: '1 / 3' }}>
+            <span title="Fills the fields from the Driver Specs page for that part">Datasheet</span>
+            <select className="form-select form-select-sm" value={draft.part ?? ''}
+              onChange={(e) => {
+                const p = PARTS.find((x) => x.name === e.target.value);
+                if (p) setDraft({ ...draftFromPart(p), typeRef: '' });
+              }}>
+              <option value="">—</option>
+              {PARTS.map((p) => <option key={p.name} value={p.name}>{p.name}</option>)}
+            </select>
+          </label>
+          <label className="preset-field">
+            <span title="ElementTypes.Ref — nCH counts DALI addresses">Ref</span>
+            <input className={`form-control form-control-sm ${refOff ? 'is-off' : ''}`}
+              value={draft.typeRef}
+              onChange={(e) => { setOwnRef(true); set({ typeRef: e.target.value }); }} />
+            {refOff && <em className="spec-off">{addr} addresses</em>}
+          </label>
         </div>
-      )}
-
-      {draft.invented && (
-        <label className="preset-field mb-2 w-100">
-          <span>Type ref</span>
-          <input className="form-control form-control-sm" value={draft.typeRef}
-            onChange={(e) => { setOwnRef(true); set({ typeRef: e.target.value }); }} />
-        </label>
       )}
 
       <div className="preset-grid">
         <label className="preset-field">
-          <span>Type</span>
+          <span title="Constant current or constant voltage">Type</span>
           <select className="form-select form-select-sm" value={draft.powerType}
             onChange={(e) => set({ powerType: e.target.value })}>
             <option value="CC">CC</option>
             <option value="CV">CV</option>
           </select>
         </label>
-        {field('Max power (W)', 'maxPowerW')}
+
+        {field('MaxPower(W)', 'maxPowerW', 'Total power, shared across all outputs')}
+
         {draft.powerType === 'CC'
-          ? field('Current (A)', 'currentA')
-          : field('Output (V)', 'outputVoltageV')}
-        {/* No silent divide: a driver really rated 20A+ exists, so say what this
-            looks like and let the person decide. */}
-        {draft.powerType === 'CC' && numOrNull(draft.currentA) > 20 && (
-          <span className="preset-hint">
-            {draft.currentA}A — did you mean {numOrNull(draft.currentA) / 1000}A ({draft.currentA}mA)?
-          </span>
-        )}
-        {field('Channels', 'channels', { min: '1', step: '1' })}
-        {field('Node max (W)', 'nodeMaxLoadW')}
-        {field('Node max fV', 'nodeMaxFvV')}
+          ? field('CurrentRange', 'currentA', 'Amps, one current for the whole driver')
+          : field('OutputVoltage(V)', 'outputVoltageV', 'Volts the driver puts out')}
+
+        {field('Parameters', 'outputs', 'LED outputs — written as {<OP.1,<OP.2}', { min: '1', step: '1' })}
+        {field('BallastCountPerUoM', 'addresses', 'DALI addresses — the nCH in the Ref', { step: '1' })}
+        {field('NodeMaxForwardVoltage(fV)', 'nodeMaxFvV', 'Per output. Usually the limit that binds')}
+        {field('NodeMaxPower(W)', 'nodeMaxLoadW', 'Only if an output has its own cap')}
+        {field('NodeCurrent', 'nodeCurrentA', 'Amps. Only if current is settable per output')}
+
+        <label className="preset-field">
+          <span title="DALI, PHASE or Local">ControlType</span>
+          <input className="form-control form-control-sm" value={draft.controlType}
+            onChange={(e) => set({ controlType: e.target.value })} />
+          {spec.controlType && <em className="spec-ok">datasheet {spec.controlType}</em>}
+        </label>
       </div>
 
-      <p className="text-secondary mt-2 mb-2" style={{ fontSize: '12px' }}>
-        Patched into the workbook’s <code>ElementTypes</code> row and marked
-        <code> IsPropertiesTBC</code>. Current is written in amps, and the channels
-        become <code>Parameters</code> — <code>{'{<OP.1,<OP.2}'}</code>.
-        {draft.stock && ' Values are the documented ones for this driver; a blank cell means no check.'}
-      </p>
+      {part && (
+        <div className="preset-note">
+          {part.name}
+          {part.powerType === 'CC' && part.minA != null && ` · ${part.minA}–${part.maxA}A`}
+          {reach != null && numOrNull(draft.maxPowerW) > reach
+            && ` · reaches ${g(reach)}W here`}
+        </div>
+      )}
+      {outOfRange && (
+        <div className="preset-warn">
+          CurrentRange outside {part.minA}–{part.maxA}A for this part
+        </div>
+      )}
+      {draft.powerType === 'CC' && numOrNull(draft.currentA) > 20 && (
+        <div className="preset-warn">
+          {draft.currentA}A — amps, not mA? That would be {numOrNull(draft.currentA) / 1000}A
+        </div>
+      )}
+      {currentMisplaced && (
+        <div className="preset-warn">
+          Current is in NodeCurrent, so it will not reach Driver Restrictions.
+          <button className="btn btn-sm btn-link p-0 ms-2 align-baseline"
+            onClick={() => set({ currentA: draft.nodeCurrentA, nodeCurrentA: '' })}>
+            Move to CurrentRange
+          </button>
+        </div>
+      )}
 
-      <div className="d-flex gap-2">
-        <button className="btn btn-sm btn-primary" disabled={!isComplete(draft)} onClick={onSave}>
-          Save preset
-        </button>
+      <div className="d-flex gap-2 mt-3">
+        <button className="btn btn-sm btn-primary" disabled={!isComplete(draft)} onClick={onSave}>Save</button>
         <button className="btn btn-sm btn-outline-secondary" onClick={onCancel}>Cancel</button>
         {onDelete && (
-          <button className="btn btn-sm btn-link text-danger ms-auto" onClick={onDelete}>
-            Remove preset
-          </button>
+          <button className="btn btn-sm btn-link text-danger ms-auto" onClick={onDelete}>Remove</button>
         )}
       </div>
     </div>
   );
 }
-

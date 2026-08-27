@@ -523,8 +523,10 @@ export function distributeGroup(model, assignments, added, linkRefs, nodeKeys, m
 // OP.n is the house convention, but a type that already names its outputs keeps
 // those names: the preset is a statement about ratings, not about node identity,
 // and renaming a node would strand every Element pointing at the old one.
+// `channels` is the old shape, kept readable so a saved session restores.
+const outputsOf = (p) => Math.max(1, Math.floor(p.outputs ?? p.channels ?? 1));
 const nodeList = (p) => Array.from(
-  { length: Math.max(1, Math.floor(p.channels || 1)) },
+  { length: outputsOf(p) },
   (_, i) => ({
     name: p.nodeNames?.[i] ?? `OP.${i + 1}`,
     maxLoadW: p.nodeMaxLoadW ?? null,
@@ -552,10 +554,12 @@ export function presetToType(p) {
       p.nodeMaxFvV != null ? `${g(p.nodeMaxFvV)}fV` : null,
     ].filter(Boolean).join(' | '),
     nodes: nodeList(p),
-    // Straight from the datasheet when the preset came from the stock catalogue;
+    // Straight from the datasheet when the preset came from the catalogue;
     // undefined on a hand-typed one, and then simply not written.
     nodeCurrentA: p.nodeCurrentA ?? null,
-    ballast: p.ballast ?? null,
+    // DALI addresses, which is what a ref's nCH counts — NOT the output count.
+    // A SoloDrive 560/A is two outputs on one address.
+    ballast: p.addresses ?? p.ballast ?? null,
     controlType: p.controlType ?? null,
     preset: true,
     invented: !!p.invented,
@@ -586,40 +590,26 @@ function applyPresets(drivers, presetTypes) {
   }
 }
 
-// The drivers page 135910 tabulates as known-good, ready to be added to a hub
-// whose type library has never heard of them. Values are that page's own "Copy a
-// driver's values" table, unchanged - amps in CurrentRange, node list in
-// Parameters. `stem` is carried because the naming is not fully derivable: the
-// unswitched supply is ET-CVR-**S**-…, not -D-.
-//
-// The two CC drivers are one current each, as the page says to do (one
-// ElementType per current you actually use) - the editor opens on that value and
-// the ref follows whatever it is changed to.
-export const STOCK_TYPES = [
-  { name: 'SoloDrive 360/A', powerType: 'CC', maxPowerW: 30, currentA: 0.3,
-    channels: 1, nodeMaxFvV: 55, ballast: 1, controlType: 'DALI' },
-  { name: 'DualDrive 560/A', powerType: 'CC', maxPowerW: 50, currentA: 0.35,
-    channels: 2, nodeMaxFvV: 55, ballast: 2, controlType: 'DALI' },
-  { name: 'LinearDrive 220D + HLG-185-24', powerType: 'CV', maxPowerW: 185, outputVoltageV: 24,
-    channels: 2, ballast: 2, controlType: 'DALI' },
-  { name: 'LinearDrive 720D + HLG-600-24', powerType: 'CV', maxPowerW: 600, outputVoltageV: 24,
-    channels: 4, nodeMaxLoadW: 144, nodeCurrentA: 6, ballast: 4, controlType: 'DALI' },
-  { name: 'PowerLED PCV24100', powerType: 'CV', maxPowerW: 100, outputVoltageV: 24,
-    channels: 1, controlType: 'Local', stem: 'ET-CVR-S-24-1CH' },
-];
+// Datasheet-backed parts, from the Driver Specs page group. Offered in the
+// editor as a starting point, and used to check what someone types against what
+// the part actually is. See catalogue.js.
+export { PARTS, matchPart, matchParts, reachableW } from './catalogue.js';
 
 // The ref IS the spec in this library (ET-CCR-D-350-2CH-01 = CC, 350mA, 2CH), so
 // the next free one is composed from the ratings being entered rather than a
 // counter. A sibling's stem wins when there is one: naming is per-project and
 // the library's own convention beats anything hardcoded here.
 export function nextTypeRef(inventory, draft) {
-  const { powerType, currentA, outputVoltageV, channels, stem: given } = draft || {};
+  const { powerType, currentA, outputVoltageV, stem: given } = draft || {};
+  // nCH is DALI addresses. Falls back to the output count only because most
+  // parts have one address per output and a draft may not have said yet.
+  const channels = draft?.addresses ?? draft?.channels ?? draft?.outputs;
   const mA = currentA != null ? Math.round(currentA * 1000) : null;
   const rating = powerType === 'CV' ? outputVoltageV : mA;
   if (!powerType || rating == null || !channels) return '';
   const inv = inventory || [];
   const sibling = inv.find((t) => t.powerType === powerType
-    && t.nodes.length === Math.floor(channels)
+    && (t.ballast ?? t.nodes.length) === Math.floor(channels)
     && !isEmergency(t.typeRef)
     && (powerType === 'CV'
       ? t.outputVoltageV === outputVoltageV

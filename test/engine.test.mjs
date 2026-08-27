@@ -601,16 +601,19 @@ test('a preset keeps the type\'s own node names — Parameters must not rename o
   assert.match(script, /ET_Parameters\)\.setValue\("\{<A,<B\}"\)/);
 });
 
-test('stock catalogue: the page-135910 drivers are addable and patch their datasheet columns', () => {
-  const solo = engine.STOCK_TYPES.find((t) => t.name === 'SoloDrive 360/A');
-  const local = engine.STOCK_TYPES.find((t) => t.name === 'PowerLED PCV24100');
-  assert.equal(engine.STOCK_TYPES.length, 5);
-  assert.equal(solo.currentA, 0.3);          // amps, as the page tabulates them
-  assert.equal(local.stem, 'ET-CVR-S-24-1CH'); // unswitched is -S-, not derivable
+test('catalogue parts are addable and patch their datasheet columns', () => {
+  const solo = engine.PARTS.find((t) => t.name === 'EldoLED SoloDrive 360/A');
+  const local = engine.PARTS.find((t) => t.name === 'PowerLED PCV24100');
+  assert.equal(solo.maxPowerW, 30);
+  assert.equal(local.stem, 'ET-CVR-S-24-1CH');  // unswitched is -S-, not derivable
 
   // an empty library still gets a usable type out of the catalogue
   const links = GF_HEAD + [...Array(4)].map((_, i) => `L${i + 1},HUB-G,6,0.3,25,CC,CG1`).join('\n') + '\n';
-  const p = { ...solo, typeRef: 'ET-CCR-D-300-1CH-01', invented: true };
+  const p = {
+    typeRef: 'ET-CCR-D-300-1CH-01', name: solo.name, powerType: 'CC', maxPowerW: solo.maxPowerW,
+    currentA: 0.3, outputs: solo.outputs, addresses: solo.addresses, nodeMaxFvV: solo.maxFvV,
+    controlType: solo.controlType, invented: true,
+  };
   const m = engine.buildModel(null, links, null, [p]);
   assert.equal(m.inventory.length, 1);
   const plan = engine.planDrivers(m, {}, [], 'HUB-G');
@@ -619,16 +622,39 @@ test('stock catalogue: the page-135910 drivers are addable and patch their datas
 
   const script = engine.generatePatchScript(m, {}, [{ ref: 'E5000X', typeRef: p.typeRef, zone: 'HUB-G' }], [p]);
   assert.match(script, /ET_CurrentRange\)\.setValue\(0\.3\)/);
-  assert.match(script, /ET_Ballast\)\.setValue\(1\)/);
+  assert.match(script, /ET_Ballast\)\.setValue\(1\)/);        // addresses, not outputs
   assert.match(script, /ET_ControlType\)\.setValue\("DALI"\)/);
   assert.match(script, /ET_Parameters\)\.setValue\("\{<OP\.1\}"\)/);
-  // the 720D is the one with per-node limits on top of the shared budget
-  const four = engine.STOCK_TYPES.find((t) => t.channels === 4);
-  const s4 = engine.generatePatchScript(m, {}, [{ ref: 'E5000X', typeRef: 'T4', zone: 'HUB-G' }],
-    [{ ...four, typeRef: 'T4', invented: true }]);
+
+  // the 720D is two outputs' worth of address count apart from its node limits
+  const four = engine.PARTS.find((t) => t.name === 'EldoLED LinearDrive 720D');
+  const p4 = { typeRef: 'T4', name: four.name, powerType: 'CV', maxPowerW: four.maxPowerW,
+    outputVoltageV: four.outputV, outputs: four.outputs, addresses: four.addresses,
+    nodeMaxLoadW: four.nodeMaxLoadW, nodeCurrentA: four.nodeCurrentA, invented: true };
+  const s4 = engine.generatePatchScript(m, {}, [{ ref: 'E5000X', typeRef: 'T4', zone: 'HUB-G' }], [p4]);
   assert.match(s4, /ET_NodeMaxPower\)\.setValue\(144\)/);
   assert.match(s4, /ET_NodeCurrent\)\.setValue\(6\)/);
   assert.match(s4, /ET_Parameters\)\.setValue\("\{<OP\.1,<OP\.2,<OP\.3,<OP\.4\}"\)/);
+});
+
+test('a ref counts DALI addresses, not outputs', () => {
+  // SoloDrive 560/A: two outputs on one address -> 1CH, and two nodes
+  const solo560 = engine.PARTS.find((t) => t.name === 'EldoLED SoloDrive 560/A');
+  assert.equal(solo560.outputs, 2);
+  assert.equal(solo560.addresses, 1);
+  assert.equal(
+    engine.nextTypeRef([], { powerType: 'CC', currentA: 0.7, outputs: 2, addresses: 1 }),
+    'ET-CCR-D-700-1CH-01',
+  );
+  // DualDrive 560/A: the same two outputs, but two addresses -> 2CH
+  assert.equal(
+    engine.nextTypeRef([], { powerType: 'CC', currentA: 0.7, outputs: 2, addresses: 2 }),
+    'ET-CCR-D-700-2CH-01',
+  );
+  const t = engine.presetToType({ typeRef: 'X', powerType: 'CC', maxPowerW: 50, currentA: 0.7,
+    outputs: 2, addresses: 1 });
+  assert.equal(t.nodes.length, 2);   // Parameters
+  assert.equal(t.ballast, 1);        // BallastCountPerUoM
 });
 
 test('nextTypeRef honours a stock stem', () => {

@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react';
-import { STOCK_TYPES } from '../engine.js';
 import { effectiveDrivers, outRef } from '../state.js';
-import PresetEditor, { draftFrom, draftFromStock, rating, toPreset } from './PresetEditor.jsx';
+import PresetEditor, { draftFrom, rating, toPreset } from './PresetEditor.jsx';
 
 // The driver catalogue, off the assignment screen. The Add-driver modal answers
 // "what do I put in this hub"; this page answers "what does this job own, and
@@ -62,17 +61,13 @@ export default function DriversPage({ state, dispatch }) {
             onDelete={presets[draft.typeRef] ? remove : null} />
         </div>
       ) : (
-        <div className="mb-3 d-flex gap-2 flex-wrap align-items-center">
-          <span className="text-secondary small">Add a type the library hasn’t got:</span>
-          {STOCK_TYPES.map((t) => (
-            <button key={t.name} type="button" className="stock-chip"
-              onClick={() => setDraft(draftFromStock(t))}>{t.name}</button>
-          ))}
-          <button type="button" className="stock-chip"
+        <div className="mb-3">
+          <button type="button" className="btn btn-sm btn-outline-primary"
             onClick={() => setDraft({
               typeRef: '', name: '', powerType: 'CC', maxPowerW: '', currentA: '', outputVoltageV: '',
-              channels: 2, nodeMaxLoadW: '', nodeMaxFvV: '', invented: true,
-            })}>blank…</button>
+              outputs: 2, addresses: '', nodeMaxLoadW: '', nodeMaxFvV: '', nodeCurrentA: '',
+              controlType: '', invented: true,
+            })}>New ElementType</button>
         </div>
       )}
 

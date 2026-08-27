@@ -381,6 +381,15 @@ body { background: #f6f8fb; }
   font-size: 11.5px; color: #64748b; overflow: hidden; text-overflow: ellipsis;
   white-space: nowrap; max-width: 140px;
 }
+.preset-field em { font-style: normal; font-size: 10.5px; color: #94a3b8; }
+.preset-field .spec-off { color: #b3261e; }
+.form-control.is-off, .form-control.is-off:focus { border-color: #b3261e; }
+.preset-note { font-size: 12px; color: #64748b; margin-top: 10px; }
+.preset-warn {
+  font-size: 12px; color: #8a6d1f; background: #fdf6e3; border: 1px solid #e2d7b4;
+  border-radius: 4px; padding: 5px 8px; margin-top: 8px;
+}
+.preset-grid { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)) !important; }
 .preset-hint { grid-column: 1 / -1; font-size: 11.5px; color: #a86b00; }
 .preset-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 .preset-field { display: flex; flex-direction: column; gap: 2px; font-size: 12px; color: #64748b; }

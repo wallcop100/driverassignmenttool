@@ -97,7 +97,8 @@ export const PARTS = [
   { name: 'Meanwell HLG-80H-24', re: /hlg80h?24/, powerType: 'CV',
     maxPowerW: 80, outputV: 24, outputs: 1, controlType: 'Local', page: 128641 },
   { name: 'PowerLED PCV24100', re: /pcv24100/, powerType: 'CV',
-    maxPowerW: 100, outputV: 24, outputs: 1, controlType: 'Local', page: 106081 },
+    maxPowerW: 100, outputV: 24, outputs: 1, controlType: 'Local', page: 106081,
+    stem: 'ET-CVR-S-24-1CH' },  // unswitched supplies are -S-, not -D- (page 135910)
   { name: 'PowerLED PCV24150', re: /pcv24150/, powerType: 'CV',
     maxPowerW: 150, outputV: 24, outputs: 1, controlType: 'Local', page: 131064 },
   { name: 'PowerLED PCV2460', re: /pcv2460/, powerType: 'CV',
