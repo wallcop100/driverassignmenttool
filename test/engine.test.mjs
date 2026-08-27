@@ -626,8 +626,9 @@ test('catalogue parts are addable and patch their datasheet columns', () => {
   assert.match(script, /ET_ControlType\)\.setValue\("DALI"\)/);
   assert.match(script, /ET_Parameters\)\.setValue\("\{<OP\.1\}"\)/);
 
-  // the 720D is two outputs' worth of address count apart from its node limits
-  const four = engine.PARTS.find((t) => t.name === 'EldoLED LinearDrive 720D');
+  // the 720D's per-output cap is watts only once a supply names the rail
+  const four = engine.resolveSpec('EldoLED LinearDrive 720D & Meanwell HLG-600-24');
+  assert.equal(four.nodeMaxLoadW, 144);
   const p4 = { typeRef: 'T4', name: four.name, powerType: 'CV', maxPowerW: four.maxPowerW,
     outputVoltageV: four.outputV, outputs: four.outputs, addresses: four.addresses,
     nodeMaxLoadW: four.nodeMaxLoadW, nodeCurrentA: four.nodeCurrentA, invented: true };

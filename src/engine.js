@@ -593,7 +593,7 @@ function applyPresets(drivers, presetTypes) {
 // Datasheet-backed parts, from the Driver Specs page group. Offered in the
 // editor as a starting point, and used to check what someone types against what
 // the part actually is. See catalogue.js.
-export { PARTS, matchPart, matchParts, reachableW } from './catalogue.js';
+export { PARTS, combine, matchPart, matchParts, resolveSpec, reachableW } from './catalogue.js';
 
 // The ref IS the spec in this library (ET-CCR-D-350-2CH-01 = CC, 350mA, 2CH), so
 // the next free one is composed from the ratings being entered rather than a

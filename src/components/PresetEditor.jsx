@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { matchPart, nextTypeRef, PARTS, reachableW } from '../engine.js';
+import { combine, nextTypeRef, PARTS, reachableW, resolveSpec } from '../engine.js';
 
 // The driver type editor, shared by the Add-driver modal and the Driver types
 // page. A preset is a rating nobody declared, supplied here and patched into the
@@ -32,23 +32,29 @@ export const draftFrom = (t) => ({
   invented: false,
 });
 
-// A datasheet part as a draft. Blank stays blank: on the spec pages a blank
-// means "no check", and filling one in here would invent a rule.
-export const draftFromPart = (p) => ({
-  typeRef: '', invented: true, part: p.name,
-  name: p.name,
-  powerType: p.powerType,
-  maxPowerW: p.maxPowerW ?? '',
-  currentA: '',                       // one ElementType per current — the user picks
-  outputVoltageV: p.outputV ?? '',
-  outputs: p.outputs ?? 1,
-  addresses: p.addresses ?? '',
-  nodeNames: null,
-  nodeMaxLoadW: p.nodeMaxLoadW ?? '',
-  nodeMaxFvV: p.maxFvV ?? '',
-  nodeCurrentA: p.nodeCurrentA ?? '',
-  controlType: p.controlType ?? '',
-});
+// A datasheet part — or a DC/DC driver on a named supply, which is how CV is
+// normally specified here — as a draft. Blank stays blank: on the spec pages a
+// blank means "no check", and filling one in would invent a rule.
+export const draftFromPart = (driver, supply = null) => {
+  const p = combine(driver, supply) ?? {};
+  return {
+    typeRef: '', invented: true,
+    part: driver?.name ?? '', psu: supply?.name ?? '',
+    name: p.name ?? '',
+    powerType: p.powerType ?? 'CV',
+    maxPowerW: p.maxPowerW ?? '',
+    currentA: '',                     // one ElementType per current — the user picks
+    outputVoltageV: p.outputV ?? '',
+    outputs: p.outputs ?? 1,
+    addresses: p.addresses ?? '',
+    nodeNames: null,
+    nodeMaxLoadW: p.nodeMaxLoadW ?? '',
+    nodeMaxFvV: p.maxFvV ?? '',
+    nodeCurrentA: p.nodeCurrentA ?? '',
+    controlType: p.controlType ?? '',
+    stem: p.stem ?? null,
+  };
+};
 
 export const toPreset = (d) => ({
   typeRef: d.typeRef.trim(),
@@ -75,9 +81,14 @@ export default function PresetEditor({ draft, setDraft, inventory, onSave, onCan
   const set = (patch) => setDraft({ ...draft, ...patch });
   const [ownRef, setOwnRef] = useState(false);
 
-  // The datasheet for whatever part the type's Name says it is. Names are free
-  // text, so this is a loose match and can be wrong — it advises, never edits.
-  const part = matchPart(draft.name || draft.typeRef);
+  // The datasheet for whatever the type's Name says it is — a driver, a supply,
+  // or the pair. Names are free text, so this is a loose match and can be wrong:
+  // it advises, never edits.
+  const chosen = PARTS.find((p) => p.name === draft.part);
+  const chosenPsu = PARTS.find((p) => p.name === draft.psu);
+  const part = draft.invented && chosen
+    ? combine(chosen, chosenPsu)
+    : resolveSpec(draft.name || draft.typeRef);
 
   useEffect(() => {
     if (!draft.invented || ownRef) return;
@@ -86,6 +97,7 @@ export default function PresetEditor({ draft, setDraft, inventory, onSave, onCan
       currentA: numOrNull(draft.currentA),
       outputVoltageV: numOrNull(draft.outputVoltageV),
       addresses: numOrNull(draft.addresses) ?? (Number(draft.outputs) || 1),
+      stem: draft.stem,
     });
     if (next && next !== draft.typeRef) set({ typeRef: next });
   }, [draft.powerType, draft.currentA, draft.outputVoltageV, draft.addresses, draft.outputs, ownRef]);
@@ -145,17 +157,36 @@ export default function PresetEditor({ draft, setDraft, inventory, onSave, onCan
 
       {draft.invented && (
         <div className="preset-grid mb-2">
-          <label className="preset-field" style={{ gridColumn: '1 / 3' }}>
-            <span title="Fills the fields from the Driver Specs page for that part">Datasheet</span>
+          <label className="preset-field">
+            <span title="Fills the fields from that part's Driver Specs page">Datasheet</span>
             <select className="form-select form-select-sm" value={draft.part ?? ''}
               onChange={(e) => {
-                const p = PARTS.find((x) => x.name === e.target.value);
-                if (p) setDraft({ ...draftFromPart(p), typeRef: '' });
+                const d = PARTS.find((x) => x.name === e.target.value);
+                setDraft({ ...draftFromPart(d, d?.kind === 'dcdc' ? chosenPsu : null), typeRef: '' });
               }}>
               <option value="">—</option>
-              {PARTS.map((p) => <option key={p.name} value={p.name}>{p.name}</option>)}
+              {PARTS.filter((p) => p.kind !== 'supply').map((p) => (
+                <option key={p.name} value={p.name}>{p.name}</option>
+              ))}
             </select>
           </label>
+          {/* A DC/DC driver has no rail of its own: the supply sets the voltage
+              and caps the wattage, so the pair is the specification. */}
+          {chosen?.kind === 'dcdc' && (
+            <label className="preset-field">
+              <span title="The supply feeding it — sets OutputVoltage(V) and caps MaxPower(W)">PSU</span>
+              <select className="form-select form-select-sm" value={draft.psu ?? ''}
+                onChange={(e) => {
+                  const psu = PARTS.find((x) => x.name === e.target.value);
+                  setDraft({ ...draftFromPart(chosen, psu), typeRef: '' });
+                }}>
+                <option value="">—</option>
+                {PARTS.filter((p) => p.kind === 'supply').map((p) => (
+                  <option key={p.name} value={p.name}>{p.name}</option>
+                ))}
+              </select>
+            </label>
+          )}
           <label className="preset-field">
             <span title="ElementTypes.Ref — nCH counts DALI addresses">Ref</span>
             <input className={`form-control form-control-sm ${refOff ? 'is-off' : ''}`}
@@ -200,8 +231,8 @@ export default function PresetEditor({ draft, setDraft, inventory, onSave, onCan
         <div className="preset-note">
           {part.name}
           {part.powerType === 'CC' && part.minA != null && ` · ${part.minA}–${part.maxA}A`}
-          {reach != null && numOrNull(draft.maxPowerW) > reach
-            && ` · reaches ${g(reach)}W here`}
+          {part.supply && ` · ${part.maxPowerW}W at ${part.outputV}V`}
+          {reach != null && numOrNull(draft.maxPowerW) > reach && ` · reaches ${g(reach)}W here`}
         </div>
       )}
       {outOfRange && (
