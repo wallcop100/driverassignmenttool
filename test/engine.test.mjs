@@ -380,7 +380,7 @@ test('links-only model: no drivers, library is the inventory, export still works
   const a = { 'E5000X|OP.1': { toEntityType: 'Link', refs: ['L1', 'L2'] } };
   const csv = engine.exportCsv(m, a, added);
   assert.match(csv, /^"Pullzone","ParentElementRef","ElementRef"/);
-  assert.match(csv, /"E5000X","T100"/);
+  assert.match(csv, /"E5000X",,"T100"/);   // ElementName blank between them
   assert.match(csv, /"L1,L2"/);
   assert.equal(engine.validate(m, a, added).filter((f) => f.level === 'FAIL').length, 0);
 });
@@ -457,7 +457,7 @@ test('two added drivers export and patch under the one literal placeholder ref',
   };
   const csv = engine.exportCsv(m, a, added);
   assert.ok(!csv.includes('~'));
-  assert.equal(csv.split('"E5000X","T100"').length - 1, 4); // 2 drivers × 2 nodes
+  assert.equal(csv.split('"E5000X",,"T100"').length - 1, 4); // 2 drivers × 2 nodes
   const script = engine.generatePatchScript(m, a, added);
   assert.ok(!script.includes('~'));
   assert.equal(script.split('setValue("E5000X")').length - 1, 2); // one per placed cable
@@ -652,4 +652,20 @@ test('mA notation parses as amps — a unit variation is not missing data', () =
   const m = engine.buildModel(null, GF_HEAD + gfLinks(2) + '\n', lib);
   assert.equal(m.inventory[0].currentA, 0.35);
   assert.deepEqual(engine.planDrivers(m, {}, [], 'HUB-G').unmatched, []);
+});
+
+test('names travel with the refs, and are optional', () => {
+  const form = 'Pullzone,ElementRef,ElementName,ElementTypeRef,ElementTypeName,Node,ToEntityType,ToEntityRefs\n'
+    + 'HUB-G,E1,Study driver 1,T100,DualDrive 560/A,OP.1,,\n';
+  const m = engine.buildModel(form, GF_HEAD + gfLinks(2) + '\n', GF_TYPES);
+  assert.equal(m.drivers[0].name, 'Study driver 1');
+  assert.equal(m.drivers[0].typeName, 'DualDrive 560/A');
+  // the library row carries no name, so the one the hub rows state is kept
+  assert.equal(m.inventory.find((t) => t.typeRef === 'T100').name, 'DualDrive 560/A');
+
+  // the library's own name wins, and a CSV without the columns still parses
+  const named = 'ElementTypeRef,ElementTypeName,Driver Restrictions,Node Restrictions,Channels\n'
+    + 'T100,DualDrive 560/A,100W | 0.35A,100W | 55fV,2\n';
+  assert.equal(engine.buildModel(null, GF_HEAD + gfLinks(1) + '\n', named).inventory[0].name, 'DualDrive 560/A');
+  assert.equal(engine.buildModel(null, GF_HEAD + gfLinks(1) + '\n', GF_TYPES).inventory[0].name, '');
 });

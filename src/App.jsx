@@ -1,5 +1,6 @@
 import { useEffect, useReducer, useRef, useState } from 'react';
 import * as api from './api.js';
+import DriversPage from './components/DriversPage.jsx';
 import ImportScreen from './components/ImportScreen.jsx';
 import Landing from './components/Landing.jsx';
 import Tutorial from './components/Tutorial.jsx';
@@ -169,6 +170,8 @@ export default function App() {
     );
   } else if (!model) {
     screen = <ImportScreen dispatch={dispatch} saved={saved} onResume={resume} onDiscard={discard} />;
+  } else if (state.view.page === 'drivers') {
+    screen = <DriversPage state={state} dispatch={dispatch} />;
   } else if (state.view.page === 'zone') {
     screen = <ZonePage state={state} dispatch={dispatch} zone={state.view.zone}
       onResetToCurrentSet={embedded ? resetToCurrentSet : null} />;

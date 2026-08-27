@@ -159,6 +159,11 @@ export default function ZonePage({ state, dispatch, zone, onResetToCurrentSet })
         <button className="btn btn-sm btn-outline-primary" onClick={() => setShowAdd(true)}>
           <span className="material-icons small-icon align-middle">add</span> Driver
         </button>
+        <button className="btn btn-sm btn-outline-secondary"
+          title="The driver type catalogue: ratings, what uses them, and what the library left blank"
+          onClick={() => dispatch({ type: 'SET_VIEW', view: { page: 'drivers' } })}>
+          <span className="material-icons small-icon align-middle">memory</span> Types
+        </button>
         <button className="btn btn-sm btn-outline-secondary" disabled={!state.undo.length}
           onClick={() => dispatch({ type: 'UNDO' })} title="Undo (Ctrl+Z)">
           <span className="material-icons small-icon align-middle">undo</span> Undo

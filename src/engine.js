@@ -113,6 +113,7 @@ export function parseTypes(text) {
       const d = parseDriverRestrictions(row['Driver Restrictions']);
       types.set(typeRef, {
         typeRef,
+        name: s(row.ElementTypeName ?? row.Name ?? row.TypeName),
         powerType: d.powerType, maxPowerW: d.maxPowerW,
         currentA: d.currentA, outputVoltageV: d.outputVoltageV,
         undetermined: d.maxPowerW == null,
@@ -172,6 +173,10 @@ function parseForm(text) {
       const d = parseDriverRestrictions(row['Driver Restrictions']);
       drivers.set(ref, {
         ref, typeRef: row.ElementTypeRef, parentRef: row.ParentElementRef, zone: row.Pullzone,
+        // Human names, when the exporter sends them. A ref identifies a driver;
+        // a name is how anyone actually talks about one.
+        name: s(row.ElementName ?? row.Name),
+        typeName: s(row.ElementTypeName ?? row.TypeName),
         powerType: d.powerType, maxPowerW: d.maxPowerW, currentA: d.currentA, outputVoltageV: d.outputVoltageV,
         undetermined: d.maxPowerW == null,
         driverRestrictions: row['Driver Restrictions'], nodeRestrictions: row['Node Restrictions'],
@@ -215,7 +220,7 @@ function buildInventory(drivers) {
     const cur = inv.get(d.typeRef);
     if (!cur || d.nodes.length > cur.nodes.length) {
       inv.set(d.typeRef, {
-        typeRef: d.typeRef, powerType: d.powerType, maxPowerW: d.maxPowerW,
+        typeRef: d.typeRef, name: d.typeName, powerType: d.powerType, maxPowerW: d.maxPowerW,
         currentA: d.currentA, outputVoltageV: d.outputVoltageV, undetermined: d.undetermined,
         driverRestrictions: d.driverRestrictions, nodeRestrictions: d.nodeRestrictions, nodes: d.nodes,
       });
@@ -227,8 +232,9 @@ function buildInventory(drivers) {
 // Greenfield (links-only) export shape: exactly the columns exportCsv writes for
 // a driver added in the UI, which is all a hub with no drivers can produce.
 const DEFAULT_FIELDNAMES = [
-  'Pullzone', 'ParentElementRef', 'ElementRef', 'ElementTypeRef', 'Driver Restrictions',
-  'Node Restrictions', 'CurrentNodePowerInfo', 'Node', 'ToEntityType', 'ToEntityRefs', 'ControlGroup',
+  'Pullzone', 'ParentElementRef', 'ElementRef', 'ElementName', 'ElementTypeRef', 'ElementTypeName',
+  'Driver Restrictions', 'Node Restrictions', 'CurrentNodePowerInfo', 'Node', 'ToEntityType',
+  'ToEntityRefs', 'ControlGroup',
 ];
 const EMPTY_FORM = { drivers: [], baseline: {}, originalRows: [], fieldnames: DEFAULT_FIELDNAMES };
 
@@ -257,11 +263,14 @@ export function buildModel(formText, linksText, typesText, presets) {
   const inventory = buildInventory(drivers);
   for (const t of library) {
     const seen = inventory.get(t.typeRef);
-    inventory.set(t.typeRef, seen && seen.nodes.length > t.nodes.length ? { ...t, nodes: seen.nodes } : t);
+    const merged = seen && seen.nodes.length > t.nodes.length ? { ...t, nodes: seen.nodes } : t;
+    inventory.set(t.typeRef, { ...merged, name: t.name || seen?.name || '' });
   }
   // A preset overrides outright, node list included: the channel count was typed
   // in, so a longer observed one is stale data, not extra information.
-  for (const t of presetTypes) inventory.set(t.typeRef, t);
+  for (const t of presetTypes) {
+    inventory.set(t.typeRef, { ...t, name: t.name || inventory.get(t.typeRef)?.name || '' });
+  }
   return {
     zones, drivers, links, baseline, originalRows, fieldnames,
     inventory: [...inventory.values()].sort((a, b) => a.typeRef.localeCompare(b.typeRef)),
@@ -530,6 +539,7 @@ export function presetToType(p) {
     : p.powerType === 'CV' && p.outputVoltageV != null ? `${g(p.outputVoltageV)}V` : null;
   return {
     typeRef: p.typeRef,
+    name: p.name ?? '',
     powerType: p.powerType ?? null,
     maxPowerW: p.maxPowerW ?? null,
     currentA: p.powerType === 'CC' ? p.currentA ?? null : null,
@@ -787,6 +797,7 @@ export function exportCsv(model, assignments, added) {
       const refs = a[`${add.ref}|${node.name}`]?.refs || [];
       const row = {
         Pullzone: add.zone, ParentElementRef: '', ElementRef: outRef(add.ref), ElementTypeRef: add.typeRef,
+        ElementName: '', ElementTypeName: t.name ?? '',
         'Driver Restrictions': t.driverRestrictions, 'Node Restrictions': t.nodeRestrictions,
         CurrentNodePowerInfo: '', Node: node.name, ToEntityType: refs.length ? 'Link' : '',
         ToEntityRefs: refs.join(','), ControlGroup: derivedControlGroup(ctx, refs),
@@ -884,7 +895,7 @@ function typeBlock(t) {
     + `\t\tlet f=${TYPE_SHEET}.getCell(0,ET_Ref).getEntireColumn().find("${ref}",{completeMatch:true});\n`
     + `\t\tlet r=f?f.getRowIndex():${TYPE_SHEET}.getUsedRange().getRowCount();\n`
     + `\t\tif(!f){${TYPE_SHEET}.getCell(r,ET_Ref).setValue("${ref}")}\n`;
-  if (t.invented) out += `\t\tif(!f){${TYPE_SHEET}.getCell(r,ET_Name).setValue("${ref}")}\n`;
+  if (t.invented) out += `\t\tif(!f){${TYPE_SHEET}.getCell(r,ET_Name).setValue(${q(t.name || t.typeRef)})}\n`;
   if (t.maxPowerW != null) out += set('ET_MaxPower', g(t.maxPowerW));
   if (t.powerType === 'CV' && t.outputVoltageV != null) out += set('ET_OutputVoltage', g(t.outputVoltageV));
   if (t.powerType === 'CC' && t.currentA != null) out += set('ET_CurrentRange', g(t.currentA));

@@ -128,6 +128,10 @@ export default function DriverBin({ driver, state, dispatch, links, accent, flag
       style={{ width, '--zone-accent': accent }}>
       <div className="bin-header">
         <span className="fw-bold">{outRef(driver.ref)}</span>
+        {/* the ref identifies it, the name is what people call it */}
+        {(driver.name || driver.typeName) && (
+          <span className="bin-name" title={driver.typeName || ''}>{driver.name || driver.typeName}</span>
+        )}
         {driver.added && <span className="badge text-bg-info">NEW</span>}
         <span className={`type-chip type-${driver.powerType ?? 'unknown'}`}>
           {driver.powerType ?? '?'}{driver.powerType === 'CC' && driver.currentA ? ` ${driver.currentA}A`

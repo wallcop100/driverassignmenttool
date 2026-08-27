@@ -1,5 +1,5 @@
 -- SysEx Overlay - Lighting Interactive Driver Assignment --
--- V1.2 -- (live in DJ 101681 as revision 44)
+-- V1.3 -- (live in DJ 101681 as revision 47)
 
 --SQL HEADER--
 DECLARE @Container_TypeRef AS varchar(max) = 'PSU.HUB';   -- comma separated list of PSU-HUB Types
@@ -81,14 +81,15 @@ DECLARE @EntityTypeFilter AS varchar(max) = @Container_TypeRef;
    hub with no drivers be sized at all. The limit: a page where NO hub has drivers
    sends no library, and the tool then says so rather than guessing. */
 DECLARE @TypesCsv varchar(max);
-SELECT @TypesCsv = '"ElementTypeRef","Node","Driver Restrictions","Node Restrictions"'
+SELECT @TypesCsv = '"ElementTypeRef","ElementTypeName","Node","Driver Restrictions","Node Restrictions"'
 + @NL + STRING_AGG(CONVERT(varchar(max),
     '"'+REPLACE(ISNULL(t.ElementTypeRef,''),'"','""')+'",'
+  + '"'+REPLACE(ISNULL(t.ElementTypeName,''),'"','""')+'",'
   + '"'+REPLACE(ISNULL(t.Node,''),'"','""')+'",'
   + '"'+REPLACE(ISNULL(t.[Driver Restrictions],''),'"','""')+'",'
   + '"'+REPLACE(ISNULL(t.[Node Restrictions],''),'"','""')+'"'
   ), @NL)
-FROM (SELECT DISTINCT ElementTypeRef, Node, [Driver Restrictions], [Node Restrictions]
+FROM (SELECT DISTINCT ElementTypeRef, ElementTypeName, Node, [Driver Restrictions], [Node Restrictions]
       FROM #DriverAssignmentForm
       WHERE ISNULL(ElementTypeRef,'')<>'') t;
 
@@ -125,12 +126,14 @@ OUTER APPLY (
    handler asserts the line breaks survived. */
 IF OBJECT_ID('tempdb..#FormCsv') IS NOT NULL DROP TABLE #FormCsv;
 SELECT f.Pullzone AS HubLabel,
-  '"Pullzone","ParentElementRef","ElementRef","ElementTypeRef","CurrentNodePowerInfo","Node","ToEntityType","ToEntityRefs","ControlGroup"'
+  '"Pullzone","ParentElementRef","ElementRef","ElementName","ElementTypeRef","ElementTypeName","CurrentNodePowerInfo","Node","ToEntityType","ToEntityRefs","ControlGroup"'
 + @NL + STRING_AGG(CONVERT(varchar(max),
     '"'+REPLACE(ISNULL(CONVERT(varchar(max),f.Pullzone),''),'"','""')+'",'
   + '"'+REPLACE(ISNULL(CONVERT(varchar(max),f.ParentElementRef),''),'"','""')+'",'
   + '"'+REPLACE(ISNULL(CONVERT(varchar(max),f.ElementRef),''),'"','""')+'",'
+  + '"'+REPLACE(ISNULL(CONVERT(varchar(max),f.ElementName),''),'"','""')+'",'
   + '"'+REPLACE(ISNULL(CONVERT(varchar(max),f.ElementTypeRef),''),'"','""')+'",'
+  + '"'+REPLACE(ISNULL(CONVERT(varchar(max),f.ElementTypeName),''),'"','""')+'",'
   + '"'+REPLACE(ISNULL(CONVERT(varchar(max),f.CurrentNodePowerInfo),''),'"','""')+'",'
   + '"'+REPLACE(ISNULL(CONVERT(varchar(max),f.Node),''),'"','""')+'",'
   + '"'+REPLACE(ISNULL(CONVERT(varchar(max),f.ToEntityType),''),'"','""')+'",'
