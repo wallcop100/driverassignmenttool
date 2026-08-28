@@ -381,18 +381,48 @@ body { background: #f6f8fb; }
   font-size: 11.5px; color: #64748b; overflow: hidden; text-overflow: ellipsis;
   white-space: nowrap; max-width: 140px;
 }
-.preset-field em { font-style: normal; font-size: 10.5px; color: #94a3b8; }
-.preset-field .spec-off { color: #b3261e; }
-.form-control.is-off, .form-control.is-off:focus { border-color: #b3261e; }
+/* ---- driver type editor ----
+   Values first, column names as small print under them. A grid of labelled
+   boxes read as a spreadsheet row; this reads as a specification. */
+.spec-pick { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 10px; }
+.spec-pick label { display: flex; flex-direction: column; gap: 2px; font-size: 11px; color: #8a7a43; min-width: 220px; }
+.spec-pick .form-select { font-size: 13px; }
+.spec-head { font-size: 14px; }
+.spec-ref {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 14px;
+  font-weight: 600; color: #1f4e79; display: flex; align-items: center; margin-bottom: 4px;
+}
+.spec-ref input {
+  font: inherit; color: inherit; border: 1px solid transparent; background: transparent;
+  border-radius: 3px; padding: 2px 5px; width: 24ch;
+}
+.spec-ref input:hover { border-color: #e2d7b4; background: #fff; }
+.spec-ref input:focus { border-color: #c9a227; background: #fff; outline: none; }
+
+.spec-row { display: flex; align-items: flex-start; gap: 6px 20px; flex-wrap: wrap; padding: 9px 0; }
+.spec-row + .spec-row { border-top: 1px solid #f1e6c8; }
+.spec-group {
+  flex: 0 0 68px; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase;
+  color: #a89968; padding-top: 7px;
+}
+.spec-cell { display: flex; flex-direction: column; min-width: 76px; }
+.spec-cell input, .spec-cell select {
+  border: 1px solid transparent; background: transparent; border-radius: 3px;
+  font-size: 15px; font-weight: 600; color: #16212e; padding: 2px 5px; width: 100%;
+  font-variant-numeric: tabular-nums;
+}
+.spec-cell input:hover, .spec-cell select:hover { border-color: #e2d7b4; background: #fff; }
+.spec-cell input:focus, .spec-cell select:focus { border-color: #c9a227; background: #fff; outline: none; }
+.spec-cell input::placeholder { color: #cbd5e1; font-weight: 400; }
+.spec-cell .col { font-size: 10px; color: #a0aec0; padding-left: 6px; white-space: nowrap; }
+.spec-cell .ds, .spec-ref .ds { font-size: 10px; color: #b3261e; padding-left: 6px; }
+.spec-cell input.is-off, .spec-ref input.is-off { border-color: #b3261e; }
+
 .preset-note { font-size: 12px; color: #64748b; margin-top: 10px; }
 .preset-warn {
   font-size: 12px; color: #8a6d1f; background: #fdf6e3; border: 1px solid #e2d7b4;
   border-radius: 4px; padding: 5px 8px; margin-top: 8px;
 }
-.preset-grid { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)) !important; }
-.preset-hint { grid-column: 1 / -1; font-size: 11.5px; color: #a86b00; }
-.preset-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-.preset-field { display: flex; flex-direction: column; gap: 2px; font-size: 12px; color: #64748b; }
 .type-row.is-selected { background: #e8f1ff; box-shadow: inset 3px 0 0 #2563eb; }
 .type-power {
   font-size: 10px; font-weight: 700; letter-spacing: 0.03em; text-align: center;

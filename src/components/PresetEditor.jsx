@@ -114,20 +114,20 @@ export default function PresetEditor({ draft, setDraft, inventory, onSave, onCan
     controlType: part?.controlType,
   };
 
-  const field = (col, key, tip, extra = {}) => {
-    const want = spec[key];
-    const has = numOrNull(draft[key]);
+  // A value with its column name underneath, rather than a labelled box: the
+  // number is what you read, the schema name is what you check.
+  const Val = ({ col, k, tip, step }) => {
+    const want = spec[k];
+    const has = numOrNull(draft[k]);
     const off = want != null && has != null && Math.abs(has - want) > 1e-9;
     return (
-      <label className="preset-field">
-        <span title={tip}>{col}</span>
-        <input className={`form-control form-control-sm ${off ? 'is-off' : ''}`}
-          type="number" min="0" step="any" value={draft[key]}
-          onChange={(e) => set({ [key]: e.target.value })} {...extra} />
-        {want != null && (
-          <em className={off ? 'spec-off' : 'spec-ok'}>datasheet {g(want)}</em>
-        )}
-      </label>
+      <div className="spec-cell" title={tip}>
+        <input type="number" min="0" step={step ?? 'any'} value={draft[k]}
+          className={off ? 'is-off' : ''} placeholder="—"
+          onChange={(e) => set({ [k]: e.target.value })} />
+        <span className="col">{col}</span>
+        {off && <span className="ds">datasheet {g(want)}</span>}
+      </div>
     );
   };
 
@@ -150,95 +150,100 @@ export default function PresetEditor({ draft, setDraft, inventory, onSave, onCan
 
   return (
     <div className="preset-editor px-3 py-3">
-      <div className="d-flex align-items-center gap-2 mb-2">
-        <strong className="small">{draft.invented ? 'New ElementType' : draft.typeRef}</strong>
-        <span className="badge text-bg-warning ms-auto" title="Patched as IsPropertiesTBC">provisional</span>
-      </div>
-
-      {draft.invented && (
-        <div className="preset-grid mb-2">
-          <label className="preset-field">
-            <span title="Fills the fields from that part's Driver Specs page">Datasheet</span>
+      {draft.invented ? (
+        <div className="spec-pick">
+          <label>
+            <span>Part</span>
             <select className="form-select form-select-sm" value={draft.part ?? ''}
               onChange={(e) => {
                 const d = PARTS.find((x) => x.name === e.target.value);
                 setDraft({ ...draftFromPart(d, d?.kind === 'dcdc' ? chosenPsu : null), typeRef: '' });
               }}>
-              <option value="">—</option>
+              <option value="">Choose a driver…</option>
               {PARTS.filter((p) => p.kind !== 'supply').map((p) => (
                 <option key={p.name} value={p.name}>{p.name}</option>
               ))}
             </select>
           </label>
-          {/* A DC/DC driver has no rail of its own: the supply sets the voltage
+          {/* A DC/DC driver has no rail of its own — the supply sets the voltage
               and caps the wattage, so the pair is the specification. */}
           {chosen?.kind === 'dcdc' && (
-            <label className="preset-field">
-              <span title="The supply feeding it — sets OutputVoltage(V) and caps MaxPower(W)">PSU</span>
+            <label>
+              <span>Supply</span>
               <select className="form-select form-select-sm" value={draft.psu ?? ''}
                 onChange={(e) => {
                   const psu = PARTS.find((x) => x.name === e.target.value);
                   setDraft({ ...draftFromPart(chosen, psu), typeRef: '' });
                 }}>
-                <option value="">—</option>
+                <option value="">Choose a PSU…</option>
                 {PARTS.filter((p) => p.kind === 'supply').map((p) => (
                   <option key={p.name} value={p.name}>{p.name}</option>
                 ))}
               </select>
             </label>
           )}
-          <label className="preset-field">
-            <span title="ElementTypes.Ref — nCH counts DALI addresses">Ref</span>
-            <input className={`form-control form-control-sm ${refOff ? 'is-off' : ''}`}
-              value={draft.typeRef}
-              onChange={(e) => { setOwnRef(true); set({ typeRef: e.target.value }); }} />
-            {refOff && <em className="spec-off">{addr} addresses</em>}
-          </label>
+        </div>
+      ) : (
+        <div className="spec-pick">
+          <div className="spec-head">
+            <b>{draft.typeRef}</b>
+            {part && <span className="text-secondary"> · {part.name}</span>}
+          </div>
         </div>
       )}
 
-      <div className="preset-grid">
-        <label className="preset-field">
-          <span title="Constant current or constant voltage">Type</span>
-          <select className="form-select form-select-sm" value={draft.powerType}
-            onChange={(e) => set({ powerType: e.target.value })}>
+      <div className="spec-ref">
+        {draft.invented ? (
+          <input value={draft.typeRef} placeholder="Ref"
+            className={refOff ? 'is-off' : ''}
+            onChange={(e) => { setOwnRef(true); set({ typeRef: e.target.value }); }} />
+        ) : <span>{draft.typeRef}</span>}
+        {draft.invented && ownRef && (
+          <button className="btn btn-sm btn-link p-0 ms-2" onClick={() => setOwnRef(false)}>
+            use suggested
+          </button>
+        )}
+        {refOff && <span className="ds ms-2">{addr} addresses</span>}
+      </div>
+
+      <div className="spec-row">
+        <span className="spec-group">Driver</span>
+        <div className="spec-cell" title="Constant current or constant voltage">
+          <select value={draft.powerType} onChange={(e) => set({ powerType: e.target.value })}>
             <option value="CC">CC</option>
             <option value="CV">CV</option>
           </select>
-        </label>
-
-        {field('MaxPower(W)', 'maxPowerW', 'Total power, shared across all outputs')}
-
+          <span className="col">Type</span>
+        </div>
+        <Val col="MaxPower(W)" k="maxPowerW" tip="Total power, shared across all outputs" />
         {draft.powerType === 'CC'
-          ? field('CurrentRange', 'currentA', 'Amps, one current for the whole driver')
-          : field('OutputVoltage(V)', 'outputVoltageV', 'Volts the driver puts out')}
-
-        {field('Parameters', 'outputs', 'LED outputs — written as {<OP.1,<OP.2}', { min: '1', step: '1' })}
-        {field('BallastCountPerUoM', 'addresses', 'DALI addresses — the nCH in the Ref', { step: '1' })}
-        {field('NodeMaxForwardVoltage(fV)', 'nodeMaxFvV', 'Per output. Usually the limit that binds')}
-        {field('NodeMaxPower(W)', 'nodeMaxLoadW', 'Only if an output has its own cap')}
-        {field('NodeCurrent', 'nodeCurrentA', 'Amps. Only if current is settable per output')}
-
-        <label className="preset-field">
-          <span title="DALI, PHASE or Local">ControlType</span>
-          <input className="form-control form-control-sm" value={draft.controlType}
+          ? <Val col="CurrentRange" k="currentA" tip="Amps — one current for the whole driver" />
+          : <Val col="OutputVoltage(V)" k="outputVoltageV" tip="Volts the driver puts out" />}
+        <Val col="BallastCountPerUoM" k="addresses" tip="DALI addresses — the nCH in the Ref" step="1" />
+        <div className="spec-cell" title="DALI, PHASE or Local">
+          <input value={draft.controlType} placeholder="—"
             onChange={(e) => set({ controlType: e.target.value })} />
-          {spec.controlType && <em className="spec-ok">datasheet {spec.controlType}</em>}
-        </label>
+          <span className="col">ControlType</span>
+        </div>
+      </div>
+
+      <div className="spec-row">
+        <span className="spec-group">Per output</span>
+        <Val col="Parameters" k="outputs" tip="LED outputs — written as {<OP.1,<OP.2}" step="1" />
+        <Val col="NodeMaxForwardVoltage(fV)" k="nodeMaxFvV" tip="Per output. Usually the limit that binds" />
+        <Val col="NodeMaxPower(W)" k="nodeMaxLoadW" tip="Only if an output has its own cap" />
+        <Val col="NodeCurrent" k="nodeCurrentA" tip="Amps. Only if current is settable per output" />
       </div>
 
       {part && (
         <div className="preset-note">
-          {part.name}
-          {part.powerType === 'CC' && part.minA != null && ` · ${part.minA}–${part.maxA}A`}
-          {part.supply && ` · ${part.maxPowerW}W at ${part.outputV}V`}
+          {part.powerType === 'CC' && part.minA != null && `${part.minA}–${part.maxA}A`}
+          {part.supply && `${part.maxPowerW}W at ${part.outputV}V`}
           {reach != null && numOrNull(draft.maxPowerW) > reach && ` · reaches ${g(reach)}W here`}
         </div>
       )}
       {outOfRange && (
-        <div className="preset-warn">
-          CurrentRange outside {part.minA}–{part.maxA}A for this part
-        </div>
+        <div className="preset-warn">CurrentRange outside {part.minA}–{part.maxA}A for this part</div>
       )}
       {draft.powerType === 'CC' && numOrNull(draft.currentA) > 20 && (
         <div className="preset-warn">
@@ -255,11 +260,12 @@ export default function PresetEditor({ draft, setDraft, inventory, onSave, onCan
         </div>
       )}
 
-      <div className="d-flex gap-2 mt-3">
+      <div className="d-flex gap-2 mt-3 align-items-center">
         <button className="btn btn-sm btn-primary" disabled={!isComplete(draft)} onClick={onSave}>Save</button>
         <button className="btn btn-sm btn-outline-secondary" onClick={onCancel}>Cancel</button>
+        <span className="badge text-bg-warning ms-auto" title="Patched as IsPropertiesTBC">provisional</span>
         {onDelete && (
-          <button className="btn btn-sm btn-link text-danger ms-auto" onClick={onDelete}>Remove</button>
+          <button className="btn btn-sm btn-link text-danger" onClick={onDelete}>Remove</button>
         )}
       </div>
     </div>
