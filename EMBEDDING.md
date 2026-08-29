@@ -120,10 +120,42 @@ without reloading the frame) — it fully replaces the model.
 |---|---|---|---|
 | `type` | `'dat:init'` | yes | |
 | `version` | `1` | yes | Mismatch → the frame renders an explicit error, not a guess |
-| `form` | string | yes | Raw **Driver Assignment** CSV text |
-| `links` | string | yes | Raw **Links Assignment** CSV text |
+| `form` | string | no | Raw **Driver Assignment** CSV text. Absent or empty for a hub with no drivers yet |
+| `links` | string | see note | Raw **Links Assignment** CSV text |
+| `assessment` | string | see note | Raw **requirement assessment** CSV text, for a hub with no cables |
 | `focusZone` | string | no | Must match the `Pullzone` column exactly |
 | `context` | object | no | See below |
+
+**`links` or `assessment` — at least one.** Which one you send says which mode
+the hub is in, and the tool reaches the same conclusion independently from what
+arrives (`detectMode()`), so the two halves agree:
+
+| Sent | Mode | The hub is |
+|---|---|---|
+| `links` + `form` | assign | designed: cables and drivers both exist |
+| `links`, no `form` | size | cabled, but nothing to plug them into yet |
+| `assessment`, no `links` | estimate | at tender: Positions only, nothing to assign |
+
+A `dat:init` carrying neither is dropped as `missing links CSV`. A links CSV with
+a header and no data rows is **not** an error — it means the hub has no cables,
+which is the estimate's case, so send the assessment alongside it or instead.
+
+### The assessment CSV
+
+Fittings rolled up per secondary-power destination — one row per hub +
+ControlGroup + fitting type. A row is a *quantity*, not a cable, so the tool
+divides it across drivers.
+
+```csv
+"Link_SecondaryPowerRef","LocationName","ControlTypeRef","ControlGrouptext","PositionTypeRef","SumQuantity","CC/CV","CV_Voltage","CC_Current","SumVf","SumPower"
+"P50001","Study","DALI","L102-H-03","B02w","2","CC","","0.3","70","23.6"
+```
+
+`Link_SecondaryPowerRef` is the PSU-HUB **Position Ref**, while `Pullzone`
+elsewhere is `COALESCE(ExtRef, Ref)` — the overlay resolves the label rather
+than assuming they match. `SumQuantity` may be fractional: it is the type's UoM,
+so metres for tape. Rows whose `CC/CV` is neither `CC` nor `CV` are provisions
+and are left out.
 
 ### `context`
 
@@ -184,10 +216,28 @@ Required: **`ElementTypeRef`**. Everything else is read defensively.
 | Column | Used for |
 |---|---|
 | `ElementTypeRef` | the join key against the hub rows |
-| `Driver Restrictions` | the rating — `300W \| 0.3A` (CC) or `180W \| 24V` (CV) |
-| `Node Restrictions` | per-node `<n>W` / `<n>fV` limits |
+| `ElementTypeName` | which part it is — matched against the datasheet catalogue |
+| `MaxPower(W)`, `CurrentRange`, `OutputVoltage(V)` | the driver's rating |
+| `NodeMaxPower(W)`, `NodeMaxForwardVoltage(fV)`, `NodeCurrent` | per-output limits |
+| `BallastCountPerUoM` | DALI addresses — the `nCH` in a ref |
+| `Channels` | output count, if one row per type |
+| `ControlType` | `DALI` / `PHASE` / `Local` |
+| `Driver Restrictions` | **legacy** — the composed rating, `300W \| 0.3A` (CC) or `180W \| 24V` (CV) |
+| `Node Restrictions` | **legacy** — per-node `<n>W` / `<n>fV` limits |
 | `Node` | node name, if one row per type+node |
-| `Channels` | channel count, if one row per type |
+
+**State the columns rather than composing them.** The composed
+`Driver Restrictions` string is order-dependent, and a driver-level
+`MaxForwardVoltage(fV)` landing between the watts and the rating reads as
+`50W | 55fV | 0.35A`, which parses as **CC/CV undeclared** — the type then
+matches no cable and cannot be sized against. The explicit columns win wherever
+they are present; the composed form is still read, so an older host keeps
+working.
+
+Note `Channels` and `BallastCountPerUoM` are different numbers. Outputs are what
+cables land on; addresses are what the ref's `nCH` counts. A SoloDrive 560/A is
+two outputs on **one** address, which is exactly what separates it from a
+DualDrive 560/A.
 
 Two row shapes are accepted, whichever your exporter produces:
 
@@ -200,6 +250,10 @@ ET-CVR-D-24-2CH-01,OP.2,180W | 24V,90W
 # one row per type — nodes are generated as OP.1…OP.n
 ElementTypeRef,Channels,Driver Restrictions
 ET-CVR-D-24-2CH-01,2,180W | 24V
+
+# stated outright, which is what DJ 101681 V1.4 sends
+ElementTypeRef,ElementTypeName,MaxPower(W),CurrentRange,NodeMaxForwardVoltage(fV),BallastCountPerUoM,Channels
+ET-CCR-D-350-2CH-01,EldoLED DUALDrive 560/A at 350mA,50,0.35,55,2,2
 ```
 
 `Channels` is also read as `Nodes`, `NodeCount` or `ChannelCount`; absent, the
