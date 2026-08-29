@@ -16,23 +16,40 @@ import PresetEditor, { draftFrom, draftFromPart, rating, toPreset } from './Pres
 const fmt = (n) => (n == null ? null : (Number.isInteger(n) ? n : +n.toFixed(2)));
 const numOrNull = (v) => (v === '' || v == null ? null : Number(v));
 
-// What the datasheet and the stated ratings disagree about, in the fewest words
-// that still name the column.
+// What the stated ratings and the spec page disagree about. The part is matched
+// on a free-text name, so a mismatch might be the match's fault rather than the
+// data's: attribute the number to the page instead of asserting it, and lean on
+// the part name in the row above rather than repeating it. Each entry is
+// [what the row shows, the full sentence on hover].
 function faults(t, spec) {
   const out = [];
-  if (t.maxPowerW == null) out.push('no MaxPower(W)');
-  else if (spec?.maxPowerW != null && Math.abs(t.maxPowerW - spec.maxPowerW) > 0.01) {
-    out.push(`datasheet ${fmt(spec.maxPowerW)}W`);
+  if (t.maxPowerW == null) {
+    out.push(['no MaxPower(W) — nothing to size against',
+      'Without a max power this type cannot be checked or sized against.']);
+  } else if (spec?.maxPowerW != null && Math.abs(t.maxPowerW - spec.maxPowerW) > 0.01) {
+    const times = t.maxPowerW / spec.maxPowerW;
+    out.push([`${t.maxPowerW}W here · spec page says ${fmt(spec.maxPowerW)}W`,
+      `This type states ${t.maxPowerW}W. The ${spec.name} spec page says ${fmt(spec.maxPowerW)}W`
+      + `${times >= 1.5 ? ` — ${fmt(times)}× higher, so checks against it would pass an overload` : ''}. `
+      + `If this is not a ${spec.name}, the name is what matched it.`]);
   }
-  if (t.powerType == null) out.push('no CC/CV');
-  else if (t.powerType === 'CC' && t.currentA == null) out.push('no CurrentRange');
-  else if (t.powerType === 'CV' && t.outputVoltageV == null) out.push('no OutputVoltage(V)');
-  if (t.powerType === 'CC' && t.currentA != null && spec?.minA != null
+  if (t.powerType == null) {
+    out.push(['no CC/CV — matches no cable', 'With no declared CC/CV type this driver matches nothing.']);
+  } else if (t.powerType === 'CC' && t.currentA == null) {
+    out.push(['no CurrentRange — reads as undeclared',
+      'With CurrentRange empty the driver has no declared current, so it matches no cable.']);
+  } else if (t.powerType === 'CV' && t.outputVoltageV == null) {
+    out.push(['no OutputVoltage(V)', 'Without an output voltage the CV check cannot run.']);
+  } else if (t.powerType === 'CC' && t.currentA != null && spec?.minA != null
     && (t.currentA < spec.minA || t.currentA > spec.maxA)) {
-    out.push(`outside ${spec.minA}–${spec.maxA}A`);
+    out.push([`${t.currentA}A · spec page range is ${spec.minA}–${spec.maxA}A`,
+      `${t.currentA}A is outside the ${spec.minA}–${spec.maxA}A the ${spec.name} spec page gives.`]);
   }
   return out;
 }
+
+// Spec page for a part, when the catalogue knows which one it came from.
+const DOC = (page) => `https://kaizen.ideaworksgroup.co.uk/pages/view/?pageid=${page}`;
 
 export default function DriversPage({ state, dispatch, zone }) {
   const { model, presets, addedDrivers, assignments, prefs } = state;
@@ -92,7 +109,8 @@ export default function DriversPage({ state, dispatch, zone }) {
     || g.types.some((x) => x.t.typeRef.toLowerCase().includes(needle));
   const shown = groups.list.filter(match);
 
-  const undeclared = model.inventory.filter((t) => t.powerType == null || t.maxPowerW == null).length;
+  const needRatings = model.inventory.filter((t) => t.powerType == null || t.maxPowerW == null).length;
+  const zoneCables = zone ? model.links.filter((l) => l.zone === zone && l.powerType).length : 0;
 
   // ---- actions ----
   const addDriver = (typeRef) => dispatch({ type: 'ADD_DRIVER', typeRef, zone });
@@ -124,9 +142,9 @@ export default function DriversPage({ state, dispatch, zone }) {
         <span className="text-secondary small">
           {model.inventory.length} in this job · {PARTS.length} on datasheet
         </span>
-        {undeclared > 0 && (
-          <span className="badge badge-warn" title="No ratings, so they cannot be sized against">
-            {undeclared} undeclared
+        {needRatings > 0 && (
+          <span className="dp-need" title="These types state no ratings, so nothing can be sized against them">
+            {needRatings} type{needRatings > 1 ? 's' : ''} need ratings
           </span>
         )}
         <input className="form-control form-control-sm ms-auto" style={{ maxWidth: 240 }}
@@ -136,9 +154,10 @@ export default function DriversPage({ state, dispatch, zone }) {
       {canSuggest && plan?.drivers.length > 0 && (
         <div className="dp-suggest">
           <div>
-            <b>Size {zone} from its cables</b>
+            <b>{zone} has {zoneCables} cables and no drivers yet</b>
             <div className="text-secondary small">
-              {plan.proposals.map((p) => `${p.count} × ${p.typeRef}`).join(' · ')}
+              {plan.proposals.map((p) => `${p.count} × ${p.typeRef}`).join(' · ')} would hold them
+              {prefs.restrictControlGroup && ', one ControlGroup each'}
               {plan.unplaced.length > 0 && ` · ${plan.unplaced.length} wouldn’t fit`}
             </div>
           </div>
@@ -147,7 +166,7 @@ export default function DriversPage({ state, dispatch, zone }) {
               dispatch({ type: 'APPLY_PLAN', drivers: plan.drivers, placements: plan.placements });
               dispatch({ type: 'SET_VIEW', view: { page: 'zone', zone } });
             }}>
-            Add {plan.drivers.length} and place cables
+            Add these {plan.drivers.length} drivers
           </button>
         </div>
       )}
@@ -170,13 +189,21 @@ export default function DriversPage({ state, dispatch, zone }) {
           const needsCurrent = p.powerType === 'CC' && p.minA != null && p.minA !== p.maxA;
           const needsPsu = p.kind === 'dcdc';
           const ready = (!needsCurrent || numOrNull(choice.currentA) > 0) && (!needsPsu || !!psu);
+          // Discontinued parts stay for the refs still using them, but there is
+          // no reason to offer one that cannot be bought.
+          const gone = !!p.discontinued;
+          if (gone && !g.types.length) return null;
+          const troubled = g.types.some(({ t, spec }) => faults(t, spec).length);
 
           return (
-            <div key={g.key} className={`dp-part ${isOpen ? 'is-open' : ''}`}>
+            <div key={g.key} className={`dp-part ${isOpen ? 'is-open' : ''} ${gone ? 'is-gone' : ''}`}>
               <button type="button" className="dp-part-head"
                 onClick={() => setOpen(isOpen ? null : g.key)}>
                 <span className={`type-power is-${p.powerType.toLowerCase()}`}>{p.powerType}</span>
-                <span className="dp-name">{p.name}</span>
+                <span className="dp-name">
+                  {p.name}
+                  {gone && <span className="dp-gone">discontinued</span>}
+                </span>
                 <span className="dp-spec">
                   {fmt(eff.maxPowerW)}W
                   {p.powerType === 'CC' && p.minA != null
@@ -185,13 +212,22 @@ export default function DriversPage({ state, dispatch, zone }) {
                   {eff.maxFvV != null && ` · ${eff.maxFvV}fV/out`}
                 </span>
                 <span className="dp-ch">{eff.outputs ?? 1} out{eff.addresses ? ` · ${eff.addresses}CH` : ''}</span>
+                {troubled && <span className="dp-flag" title="One of the types under this part is worth a look">!</span>}
                 <span className="dp-count">
-                  {g.types.length ? `${g.types.length} ref${g.types.length > 1 ? 's' : ''}` : 'datasheet'}
+                  {g.types.length ? `${g.types.length} in use` : ''}
                 </span>
               </button>
+              {p.page && (
+                <a className="dp-doc" href={DOC(p.page)} target="_blank" rel="noreferrer"
+                  title={`Spec page for ${p.name}`}>
+                  <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+                    <path fill="currentColor" d="M14 3v2h3.6l-9.8 9.8 1.4 1.4L19 6.4V10h2V3h-7zM5 5h5V3H3v18h18v-7h-2v5H5V5z" />
+                  </svg>
+                </a>
+              )}
 
-              {/* the refs this job actually uses for that part */}
-              {g.types.map(({ t, spec }) => {
+              {/* the refs this job already uses for that part, folded away until asked for */}
+              {isOpen && g.types.map(({ t, spec }) => {
                 const f = faults(t, spec);
                 const u = usage.get(t.typeRef);
                 return (
@@ -206,7 +242,11 @@ export default function DriversPage({ state, dispatch, zone }) {
                       {u ? `${u.count} driver${u.count > 1 ? 's' : ''} · ${[...u.zones].sort().join(', ')}` : 'unused'}
                     </span>
                     {presets[t.typeRef] && <span className="badge text-bg-warning preset-badge">preset</span>}
-                    {f.length > 0 && <span className="dp-fault">{f.join(' · ')}</span>}
+                    {f.length > 0 && (
+                      <span className="dp-fault" title={f.map((x) => x[1]).join(' ')}>
+                        {f.map((x) => x[0]).join(' · ')}
+                      </span>
+                    )}
                     <span className="dp-ref-act">
                       {zone && (
                         <button className="btn btn-sm btn-link p-0 me-2"

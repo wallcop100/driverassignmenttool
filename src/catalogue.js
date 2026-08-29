@@ -67,8 +67,11 @@ export const PARTS = [
   // see resolveSpec().
   { name: 'EldoLED LinearDrive 100/A', re: /lin[a-z]*100/, powerType: 'CV', kind: 'dcdc',
     maxPowerW: 100, outputs: 4, addresses: 4, controlType: 'DALI', page: 105850 },
+  // Discontinued: kept so the refs still using it resolve, but not offered when
+  // adding. Set `discontinued` on anything else that stops being specified.
   { name: 'EldoLED LinearDrive 220D', re: /lin[a-z]*220/, powerType: 'CV', kind: 'dcdc',
-    maxPowerW: 200, outputs: 2, addresses: 2, controlType: 'DALI', page: 137217 },
+    maxPowerW: 200, outputs: 2, addresses: 2, controlType: 'DALI', page: 137217,
+    discontinued: true },
   { name: 'EldoLED LinearDrive 222D', re: /lin[a-z]*222/, powerType: 'CV', kind: 'dcdc',
     maxPowerW: 192, outputs: 2, addresses: 2, controlType: 'DMX', page: 105847,
     note: 'Spec page says "Outputs: 4" while its description says 2-channel — outputs unconfirmed' },
