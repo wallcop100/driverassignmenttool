@@ -848,14 +848,39 @@ test('the estimate ranks types by ITS count, not by watts', () => {
     + 'ET-1CH,SoloDrive,30,0.3,55,1\n'
     + 'ET-2CH,DualDrive,50,0.3,55,2\n';
   const rows = ASSESS_HEAD + 'P50446,Drawing Rooms,DALI,L103-H-03,B02w,2,1,CC,,0.3,70,23.6\n';
-  const [z] = engine.estimate(engine.buildEstimate(rows, types), { margin: 0.05 });
-  assert.equal(z.lines[0].typeRef, 'ET-2CH');
-  assert.equal(z.lines[0].perNode, 1);      // one fitting per output, fV bound
-  assert.equal(z.lines[0].perDriver, 2);    // two outputs
-  assert.equal(z.lines[0].count, 1);        // not 2
-  assert.equal(z.lines[0].limit, 'fV');
+  const m = engine.buildEstimate(rows, types);
 
-  // and with only the 1CH part available it still answers, with two drivers
+  const tight = engine.estimate(m, { margin: 0.05, preferSingleOutput: false })[0].lines[0];
+  assert.equal(tight.typeRef, 'ET-2CH');
+  assert.equal(tight.perNode, 1);      // one fitting per output, fV bound
+  assert.equal(tight.perDriver, 2);    // two outputs
+  assert.equal(tight.count, 1);        // not 2
+  assert.equal(tight.limit, 'fV');
+
+  // ...but consolidating onto a 2-output part is a decision the detail design
+  // has not taken yet, so the default reaches for the simpler part and accepts
+  // the higher count.
+  const early = engine.estimate(m, { margin: 0.05 })[0].lines[0];
+  assert.equal(early.typeRef, 'ET-1CH');
+  assert.equal(early.count, 2);
+
+  // and with only the 1CH part available either setting answers the same way
   const only1 = 'ElementTypeRef,MaxPower(W),CurrentRange,NodeMaxForwardVoltage(fV),Channels\nET-1CH,30,0.3,55,1\n';
   assert.equal(engine.estimate(engine.buildEstimate(rows, only1), { margin: 0.05 })[0].lines[0].count, 2);
+});
+
+test('each constraint is a coarser bucket, and coarser means more drivers', () => {
+  const types = 'ElementTypeRef,MaxPower(W),CurrentRange,NodeMaxForwardVoltage(fV),Channels\n'
+    + 'ET-2CH,50,0.3,55,2\n';
+  // same current, same hub: two fitting types, two ControlGroups, two rooms
+  const rows = ASSESS_HEAD
+    + 'P1,Study,DALI,CG1,B02w,1,1,CC,,0.3,20,11.8\n'
+    + 'P1,Hall,DALI,CG2,B02m,1,1,CC,,0.3,20,11.8\n';
+  const at = (o) => engine.estimate(engine.buildEstimate(rows, types), { margin: 0, preferSingleOutput: false, ...o })[0].drivers;
+
+  assert.equal(at({ restrictControlGroup: false, splitByType: false }), 1);  // everything shares
+  assert.equal(at({ splitByType: false }), 2);                              // one group per driver
+  assert.equal(at({ restrictControlGroup: false }), 2);                     // one fitting type per driver
+  assert.equal(at({}), 2);                                                  // both, same two buckets
+  assert.equal(at({ restrictControlGroup: false, splitByType: false, splitByLocation: true }), 2);
 });

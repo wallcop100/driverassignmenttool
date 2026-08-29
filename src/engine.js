@@ -921,13 +921,28 @@ export function planDrivers(model, assignments, added, zone, opts = {}) {
 // wattage says. Which limit bound the count is reported, because that is the
 // number a person will argue with.
 export function planFromRequirements(model, zone, opts = {}) {
-  const { restrictControlGroup = true, margin = 0.05 } = opts;
+  const {
+    restrictControlGroup = true,
+    splitByType = true,
+    splitByLocation = false,
+    preferSingleOutput = true,
+    margin = 0.05,
+  } = opts;
   const keep = 1 - margin;
   const rows = (model.requirements || []).filter((r) => r.zone === zone && !!r.powerType);
 
+  // Each constraint is a coarser bucket, and a coarser bucket means more
+  // drivers. That is the point: an estimate that packs everything as tightly as
+  // it will go has quietly made design decisions the detail stage has not taken
+  // yet, and it prices for a best case nobody has agreed to.
   const buckets = new Map();
   for (const r of rows) {
-    const key = restrictControlGroup ? `${r.controlGroup || '—'} · ${fpKey(r)}` : fpKey(r);
+    const key = [
+      fpKey(r),                                        // a CC fitting cannot share a CV driver
+      restrictControlGroup ? (r.controlGroup || '—') : null,
+      splitByType ? (r.positionType || '—') : null,
+      splitByLocation ? (r.location || '—') : null,
+    ].filter((x) => x != null).join(' · ');
     if (!buckets.has(key)) buckets.set(key, []);
     buckets.get(key).push(r);
   }
@@ -973,7 +988,15 @@ export function planFromRequirements(model, zone, opts = {}) {
           ? (perNodeFv <= perNodeW ? 'fV' : 'node W')
           : 'driver W',
       };
-      if (!best || betterFit(cand, best) < 0) best = cand;
+      // Fewest drivers is the efficient answer, and a 2-output part usually wins
+      // it — two fittings that will not sit in series still sit on one driver,
+      // one per output. Early on that is the wrong instinct: it assumes a
+      // consolidation the detail design may not follow, so the default is to
+      // reach for the simpler single-output part and accept the higher count.
+      const better = preferSingleOutput
+        ? (a, b) => (a.t.nodes.length - b.t.nodes.length) || betterFit(a, b)
+        : betterFit;
+      if (!best || better(cand, best) < 0) best = cand;
     }
 
     if (!best) { unmatched.push({ key, qty, reason: 'no type in the library can take these' }); continue; }

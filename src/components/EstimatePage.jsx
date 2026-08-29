@@ -22,12 +22,19 @@ export default function EstimatePage({ state, dispatch }) {
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState(null);
 
-  const opts = { restrictControlGroup: prefs.restrictControlGroup, margin: prefs.margin };
+  const opts = {
+    restrictControlGroup: prefs.restrictControlGroup,
+    splitByType: prefs.splitByType,
+    splitByLocation: prefs.splitByLocation,
+    preferSingleOutput: prefs.preferSingleOutput,
+    margin: prefs.margin,
+  };
   useEffect(() => {
     let stale = false;
     api.estimate(opts).then((z) => !stale && setZones(z)).catch((e) => setError(e.message));
     return () => { stale = true; };
-  }, [model, prefs.restrictControlGroup, prefs.margin]);
+  }, [model, prefs.restrictControlGroup, prefs.splitByType, prefs.splitByLocation,
+      prefs.preferSingleOutput, prefs.margin]);
 
   const setPref = (p) => dispatch({ type: 'SET_PREFS', prefs: p });
   const marginPct = Math.round((prefs.margin ?? 0) * 100);
@@ -79,21 +86,37 @@ export default function EstimatePage({ state, dispatch }) {
             {fmt(totals.unmatched)} units unmatched
           </span>
         )}
-        <div className="ms-auto d-flex align-items-center gap-3">
-          <div className="form-check form-switch mb-0" title="Never put two ControlGroups on one driver">
-            <input className="form-check-input" type="checkbox" id="estCg"
-              checked={!!prefs.restrictControlGroup}
-              onChange={(e) => setPref({ restrictControlGroup: e.target.checked })} />
-            <label className="form-check-label small" htmlFor="estCg">One ControlGroup per driver</label>
-          </div>
-          <label className="small d-flex align-items-center gap-1 mb-0" title="Capacity left free on every driver">
-            Margin
-            <input type="number" className="form-control form-control-sm margin-input"
-              min="0" max="50" step="1" value={marginPct}
-              onChange={(e) => setPref({ margin: Math.min(50, Math.max(0, Number(e.target.value) || 0)) / 100 })} />
-            %
+        <label className="small d-flex align-items-center gap-1 mb-0 ms-auto"
+          title="Capacity left free on every driver">
+          Margin
+          <input type="number" className="form-control form-control-sm margin-input"
+            min="0" max="50" step="1" value={marginPct}
+            onChange={(e) => setPref({ margin: Math.min(50, Math.max(0, Number(e.target.value) || 0)) / 100 })} />
+          %
+        </label>
+      </div>
+
+      {/* Each of these makes the estimate looser, and the count higher. Turning
+          them all off gives the tightest possible answer, which is rarely the
+          one to price at tender. */}
+      <div className="est-constraints">
+        <span className="est-c-label">Keep separate</span>
+        {[
+          ['restrictControlGroup', 'ControlGroups', 'Never put two ControlGroups on one driver'],
+          ['splitByType', 'Fitting types', 'Never put two fitting types on one driver'],
+          ['splitByLocation', 'Rooms', 'Never let a driver serve more than one room'],
+        ].map(([k, label, tip]) => (
+          <label key={k} className="est-c" title={tip}>
+            <input type="checkbox" checked={!!prefs[k]} onChange={(e) => setPref({ [k]: e.target.checked })} />
+            {label}
           </label>
-        </div>
+        ))}
+        <span className="est-c-label ms-3">Choosing a part</span>
+        <label className="est-c" title="Reach for a single-output driver rather than consolidating a pair onto one 2-output driver. Consolidating is a decision for the detail design, not the estimate">
+          <input type="checkbox" checked={!!prefs.preferSingleOutput}
+            onChange={(e) => setPref({ preferSingleOutput: e.target.checked })} />
+          Prefer single output
+        </label>
       </div>
 
       <div className="est-total">

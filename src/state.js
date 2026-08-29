@@ -19,7 +19,16 @@ export const LABEL_FIELDS = [
 ];
 // label: current behaviour. The two sizing knobs live here so they survive a
 // reload like every other UI pref.
-export const DEFAULT_PREFS = { label: ['loadW', 'fvV'], restrictControlGroup: true, margin: 0.05 };
+// The estimate constraints default conservative: at tender stage a tight answer
+// has quietly made design decisions nobody has taken yet.
+export const DEFAULT_PREFS = {
+  label: ['loadW', 'fvV'],
+  restrictControlGroup: true,
+  margin: 0.05,
+  splitByType: true,
+  splitByLocation: false,
+  preferSingleOutput: true,
+};
 
 export const initialState = {
   model: null,
