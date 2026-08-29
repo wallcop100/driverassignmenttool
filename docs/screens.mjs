@@ -2,11 +2,10 @@
 // real demo model, the real engine, and the app's own stylesheet — so a
 // screenshot is of what the code produces, not of a drawing of it.
 //
-//   node docs/screens.mjs
+//   node docs/screens.mjs           write the HTML
+//   node docs/shoot.mjs             capture them to docs/img/*.png
 //
-// Writes docs/driver-types.html and docs/estimate.html. Open each and capture.
-// There is no headless browser in this repo, so the capture itself is manual;
-// regenerating after a UI change is not.
+// Writes docs/driver-types.html and docs/estimate.html.
 import fs from 'node:fs';
 import * as e from '../src/engine.js';
 

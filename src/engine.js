@@ -993,8 +993,11 @@ export function planFromRequirements(model, zone, opts = {}) {
       // one per output. Early on that is the wrong instinct: it assumes a
       // consolidation the detail design may not follow, so the default is to
       // reach for the simpler single-output part and accept the higher count.
+      // Emergency stock is the wrong part, not a less-preferred one, so it
+      // outranks the single-output preference: never reach for an EM driver
+      // just because it has one output.
       const better = preferSingleOutput
-        ? (a, b) => (a.t.nodes.length - b.t.nodes.length) || betterFit(a, b)
+        ? (a, b) => (a.em - b.em) || (a.t.nodes.length - b.t.nodes.length) || betterFit(a, b)
         : betterFit;
       if (!best || better(cand, best) < 0) best = cand;
     }

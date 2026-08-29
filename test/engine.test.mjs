@@ -884,3 +884,21 @@ test('each constraint is a coarser bucket, and coarser means more drivers', () =
   assert.equal(at({}), 2);                                                  // both, same two buckets
   assert.equal(at({ restrictControlGroup: false, splitByType: false, splitByLocation: true }), 2);
 });
+
+test('preferring a single output never reaches for an emergency driver', () => {
+  // A 1-output EM part and a 2-output ordinary one, both able to take the work.
+  // Wanting single outputs must not be enough to choose the emergency stock.
+  const types = 'ElementTypeRef,MaxPower(W),CurrentRange,NodeMaxForwardVoltage(fV),Channels\n'
+    + 'ET-CCR-D-300-1CH-EM-01,30,0.3,55,1\n'
+    + 'ET-CCR-D-300-2CH-01,50,0.3,55,2\n';
+  const rows = ASSESS_HEAD + 'P1,Study,DALI,CG1,B02w,2,1,CC,,0.3,70,23.6\n';
+  const [z] = engine.estimate(engine.buildEstimate(rows, types), { margin: 0.05 });
+  assert.equal(z.lines[0].typeRef, 'ET-CCR-D-300-2CH-01');
+
+  // with an ordinary single-output part available, that one wins
+  const withPlain = types + 'ET-CCR-D-300-1CH-01,30,0.3,55,1\n';
+  assert.equal(
+    engine.estimate(engine.buildEstimate(rows, withPlain), { margin: 0.05 })[0].lines[0].typeRef,
+    'ET-CCR-D-300-1CH-01',
+  );
+});

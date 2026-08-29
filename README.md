@@ -76,14 +76,29 @@ which builds and publishes `dist/` to Pages. Enable it once under
 **Settings → Pages → Source → GitHub Actions**. `vite.config.js` uses
 `base: './'` so assets resolve under the project subpath.
 
-### Capturing them
+```
+node docs/screens.mjs    # -> docs/*.html
+node docs/shoot.mjs      # -> docs/img/*.png
+```
 
-There is no headless browser in this repo, so the capture is manual: run the
-script, open each HTML file, screenshot the framed area, and save into
-`docs/img/`. The renders use the real engine and the app's own stylesheet, so
-what you capture is what the code produces.
+Capture needs playwright and one system library:
 
-| File | Surface |
-|---|---|
-| `docs/driver-types.html` | Driver types — the one list, grouped by part |
-| `docs/estimate.html` | Estimate — a hub with Positions and no cables |
+```
+npm i -D playwright && npx playwright install chromium
+sudo apt-get install -y libxkbcommon0     # Debian/Ubuntu, incl. Raspberry Pi
+```
+
+### Estimate
+
+A hub with Positions and no cables. The count is per hub, each line says which
+limit bound it, and the constraints along the top make the answer looser.
+
+![Driver estimate](img/estimate.png)
+
+### Driver types
+
+One alphabetical list of parts, with the refs this job uses folded under each.
+Grouping by part is what makes a wrong rating obvious — the flagged rows are
+types whose stated wattage disagrees with the datasheet.
+
+![Driver types](img/driver-types.png)

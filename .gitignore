@@ -8,3 +8,4 @@ __pycache__/
 /sample-data
 host-overlay.js
 EMBEDDING.md
+docs/*.html
