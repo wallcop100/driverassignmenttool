@@ -472,9 +472,6 @@ body { background: #f6f8fb; }
   min-width: 40px; padding: 3px 9px; font-size: 11px; letter-spacing: 0.04em; border-radius: 4px;
 }
 .dp-count { min-width: 56px; }
-/* the spec page sits over the row's right edge, outside the button */
-.dp-doc { position: absolute; top: 9px; right: 12px; display: inline-flex; color: #b6c0cc; padding: 2px; }
-.dp-doc:hover { color: #1f4e79; }
 .dp-flag {
   width: 16px; height: 16px; border-radius: 50%; background: #fdf6e3; border: 1px solid #e2d7b4;
   color: #8a6d1f; font-size: 11px; font-weight: 700; line-height: 14px; text-align: center; flex: 0 0 auto;
@@ -491,7 +488,7 @@ body { background: #f6f8fb; }
 .dp-name { font-weight: 600; color: #16212e; }
 .dp-spec { color: #475569; font-variant-numeric: tabular-nums; }
 .dp-ch { color: #64748b; white-space: nowrap; }
-.dp-count { margin-left: auto; margin-right: 22px; font-size: 11.5px; color: #94a3b8; white-space: nowrap; }
+.dp-count { margin-left: auto; font-size: 11.5px; color: #94a3b8; white-space: nowrap; }
 
 .dp-ref {
   display: flex; align-items: center; gap: 12px; flex-wrap: wrap;

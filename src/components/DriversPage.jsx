@@ -48,9 +48,6 @@ function faults(t, spec) {
   return out;
 }
 
-// Spec page for a part, when the catalogue knows which one it came from.
-const DOC = (page) => `https://kaizen.ideaworksgroup.co.uk/pages/view/?pageid=${page}`;
-
 export default function DriversPage({ state, dispatch, zone }) {
   const { model, presets, addedDrivers, assignments, prefs } = state;
   const [open, setOpen] = useState(null);       // expanded row key
@@ -217,14 +214,6 @@ export default function DriversPage({ state, dispatch, zone }) {
                   {g.types.length ? `${g.types.length} in use` : ''}
                 </span>
               </button>
-              {p.page && (
-                <a className="dp-doc" href={DOC(p.page)} target="_blank" rel="noreferrer"
-                  title={`Spec page for ${p.name}`}>
-                  <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
-                    <path fill="currentColor" d="M14 3v2h3.6l-9.8 9.8 1.4 1.4L19 6.4V10h2V3h-7zM5 5h5V3H3v18h18v-7h-2v5H5V5z" />
-                  </svg>
-                </a>
-              )}
 
               {/* the refs this job already uses for that part, folded away until asked for */}
               {isOpen && g.types.map(({ t, spec }) => {

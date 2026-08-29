@@ -21,6 +21,10 @@
 //   outputs     Parameters {<OP.1,...}      LED outputs
 //   addresses   BallastCountPerUoM          DALI addresses — the nCH in a ref
 //
+// `page` records which spec page a part was read from, for the refresh in
+// REFRESH-catalogue.md. It is not linked from the UI: a page URL only resolves
+// with its read token, and this bundle is public.
+//
 // outputs and addresses are NOT the same number: a SoloDrive 560/A is two
 // outputs on one address, which is exactly what separates it from a DualDrive
 // 560/A (two outputs, two addresses). A ref's "1CH" counts addresses.
