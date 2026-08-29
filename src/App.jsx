@@ -1,6 +1,7 @@
 import { useEffect, useReducer, useRef, useState } from 'react';
 import * as api from './api.js';
 import DriversPage from './components/DriversPage.jsx';
+import EstimatePage from './components/EstimatePage.jsx';
 import ImportScreen from './components/ImportScreen.jsx';
 import Landing from './components/Landing.jsx';
 import Tutorial from './components/Tutorial.jsx';
@@ -55,8 +56,12 @@ export default function App() {
     const off = embed.onInit((msg, error) => {
       if (error) { if (hasModel.current) setNotice(error); else setFatal(error); return; }
       try {
-        payload.current = { form: msg.form, links: msg.links };
-        const model = api.parseText(msg.form, msg.links, types.current);
+        payload.current = { form: msg.form, links: msg.links, assessment: msg.assessment };
+        // A hub the host sends with no cables — only a requirement assessment —
+        // is the tender case, and lands on the estimate rather than a tray.
+        const model = msg.assessment && !msg.links?.trim()
+          ? api.parseEstimate(msg.assessment, types.current)
+          : api.parseText(msg.form, msg.links, types.current);
         const focus = msg.focusZone;
         // No match is a legitimate state — a hub with no drivers yet is exactly
         // what this tool exists to fix. Land on the list with a notice instead.
@@ -92,7 +97,11 @@ export default function App() {
         setNotice('Driver type definitions arrived after your changes — reopen this hub to apply them.');
         return;
       }
-      const init = { ...fresh.current, model: api.parseText(payload.current.form, payload.current.links, typesText) };
+      const p = payload.current;
+      const init = { ...fresh.current,
+        model: p.assessment && !p.links?.trim()
+          ? api.parseEstimate(p.assessment, typesText)
+          : api.parseText(p.form, p.links, typesText) };
       fresh.current = init;
       dispatch({ type: 'INIT', ...init });
     });
@@ -170,6 +179,8 @@ export default function App() {
     );
   } else if (!model) {
     screen = <ImportScreen dispatch={dispatch} saved={saved} onResume={resume} onDiscard={discard} />;
+  } else if (state.view.page === 'estimate') {
+    screen = <EstimatePage state={state} dispatch={dispatch} />;
   } else if (state.view.page === 'drivers') {
     screen = <DriversPage state={state} dispatch={dispatch} zone={state.view.zone} />;
   } else if (state.view.page === 'zone') {

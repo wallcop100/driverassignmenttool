@@ -37,9 +37,10 @@ const g = (n) => (Number.isInteger(n) ? String(n) : String(+n.toFixed(6)));
 const pct = (x) => `${Math.round(x * 100)}%`;
 const s = (v) => (v == null ? '' : String(v).trim());
 
-function readCsv(text, required, label) {
+function readCsv(text, required, label, allowEmpty = false) {
   const { data, meta, errors } = Papa.parse(text, { header: true, skipEmptyLines: 'greedy' });
-  if (!data.length) throw new Error(`${label}: file is empty or has no data rows`);
+  if (!data.length && !allowEmpty) throw new Error(`${label}: file is empty or has no data rows`);
+  if (!data.length) return { rows: [], fields: meta.fields ?? [] };
   const missing = required.filter((c) => !meta.fields.includes(c));
   if (missing.length) throw new Error(`${label}: missing column(s): ${missing.join(', ')}`);
   if (errors.length) throw new Error(`${label}: ${errors[0].message} (row ${errors[0].row})`);
@@ -54,6 +55,9 @@ export function detectKind(text) {
   const f = meta.fields || [];
   if (f.includes('LinkRef')) return 'links';
   if (f.includes('ElementRef') && f.includes('Node')) return 'form';
+  // Before 'types': the assessment also names ElementTypes-ish columns, but only
+  // it groups fittings by their secondary power destination.
+  if (f.includes('Link_SecondaryPowerRef') && f.includes('SumPower')) return 'assessment';
   if (f.includes('ElementTypeRef')) return 'types';
   return null;
 }
@@ -192,8 +196,10 @@ function parseForm(text) {
   return { drivers: [...drivers.values()], baseline, originalRows: rows, fieldnames: fields };
 }
 
+// A hub with no cables yet is the circumstance the estimate mode exists for, so
+// a header-only links file parses to nothing rather than throwing.
 function parseLinks(text) {
-  const { rows } = readCsv(text, LINK_ESSENTIAL, 'Links Assignment CSV');
+  const { rows } = readCsv(text, LINK_ESSENTIAL, 'Links Assignment CSV', true);
   const links = [];
   const seen = new Set();
   rows.forEach((row, i) => {
@@ -212,6 +218,79 @@ function parseLinks(text) {
     });
   });
   return links;
+}
+
+// Which of the three modes the data puts us in, and why. The tool should not
+// depend on which file someone happened to drop: the circumstance is what the
+// data says — cables and drivers, cables alone, or neither.
+//
+//   assign      cables to place, drivers to place them on
+//   greenfield  cables, but no drivers yet — size them, then place
+//   estimate    no cables at all — count drivers from the Positions (DJ 100053)
+//
+// `reason` is written to be shown to a person, because being in the wrong mode
+// is confusing and the fix is usually another CSV.
+export function detectMode({ drivers = 0, links = 0, requirements = 0 } = {}) {
+  if (links > 0) {
+    return drivers > 0
+      ? { mode: 'assign', reason: `${links} cables and ${drivers} drivers` }
+      : { mode: 'greenfield', reason: `${links} cables, no drivers yet` };
+  }
+  if (requirements > 0) {
+    return { mode: 'estimate', reason: `no cables yet — ${requirements} requirement rows from the Positions` };
+  }
+  return {
+    mode: null,
+    reason: drivers > 0
+      ? 'drivers but no cables — run the Links Assignment, or DJ 100053 for a tender estimate'
+      : 'nothing to work from — drop the Links Assignment CSV, or DJ 100053 for a tender estimate',
+  };
+}
+
+// ---- requirement assessment (DJ 100053) ----
+// At tender stage there are Positions and no Links, so nothing exists to assign.
+// DJ 100053 "Control Requirement Assessment (for SP Positions)" rolls the
+// fittings up per secondary-power destination and gives, per group, a quantity
+// and the totals for it.
+//
+// A row is NOT a cable: it is N fittings that happen to share a hub, a
+// ControlGroup and a fitting type. It carries the same field names a link does,
+// so fingerprintCompatible and pickType work on it unchanged — plus `qty`, and
+// the per-unit values that make it divisible across drivers.
+const ASSESSMENT_ESSENTIAL = ['Link_SecondaryPowerRef', 'SumPower'];
+
+export function parseAssessment(text) {
+  const { rows } = readCsv(text, ASSESSMENT_ESSENTIAL, 'Requirement Assessment CSV');
+  const out = [];
+  rows.forEach((row, i) => {
+    const zone = s(row.Link_SecondaryPowerRef);
+    if (!zone) return;                       // 100053 already drops these; belt and braces
+    const qty = num(row.SumQuantity) ?? 1;
+    if (qty <= 0) return;                    // a parent replaced by its own children
+    const pt = s(row['CC/CV']);
+    const loadW = num(row.SumPower) ?? 0;
+    const fvV = num(row.SumVf);
+    out.push({
+      ref: `R${i + 1}`,                      // requirements are not patched; the ref is for bookkeeping
+      zone,
+      qty,
+      loadW,
+      fvV,
+      currentA: num(row.CC_Current),
+      voltageV: num(row.CV_Voltage),
+      powerType: pt === 'CC' || pt === 'CV' ? pt : null,
+      controlGroup: s(row.ControlGrouptext),
+      location: s(row.LocationName),
+      positionType: s(row.PositionTypeRef),
+      controlType: s(row.ControlTypeRef),
+      addressCount: num(row.ControlAddressCount),
+      // per fitting — what actually has to fit on a node
+      wPer: loadW / qty,
+      fvPer: fvV == null ? null : fvV / qty,
+    });
+  });
+  if (!out.length) throw new Error('Requirement Assessment CSV: no rows with a secondary power destination');
+  return out;
 }
 
 function buildInventory(drivers) {
@@ -241,7 +320,10 @@ const EMPTY_FORM = { drivers: [], baseline: {}, originalRows: [], fieldnames: DE
 // formText is optional: a hub can start with cables and no drivers at all — that
 // is the case this tool exists to fix. Without it the type library is the only
 // possible source of inventory, so it becomes required instead.
-export function buildModel(formText, linksText, typesText, presets) {
+// `assessmentText` is the third mode: Positions rolled up by DJ 100053, with no
+// links and no drivers anywhere. The model then carries requirements instead of
+// links, and nothing downstream that assigns cables applies to it.
+export function buildModel(formText, linksText, typesText, presets, assessmentText) {
   const presetTypes = (presets || []).map(presetToType);
   if (!formText?.trim() && !typesText?.trim() && !presetTypes.length) {
     throw new Error('No Driver Assignment CSV and no driver type library — nothing to build drivers from.');
@@ -271,8 +353,37 @@ export function buildModel(formText, linksText, typesText, presets) {
   for (const t of presetTypes) {
     inventory.set(t.typeRef, { ...t, name: t.name || inventory.get(t.typeRef)?.name || '' });
   }
+  const seen = detectMode({ drivers: drivers.length, links: links.length });
+  if (!seen.mode) throw new Error(`This hub has ${seen.reason}.`);
   return {
     zones, drivers, links, baseline, originalRows, fieldnames,
+    requirements: [],
+    mode: seen.mode,
+    modeReason: seen.reason,
+    inventory: [...inventory.values()].sort((a, b) => a.typeRef.localeCompare(b.typeRef)),
+  };
+}
+
+// The estimate model. No links, no drivers, no baseline to diff against — the
+// only shared ground with the other two modes is the inventory, which is where
+// the sizing gets its parts.
+export function buildEstimate(assessmentText, typesText, presets) {
+  const requirements = parseAssessment(assessmentText);
+  const presetTypes = (presets || []).map(presetToType);
+  const library = typesText?.trim() ? parseTypes(typesText) : [];
+  if (!library.length && !presetTypes.length) {
+    throw new Error('No driver type library — nothing to size the estimate against.');
+  }
+  const inventory = new Map(library.map((t) => [t.typeRef, t]));
+  for (const t of presetTypes) {
+    inventory.set(t.typeRef, { ...t, name: t.name || inventory.get(t.typeRef)?.name || '' });
+  }
+  return {
+    zones: [...new Set(requirements.map((r) => r.zone))].sort(),
+    drivers: [], links: [], baseline: {}, originalRows: [], fieldnames: DEFAULT_FIELDNAMES,
+    requirements,
+    mode: 'estimate',
+    modeReason: detectMode({ requirements: requirements.length }).reason,
     inventory: [...inventory.values()].sort((a, b) => a.typeRef.localeCompare(b.typeRef)),
   };
 }
@@ -755,6 +866,81 @@ export function planDrivers(model, assignments, added, zone, opts = {}) {
   return { drivers, proposals, placements, unplaced, unmatched };
 }
 
+// Size a hub from a requirement assessment. Unlike planDrivers, a row here is a
+// quantity of fittings rather than a cable, so it divides freely across drivers
+// and the count is arithmetic rather than packing.
+//
+// The arithmetic is the one page 135910 teaches: 55fV per output at 12V a fitting
+// is four fittings per output, so a 2-output driver caps at eight whatever its
+// wattage says. Which limit bound the count is reported, because that is the
+// number a person will argue with.
+export function planFromRequirements(model, zone, opts = {}) {
+  const { restrictControlGroup = true, margin = 0.05 } = opts;
+  const keep = 1 - margin;
+  const rows = (model.requirements || []).filter((r) => r.zone === zone && !!r.powerType);
+
+  const buckets = new Map();
+  for (const r of rows) {
+    const key = restrictControlGroup ? `${r.controlGroup || '—'} · ${fpKey(r)}` : fpKey(r);
+    if (!buckets.has(key)) buckets.set(key, []);
+    buckets.get(key).push(r);
+  }
+
+  const lines = [];
+  const unmatched = [];
+  for (const [key, group] of [...buckets.entries()].sort()) {
+    // What must fit is ONE fitting, not the group total — that is the whole
+    // difference between this and packing cables.
+    const units = group.map((r) => ({
+      ...r, loadW: r.wPer, fvV: r.fvPer,
+    }));
+    const choice = pickType(model.inventory, units, margin);
+    const qty = group.reduce((n, r) => n + r.qty, 0);
+    if (!choice) { unmatched.push({ key, qty }); continue; }
+
+    const t = choice.t;
+    const node = t.nodes[0] ?? {};
+    const wPer = Math.max(...group.map((r) => r.wPer));
+    const fvPer = Math.max(...group.map((r) => r.fvPer ?? 0));
+
+    const perNodeFv = fvPer > 0 && node.maxFvV != null
+      ? Math.floor((node.maxFvV * keep) / fvPer) : Infinity;
+    const perNodeW = node.maxLoadW != null
+      ? Math.floor((node.maxLoadW * keep) / wPer) : Infinity;
+    const perNode = Math.min(perNodeFv, perNodeW);
+    const perDriverW = Math.floor((t.maxPowerW * keep) / wPer);
+    const perDriver = Math.min(perNode * t.nodes.length, perDriverW);
+
+    if (!(perDriver > 0)) { unmatched.push({ key, qty, reason: 'one fitting exceeds the driver' }); continue; }
+
+    // Name the limit that actually bound it, in the reader's terms.
+    const limit = perNode * t.nodes.length <= perDriverW
+      ? (perNodeFv <= perNodeW ? 'fV' : 'node W')
+      : 'driver W';
+
+    lines.push({
+      key,
+      typeRef: t.typeRef,
+      name: t.name || '',
+      count: Math.ceil(qty / perDriver),
+      qty,
+      perDriver,
+      perNode: Number.isFinite(perNode) ? perNode : null,
+      limit,
+      loadW: group.reduce((w, r) => w + r.loadW, 0),
+      controlGroup: group[0].controlGroup,
+    });
+  }
+
+  const drivers = lines.reduce((n, l) => n + l.count, 0);
+  return { zone, lines, unmatched, drivers, loadW: lines.reduce((w, l) => w + l.loadW, 0) };
+}
+
+// Every hub in the assessment, sized.
+export function estimate(model, opts) {
+  return model.zones.map((z) => planFromRequirements(model, z, opts));
+}
+
 // ---- export ----
 const quote = (v) => (v == null || v === '' ? '' : `"${String(v).replace(/"/g, '""')}"`);
 
@@ -938,6 +1124,57 @@ function patchBlock(ref, elementRef, node) {
 // One script from several saved sessions — the hubs of a branch/set are worked
 // one frame at a time, but the workbook is patched once. The body is a flat list
 // of per-link blocks, so merging is just concatenation in hub order.
+// ---- estimate -> Elements rows ----
+// The estimate produces drivers that do not exist yet, so this APPENDS to the
+// Elements sheet rather than patching anything. One row per hub + type carrying
+// a Quantity, which is why six identical drivers are one row and not six.
+//
+// Every row carries the same placeholder Ref by design (see PLACEHOLDER_REF).
+// Elements.Ref is meant to be unique, so the sheet holds duplicates until a
+// human resolves them — the same trade already accepted for added drivers.
+const ELEMENT_SHEET = 'Elements';
+const ELEMENT_FIELDS = [
+  ['EL_Ref', 'Ref'],
+  ['EL_Name', 'Name'],
+  ['EL_TypeRef', 'TypeRef'],
+  ['EL_ContextType', 'ContextType'],
+  ['EL_ContextRef', 'ContextRef'],
+  ['EL_Quantity', 'Quantity'],
+  ['EL_IsPropertiesTBC', 'IsPropertiesTBC'],
+];
+
+const elementHeader = () => `\t\t//${ELEMENT_SHEET}\n`
+  + `\t\tlet ${ELEMENT_SHEET}=DB.getWorksheet("${ELEMENT_SHEET}");\n`
+  + ELEMENT_FIELDS.map(([v, col]) =>
+    `\t\t\tlet ${v}=${ELEMENT_SHEET}.getCell(0,0).getEntireRow().find("${col}",{completeMatch:true}).getColumnIndex();\n`).join('')
+  // one running row index: each block appends the next row, so the used range is
+  // read once rather than re-measured after every write
+  + `\t\tlet EL_row=${ELEMENT_SHEET}.getUsedRange().getRowCount();\n\n`;
+
+function elementBlock(zone, line) {
+  const q = (x) => `"${esc(x)}"`;
+  const set = (v, val) => `\t\t${ELEMENT_SHEET}.getCell(EL_row,${v}).setValue(${val})\n`;
+  return `\t\t//${esc(zone)} · ${esc(line.typeRef)} × ${line.count}\n`
+    + set('EL_Ref', q(PLACEHOLDER_REF))
+    + (line.name ? set('EL_Name', q(line.name)) : '')
+    + set('EL_TypeRef', q(line.typeRef))
+    + set('EL_ContextType', '"Position"')
+    + set('EL_ContextRef', q(zone))
+    + set('EL_Quantity', g(line.count))
+    + set('EL_IsPropertiesTBC', '"Y"')
+    + '\t\tEL_row++\n\n';
+}
+
+// The whole estimate as one script. No LinksMap section: at tender stage there
+// are no links to repoint.
+export function generateEstimatePatch(estimates) {
+  const body = (estimates || [])
+    .flatMap((z) => z.lines.map((l) => elementBlock(z.zone, l)))
+    .join('');
+  if (!body) return PATCH_HEADER + PATCH_FOOTER;
+  return PATCH_HEADER + elementHeader() + body + PATCH_FOOTER;
+}
+
 export function generatePatchScriptMulti(sessions) {
   const body = (sessions || [])
     .flatMap((s) => changedRows(s.model, s.assignments, s.addedDrivers))

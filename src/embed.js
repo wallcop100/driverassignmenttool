@@ -18,9 +18,17 @@ export function validateInit(msg, origin, allowedOrigin) {
   const env = validateEnvelope(msg, origin, allowedOrigin, 'dat:init');
   if (!env.ok) return env;
   // form is optional: a hub with no drivers yet has no Driver Assignment rows to
-  // send. Links are the payload; a dat:init without them says nothing.
+  // send. Links OR an assessment is the payload — a hub with no cables at all is
+  // sized from its Positions instead (DJ 100053), and a dat:init carrying
+  // neither says nothing.
   if (msg.form != null && typeof msg.form !== 'string') return { ok: false, reason: 'malformed form CSV' };
-  if (typeof msg.links !== 'string' || !msg.links.trim()) return { ok: false, reason: 'missing links CSV' };
+  if (msg.assessment != null && typeof msg.assessment !== 'string') {
+    return { ok: false, reason: 'malformed assessment CSV' };
+  }
+  const hasLinks = typeof msg.links === 'string' && msg.links.trim();
+  const hasAssessment = typeof msg.assessment === 'string' && msg.assessment.trim();
+  if (!hasLinks && !hasAssessment) return { ok: false, reason: 'missing links CSV' };
+  if (msg.links != null && typeof msg.links !== 'string') return { ok: false, reason: 'malformed links CSV' };
   return { ok: true };
 }
 

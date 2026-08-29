@@ -66,7 +66,10 @@ export function reducer(state, action) {
         assignments: cloneAssignments(action.model.baseline),
         demo: !!action.demo,
         context: action.context ?? null,
-        view: action.view ?? initialState.view, // embed opens straight on focusZone
+        // an estimate has no cables to assign, so it never lands on a zone
+        view: action.view ?? (action.model.mode === 'estimate'
+          ? { page: 'estimate' }
+          : initialState.view),
       };
 
     case 'MOVE': {

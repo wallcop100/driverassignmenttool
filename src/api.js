@@ -10,7 +10,7 @@ let model = null;
 // The raw CSVs are kept so the model can be rebuilt when a driver type preset is
 // added or changed, without asking for the files again (embedded, there is
 // nobody to ask). `applied` is what the current model was built with.
-let raw = { form: null, links: null, types: null };
+let raw = { form: null, links: null, types: null, assessment: null };
 let applied = '[]';
 
 // The one ingest path: everything that produces a model goes through here, so
@@ -29,27 +29,61 @@ export function parseText(formText, linksText, typesText) {
 export function rebuild(presets) {
   const list = Object.values(presets || {});
   const key = JSON.stringify(list);
-  if (key === applied || !raw.links) return null;
-  model = engine.buildModel(raw.form, raw.links, raw.types, list);
+  if (key === applied) return null;
+  if (raw.assessment) model = engine.buildEstimate(raw.assessment, raw.types, list);
+  else if (raw.links) model = engine.buildModel(raw.form, raw.links, raw.types, list);
+  else return null;
   applied = key;
   return model;
 }
 
-// Drop the files at once, autodetect which is which (#10). Links are the only
-// hard requirement: links + a driver type library is the greenfield case (no
-// drivers yet), links + form is a hub that already has some.
+// Drop the files at once, autodetect which is which (#10). Three shapes are
+// accepted, one per mode: links + form, links + type library, or a requirement
+// assessment + type library when there are no links at all.
 export async function parseAuto(files) {
   const texts = await Promise.all([...files].map((f) => f.text()));
-  const found = { form: null, links: null, types: null };
+  const found = { form: null, links: null, types: null, assessment: null };
   for (const t of texts) {
     const kind = engine.detectKind(t);
     if (kind) found[kind] = t;
   }
-  if (!found.links) throw new Error("Couldn't detect a Links Assignment CSV. Drop that one at least.");
+  // The circumstance decides the mode, not which file happened to be dropped: a
+  // links CSV with a header and no rows is a hub with no cables, which is the
+  // estimate's case and not an error.
+  const hasLinks = found.links && engine.detectKind(found.links) === 'links'
+    && engine.buildModel(null, found.links, found.types ?? 'ElementTypeRef\nX\n').links.length > 0;
+
+  if (found.assessment && !hasLinks) {
+    if (!found.types) {
+      throw new Error('The assessment needs the driver type library alongside it, to size against.');
+    }
+    return parseEstimate(found.assessment, found.types);
+  }
+  if (!hasLinks) {
+    throw new Error(found.links
+      ? 'That Links Assignment CSV has no cables in it. For a hub with no cables, run DJ 100053 and drop the assessment instead.'
+      : "Couldn't detect a Links Assignment CSV, or a Requirement Assessment. Drop one of those.");
+  }
   if (!found.form && !found.types) {
     throw new Error('Links only: add the Driver Assignment CSV, or the driver type library to size new drivers from.');
   }
   return parseText(found.form, found.links, found.types);
+}
+
+// Third mode: Positions rolled up by DJ 100053, no links and no drivers.
+export function parseEstimate(assessmentText, typesText) {
+  raw = { form: null, links: null, types: typesText, assessment: assessmentText };
+  applied = '[]';
+  model = engine.buildEstimate(assessmentText, typesText);
+  return model;
+}
+
+export async function estimate(opts) {
+  return engine.estimate(model, opts);
+}
+
+export async function generateEstimatePatch(opts) {
+  return engine.generateEstimatePatch(engine.estimate(model, opts));
 }
 
 export function loadDemo() {

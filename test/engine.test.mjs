@@ -696,3 +696,117 @@ test('names travel with the refs, and are optional', () => {
   assert.equal(engine.buildModel(null, GF_HEAD + gfLinks(1) + '\n', named).inventory[0].name, 'DualDrive 560/A');
   assert.equal(engine.buildModel(null, GF_HEAD + gfLinks(1) + '\n', GF_TYPES).inventory[0].name, '');
 });
+
+// ---- third mode: estimate from a requirement assessment (DJ 100053) ----
+const ASSESS_HEAD = 'Link_SecondaryPowerRef,LocationName,ControlTypeRef,ControlGrouptext,'
+  + 'PositionTypeRef,SumQuantity,ControlAddressCount,CC/CV,CV_Voltage,CC_Current,SumVf,SumPower\n';
+const EST_TYPES = 'ElementTypeRef,ElementTypeName,Driver Restrictions,Node Restrictions,Channels\n'
+  + 'ET-CCR-D-350-2CH-01,EldoLED DualDrive 560/A,50W | 0.35A,55fV,2\n'
+  + 'ET-CVR-D-24-2CH-01,EldoLED LinearDrive 220D,185W | 24V,,2\n';
+// 40 downlights, 3W and 12fV each
+const DL40 = 'P50447,Study,DALI,CG1,PT-DL,40,1,CC,,0.35,480,120\n';
+
+test('an assessment row is a quantity of fittings, not a cable', () => {
+  const m = engine.buildEstimate(ASSESS_HEAD + DL40, EST_TYPES);
+  assert.equal(m.mode, 'estimate');
+  assert.deepEqual(m.links, []);
+  assert.deepEqual(m.zones, ['P50447']);
+  const r = m.requirements[0];
+  assert.equal(r.qty, 40);
+  assert.equal(r.wPer, 3);      // 120W / 40
+  assert.equal(r.fvPer, 12);    // 480fV / 40
+  assert.equal(engine.detectKind(ASSESS_HEAD + DL40), 'assessment');
+});
+
+test('the count is fV per output, as page 135910 teaches it', () => {
+  // 55fV a node at 12V a fitting is 4 per output, 8 on a 2-output driver,
+  // so 40 fittings need 5 drivers — whatever the wattage says.
+  const m = engine.buildEstimate(ASSESS_HEAD + DL40, EST_TYPES);
+  const [z] = engine.estimate(m, { margin: 0 });
+  assert.equal(z.lines.length, 1);
+  assert.equal(z.lines[0].perNode, 4);
+  assert.equal(z.lines[0].perDriver, 8);
+  assert.equal(z.lines[0].count, 5);
+  assert.equal(z.lines[0].limit, 'fV');
+  assert.equal(z.drivers, 5);
+
+  // 5% margin takes a node to 52.25fV, still 4 fittings — the count holds
+  assert.equal(engine.estimate(m, { margin: 0.05 })[0].lines[0].count, 5);
+  // 20% takes it to 44fV, so 3 per output and 7 drivers
+  const tight = engine.estimate(m, { margin: 0.2 })[0].lines[0];
+  assert.equal(tight.perNode, 3);
+  assert.equal(tight.count, 7);
+});
+
+test('watts bind when forward voltage does not', () => {
+  // 10 linear at 24W on a 185W CV driver: 185 x 0.95 / 24 = 7 per driver
+  const cv = 'P50003,Hall,DALI,CG2,PT-LIN,10,1,CV,24,,,240\n';
+  const [z] = engine.estimate(engine.buildEstimate(ASSESS_HEAD + cv, EST_TYPES), { margin: 0.05 });
+  assert.equal(z.lines[0].perDriver, 7);
+  assert.equal(z.lines[0].count, 2);
+  assert.equal(z.lines[0].limit, 'driver W');
+});
+
+test('one ControlGroup per driver splits the estimate, as it does the assignment', () => {
+  const two = ASSESS_HEAD
+    + 'P50447,Study,DALI,CG1,PT-DL,4,1,CC,,0.35,48,12\n'
+    + 'P50447,Study,DALI,CG2,PT-DL,4,1,CC,,0.35,48,12\n';
+  const m = engine.buildEstimate(two, EST_TYPES);
+  // 8 fittings fit one driver, but not two ControlGroups on it
+  assert.equal(engine.estimate(m, { margin: 0 })[0].drivers, 2);
+  assert.equal(engine.estimate(m, { margin: 0, restrictControlGroup: false })[0].drivers, 1);
+});
+
+test('fittings no type can take are reported, not silently dropped', () => {
+  const odd = ASSESS_HEAD + 'P50447,Study,DALI,CG1,PT-BIG,5,1,CC,,0.7,300,500\n';
+  const [z] = engine.estimate(engine.buildEstimate(odd, EST_TYPES));
+  assert.deepEqual(z.lines, []);
+  assert.equal(z.unmatched[0].qty, 5);
+  assert.equal(z.drivers, 0);
+});
+
+test('the estimate patch appends Elements rows carrying a Quantity', () => {
+  const m = engine.buildEstimate(ASSESS_HEAD + DL40, EST_TYPES);
+  const script = engine.generateEstimatePatch(engine.estimate(m, { margin: 0 }));
+  assert.match(script, /let Elements=DB\.getWorksheet\("Elements"\)/);
+  assert.match(script, /find\("Quantity",\{completeMatch:true\}\)/);
+  assert.match(script, /EL_Ref\)\.setValue\("E5000X"\)/);
+  assert.match(script, /EL_TypeRef\)\.setValue\("ET-CCR-D-350-2CH-01"\)/);
+  assert.match(script, /EL_ContextType\)\.setValue\("Position"\)/);
+  assert.match(script, /EL_ContextRef\)\.setValue\("P50447"\)/);
+  assert.match(script, /EL_Quantity\)\.setValue\(5\)/);   // one row, not five
+  assert.equal(script.split('EL_row++').length - 1, 1);
+  // and it never touches LinksMap rows, because there are none
+  assert.ok(!script.includes('FromLinkEndContextRef).setValue'));
+});
+
+test('an assessment without a type library is refused', () => {
+  assert.throws(() => engine.buildEstimate(ASSESS_HEAD + DL40, ''), /nothing to size the estimate against/);
+});
+
+test('the mode comes from the circumstance, not from which file was dropped', () => {
+  assert.equal(engine.detectMode({ drivers: 6, links: 26 }).mode, 'assign');
+  assert.equal(engine.detectMode({ drivers: 0, links: 26 }).mode, 'greenfield');
+  assert.equal(engine.detectMode({ requirements: 12 }).mode, 'estimate');
+  // dead ends name the file that would fix them
+  assert.equal(engine.detectMode({ drivers: 4 }).mode, null);
+  assert.match(engine.detectMode({ drivers: 4 }).reason, /DJ 100053/);
+  assert.match(engine.detectMode({}).reason, /DJ 100053/);
+
+  // and a built model carries what it decided
+  const m = engine.buildModel(null, GF_HEAD + gfLinks(2) + '\n', GF_TYPES);
+  assert.equal(m.mode, 'greenfield');
+  assert.equal(m.modeReason, '2 cables, no drivers yet');
+  assert.equal(engine.buildEstimate(ASSESS_HEAD + DL40, EST_TYPES).mode, 'estimate');
+});
+
+test('a links CSV with a header and no cables parses, then names what is missing', () => {
+  // Header-only used to throw "file is empty", which read as a broken export.
+  // It is a real circumstance: the hub has no cables yet.
+  const empty = 'LinkRef,PullZone,LinkSumPower(W),SecondaryPowerType\n';
+  const form = 'Pullzone,ElementRef,ElementTypeRef,Node\nHUB-G,E1,T100,OP.1\n';
+  assert.throws(() => engine.buildModel(null, empty, GF_TYPES), /nothing to work from/);
+  assert.throws(() => engine.buildModel(form, empty, GF_TYPES), /drivers but no cables/);
+  // both messages point at the file that would fix it
+  assert.throws(() => engine.buildModel(form, empty, GF_TYPES), /DJ 100053/);
+});
