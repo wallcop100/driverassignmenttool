@@ -4,7 +4,6 @@ import {
   assignedRefs, driverMatchesFilter, effectiveDrivers, filterOptions, isPending, isProvision,
   keyOf, linksByRef, linksForNode, orphanClusters, zoneAccent, zoneControlGroups, zoneStats,
 } from '../state.js';
-import AddDriverModal from './AddDriverModal.jsx';
 import DriverBin from './DriverBin.jsx';
 import IssuesBadge from './IssuesBadge.jsx';
 import LabelConfig from './LabelConfig.jsx';
@@ -28,7 +27,6 @@ function buildFlagIndex(flags) {
 
 export default function ZonePage({ state, dispatch, zone, onResetToCurrentSet }) {
   const { model, assignments, addedDrivers, flags, eligibility, focusNode } = state;
-  const [showAdd, setShowAdd] = useState(false);
   const [showReview, setShowReview] = useState(false);
   const [problemsOnly, setProblemsOnly] = useState(false);
   const [showInfo, setShowInfo] = useState(false); // #5 expected/info warnings collapsed by default
@@ -156,13 +154,9 @@ export default function ZonePage({ state, dispatch, zone, onResetToCurrentSet })
       </header>
 
       <div className="zone-toolbar">
-        <button className="btn btn-sm btn-outline-primary" onClick={() => setShowAdd(true)}>
+        <button className="btn btn-sm btn-outline-primary"
+          onClick={() => dispatch({ type: 'SET_VIEW', view: { page: 'drivers', zone } })}>
           <span className="material-icons small-icon align-middle">add</span> Driver
-        </button>
-        <button className="btn btn-sm btn-outline-secondary"
-          title="The driver type catalogue: ratings, what uses them, and what the library left blank"
-          onClick={() => dispatch({ type: 'SET_VIEW', view: { page: 'drivers' } })}>
-          <span className="material-icons small-icon align-middle">memory</span> Types
         </button>
         <button className="btn btn-sm btn-outline-secondary" disabled={!state.undo.length}
           onClick={() => dispatch({ type: 'UNDO' })} title="Undo (Ctrl+Z)">
@@ -240,7 +234,8 @@ export default function ZonePage({ state, dispatch, zone, onResetToCurrentSet })
                   ? `${allTray.length} cable${allTray.length > 1 ? 's' : ''} waiting — size the drivers from their load and forward voltage.`
                   : 'Add a driver to start assigning cables.'}
               </p>
-              <button className="btn btn-lg btn-primary" onClick={() => setShowAdd(true)}>
+              <button className="btn btn-lg btn-primary"
+                onClick={() => dispatch({ type: 'SET_VIEW', view: { page: 'drivers', zone } })}>
                 <span className="material-icons align-middle">add</span> Add drivers
               </button>
             </div>
@@ -248,8 +243,6 @@ export default function ZonePage({ state, dispatch, zone, onResetToCurrentSet })
         </div>
       </div>
 
-      {showAdd && <AddDriverModal state={state} zone={zone} dispatch={dispatch}
-        canSuggest={!zoneDrivers.length} onClose={() => setShowAdd(false)} />}
       {showReview && <ReviewModal state={state} dispatch={dispatch} onClose={() => setShowReview(false)} />}
     </div>
   );
