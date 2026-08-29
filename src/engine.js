@@ -106,6 +106,43 @@ const channelCount = (row) => {
   return n && n > 0 ? Math.floor(n) : 1;
 };
 
+// A library may state the ElementTypes columns outright instead of the composed
+// "Driver Restrictions" string, and when it does they win — the composed form is
+// order-dependent and loses the rating whenever a driver-level fV sits between
+// the watts and it:
+//
+//   "50W | 0.35A"        -> CC, 50W, 0.35A
+//   "50W | 55fV | 0.35A" -> undeclared
+//
+// which is one of the ways a type ends up unusable for sizing.
+const hasExplicit = (row) => ['MaxPower(W)', 'CurrentRange', 'OutputVoltage(V)']
+  .some((c) => num(row[c]) != null);
+
+function explicitRatings(row) {
+  const maxPowerW = num(row['MaxPower(W)']);
+  const currentA = num(row.CurrentRange);
+  const outputVoltageV = num(row['OutputVoltage(V)']);
+  const powerType = currentA != null ? 'CC' : outputVoltageV != null ? 'CV' : null;
+  const rating = powerType === 'CC' ? `${g(currentA)}A`
+    : powerType === 'CV' ? `${g(outputVoltageV)}V` : null;
+  return {
+    powerType,
+    maxPowerW,
+    currentA: powerType === 'CC' ? currentA : null,
+    outputVoltageV: powerType === 'CV' ? outputVoltageV : null,
+    // composed for export, where the form CSV still carries the string form —
+    // and composed in the order that survives a round trip
+    driverRestrictions: maxPowerW == null ? ''
+      : `${g(maxPowerW)}W${rating ? ` | ${rating}` : ''}`,
+  };
+}
+
+function explicitNode(row) {
+  const maxLoadW = num(row['NodeMaxPower(W)']);
+  const maxFvV = num(row['NodeMaxForwardVoltage(fV)']);
+  return { maxLoadW, maxFvV };
+}
+
 export function parseTypes(text) {
   const { rows } = readCsv(text, TYPE_ESSENTIAL, 'Driver Type CSV');
   const types = new Map();
@@ -113,21 +150,25 @@ export function parseTypes(text) {
     const typeRef = s(row.ElementTypeRef);
     if (!typeRef) continue;
     const node = s(row.Node);
+    const explicit = hasExplicit(row);
     if (!types.has(typeRef)) {
-      const d = parseDriverRestrictions(row['Driver Restrictions']);
+      const d = explicit ? explicitRatings(row) : parseDriverRestrictions(row['Driver Restrictions']);
+      const nodeStr = s(row['Node Restrictions']);
       types.set(typeRef, {
         typeRef,
         name: s(row.ElementTypeName ?? row.Name ?? row.TypeName),
         powerType: d.powerType, maxPowerW: d.maxPowerW,
         currentA: d.currentA, outputVoltageV: d.outputVoltageV,
         undetermined: d.maxPowerW == null,
-        driverRestrictions: s(row['Driver Restrictions']),
-        nodeRestrictions: s(row['Node Restrictions']),
+        driverRestrictions: explicit ? d.driverRestrictions : s(row['Driver Restrictions']),
+        nodeRestrictions: nodeStr || composeNodeRestrictions(explicit ? explicitNode(row) : {}),
+        ballast: num(row.BallastCountPerUoM),
+        controlType: s(row.ControlType) || null,
         nodes: [],
       });
     }
     const t = types.get(typeRef);
-    const n = parseNodeRestrictions(row['Node Restrictions']);
+    const n = explicit ? explicitNode(row) : parseNodeRestrictions(row['Node Restrictions']);
     if (node) {
       if (!t.nodes.some((x) => x.name === node)) t.nodes.push({ name: node, ...n });
     } else if (!t.nodes.length) {
@@ -136,6 +177,11 @@ export function parseTypes(text) {
   }
   return [...types.values()].sort((a, b) => a.typeRef.localeCompare(b.typeRef));
 }
+
+const composeNodeRestrictions = (n) => [
+  n.maxLoadW != null ? `${g(n.maxLoadW)}W` : null,
+  n.maxFvV != null ? `${g(n.maxFvV)}fV` : null,
+].filter(Boolean).join(' | ');
 
 // Fill each driver's blank ratings from its type. A value stated on the hub row
 // is an explicit override and is left alone — which is also why loading a
@@ -891,43 +937,57 @@ export function planFromRequirements(model, zone, opts = {}) {
   for (const [key, group] of [...buckets.entries()].sort()) {
     // What must fit is ONE fitting, not the group total — that is the whole
     // difference between this and packing cables.
-    const units = group.map((r) => ({
-      ...r, loadW: r.wPer, fvV: r.fvPer,
-    }));
-    const choice = pickType(model.inventory, units, margin);
+    const units = group.map((r) => ({ ...r, loadW: r.wPer, fvV: r.fvPer }));
     const qty = group.reduce((n, r) => n + r.qty, 0);
-    if (!choice) { unmatched.push({ key, qty }); continue; }
-
-    const t = choice.t;
-    const node = t.nodes[0] ?? {};
     const wPer = Math.max(...group.map((r) => r.wPer));
     const fvPer = Math.max(...group.map((r) => r.fvPer ?? 0));
+    const totalW = group.reduce((w, r) => w + r.loadW, 0);
 
-    const perNodeFv = fvPer > 0 && node.maxFvV != null
-      ? Math.floor((node.maxFvV * keep) / fvPer) : Infinity;
-    const perNodeW = node.maxLoadW != null
-      ? Math.floor((node.maxLoadW * keep) / wPer) : Infinity;
-    const perNode = Math.min(perNodeFv, perNodeW);
-    const perDriverW = Math.floor((t.maxPowerW * keep) / wPer);
-    const perDriver = Math.min(perNode * t.nodes.length, perDriverW);
+    // Rank candidates by the count THIS arithmetic gives, not by pickType's,
+    // which ranks on watts. When forward voltage binds — and it usually does —
+    // the two disagree: two 35fV fittings on a 55fV node need two outputs, so a
+    // 2CH part holds them on one driver while a 1CH part of the same wattage
+    // needs two. Ranking on watts picks the 1CH and doubles the estimate.
+    let best = null;
+    for (const t of sizingCandidates(model.inventory, units)) {
+      const node = t.nodes[0] ?? {};
+      const perNodeFv = fvPer > 0 && node.maxFvV != null
+        ? Math.floor((node.maxFvV * keep) / fvPer) : Infinity;
+      const perNodeW = node.maxLoadW != null
+        ? Math.floor((node.maxLoadW * keep) / wPer) : Infinity;
+      const perNode = Math.min(perNodeFv, perNodeW);
+      const perDriverW = Math.floor((t.maxPowerW * keep) / wPer);
+      const perDriver = Math.min(perNode * t.nodes.length, perDriverW);
+      if (!(perDriver > 0)) continue;
 
-    if (!(perDriver > 0)) { unmatched.push({ key, qty, reason: 'one fitting exceeds the driver' }); continue; }
+      const count = Math.ceil(qty / perDriver);
+      const cand = {
+        t,
+        count,
+        perDriver,
+        perNode: Number.isFinite(perNode) ? perNode : null,
+        em: isEmergency(t.typeRef) ? 1 : 0,
+        waste: count * t.maxPowerW * keep - totalW,
+        // the limit that actually bound it, in the reader's terms
+        limit: perNode * t.nodes.length <= perDriverW
+          ? (perNodeFv <= perNodeW ? 'fV' : 'node W')
+          : 'driver W',
+      };
+      if (!best || betterFit(cand, best) < 0) best = cand;
+    }
 
-    // Name the limit that actually bound it, in the reader's terms.
-    const limit = perNode * t.nodes.length <= perDriverW
-      ? (perNodeFv <= perNodeW ? 'fV' : 'node W')
-      : 'driver W';
+    if (!best) { unmatched.push({ key, qty, reason: 'no type in the library can take these' }); continue; }
 
     lines.push({
       key,
-      typeRef: t.typeRef,
-      name: t.name || '',
-      count: Math.ceil(qty / perDriver),
+      typeRef: best.t.typeRef,
+      name: best.t.name || '',
+      count: best.count,
       qty,
-      perDriver,
-      perNode: Number.isFinite(perNode) ? perNode : null,
-      limit,
-      loadW: group.reduce((w, r) => w + r.loadW, 0),
+      perDriver: best.perDriver,
+      perNode: best.perNode,
+      limit: best.limit,
+      loadW: totalW,
       controlGroup: group[0].controlGroup,
     });
   }

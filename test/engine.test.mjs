@@ -810,3 +810,52 @@ test('a links CSV with a header and no cables parses, then names what is missing
   // both messages point at the file that would fix it
   assert.throws(() => engine.buildModel(form, empty, GF_TYPES), /DJ 100053/);
 });
+
+test('a type library may state the ElementTypes columns instead of the composed string', () => {
+  const explicit = 'ElementTypeRef,ElementTypeName,MaxPower(W),CurrentRange,OutputVoltage(V),'
+    + 'NodeMaxPower(W),NodeMaxForwardVoltage(fV),ControlType,BallastCountPerUoM,Channels\n'
+    + 'ET-CCR-D-350-2CH-01,EldoLED DualDrive 560/A,50,0.35,,,55,DALI,2,2\n';
+  const composed = 'ElementTypeRef,ElementTypeName,Driver Restrictions,Node Restrictions,Channels\n'
+    + 'ET-CCR-D-350-2CH-01,EldoLED DualDrive 560/A,50W | 0.35A,55fV,2\n';
+  const a = engine.parseTypes(explicit)[0];
+  const b = engine.parseTypes(composed)[0];
+  for (const k of ['typeRef', 'name', 'powerType', 'maxPowerW', 'currentA', 'driverRestrictions']) {
+    assert.deepEqual(a[k], b[k], k);
+  }
+  assert.equal(a.nodes.length, 2);
+  assert.equal(a.nodes[0].maxFvV, 55);
+  assert.equal(a.ballast, 2);
+  assert.equal(a.controlType, 'DALI');
+
+  // the composed form is order-dependent and loses the rating to a driver-level
+  // fV — which is exactly why the explicit columns are preferred
+  const bad = engine.parseTypes('ElementTypeRef,Driver Restrictions,Channels\nET-X,50W | 55fV | 0.35A,2\n')[0];
+  assert.equal(bad.powerType, null);
+  assert.equal(bad.maxPowerW, 50);
+  // stated outright, the same driver survives
+  const good = engine.parseTypes('ElementTypeRef,MaxPower(W),CurrentRange,NodeMaxForwardVoltage(fV),Channels\n'
+    + 'ET-X,50,0.35,55,2\n')[0];
+  assert.equal(good.powerType, 'CC');
+  assert.equal(good.currentA, 0.35);
+});
+
+test('the estimate ranks types by ITS count, not by watts', () => {
+  // Two 35fV fittings on a 55fV node need two outputs: 35 + 35 is 70, over the
+  // node. So a 2CH part holds the pair on one driver and a 1CH part of the same
+  // wattage needs two. Ranking on watts prefers the 1CH (less wasted capacity)
+  // and doubles the estimate — real data at P50446 went 12 drivers instead of 7.
+  const types = 'ElementTypeRef,ElementTypeName,MaxPower(W),CurrentRange,NodeMaxForwardVoltage(fV),Channels\n'
+    + 'ET-1CH,SoloDrive,30,0.3,55,1\n'
+    + 'ET-2CH,DualDrive,50,0.3,55,2\n';
+  const rows = ASSESS_HEAD + 'P50446,Drawing Rooms,DALI,L103-H-03,B02w,2,1,CC,,0.3,70,23.6\n';
+  const [z] = engine.estimate(engine.buildEstimate(rows, types), { margin: 0.05 });
+  assert.equal(z.lines[0].typeRef, 'ET-2CH');
+  assert.equal(z.lines[0].perNode, 1);      // one fitting per output, fV bound
+  assert.equal(z.lines[0].perDriver, 2);    // two outputs
+  assert.equal(z.lines[0].count, 1);        // not 2
+  assert.equal(z.lines[0].limit, 'fV');
+
+  // and with only the 1CH part available it still answers, with two drivers
+  const only1 = 'ElementTypeRef,MaxPower(W),CurrentRange,NodeMaxForwardVoltage(fV),Channels\nET-1CH,30,0.3,55,1\n';
+  assert.equal(engine.estimate(engine.buildEstimate(rows, only1), { margin: 0.05 })[0].lines[0].count, 2);
+});

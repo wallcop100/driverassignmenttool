@@ -72,11 +72,11 @@ export default function EstimatePage({ state, dispatch }) {
       <div className="dp-head">
         <h5 className="mb-0">Driver estimate</h5>
         <span className="text-secondary small">
-          {fittings} fittings · {model.zones.length} hub{model.zones.length === 1 ? '' : 's'} · no links yet
+          {fmt(fittings)} units · {model.zones.length} hub{model.zones.length === 1 ? '' : 's'} · no links yet
         </span>
         {totals.unmatched > 0 && (
-          <span className="dp-need" title="No type in the library can take these, so they are not counted">
-            {totals.unmatched} fittings unmatched
+          <span className="dp-need" title="No type in the library can take these, so they are not counted. Quantity is in the type's UoM — metres for tape, pieces for fittings">
+            {fmt(totals.unmatched)} units unmatched
           </span>
         )}
         <div className="ms-auto d-flex align-items-center gap-3">
@@ -122,7 +122,7 @@ export default function EstimatePage({ state, dispatch }) {
               <div key={l.key} className="dp-ref">
                 <span className="dp-ref-id">{l.count} × {l.typeRef}</span>
                 <span className="dp-ref-spec">
-                  {l.qty} fittings · {l.perDriver} per driver
+                  {fmt(l.qty)} units · {l.perDriver} per driver
                   {l.perNode != null && ` · ${l.perNode} per output`}
                 </span>
                 <span className="dp-ref-use" title={`Limited by ${WHY[l.limit] ?? l.limit}`}>
@@ -133,7 +133,7 @@ export default function EstimatePage({ state, dispatch }) {
             ))}
             {z.unmatched.map((u) => (
               <div key={u.key} className="dp-ref is-off">
-                <span className="dp-ref-id">{u.qty} fittings</span>
+                <span className="dp-ref-id">{fmt(u.qty)} units</span>
                 <span className="dp-fault">
                   {u.reason ?? 'no type in the library can take these'} — {u.key}
                 </span>

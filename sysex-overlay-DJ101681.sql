@@ -1,5 +1,5 @@
 -- SysEx Overlay - Lighting Interactive Driver Assignment --
--- V1.3 -- (live in DJ 101681 as revision 47)
+-- V1.4 -- (live in DJ 101681 as revision 58)
 
 --SQL HEADER--
 DECLARE @Container_TypeRef AS varchar(max) = 'PSU.HUB';   -- comma separated list of PSU-HUB Types
@@ -77,31 +77,95 @@ DECLARE @EntityTypeFilter AS varchar(max) = @Container_TypeRef;
    per-hub CSV leaves them blank. One row per type+node so node-level limits are
    preserved. Sent once before dat:init — postMessage preserves order.
 
-   Sourced from the whole page's driver rows, not the hub's, which is what lets a
-   hub with no drivers be sized at all. The limit: a page where NO hub has drivers
-   sends no library, and the tool then says so rather than guessing. */
+   Sourced from #ElementTypes, not from the drivers in use: a driver is a type
+   with output nodes (Parameters carrying '<'), which is the same rule DriverForm
+   applies. That is what lets a page with NO drivers anywhere - a tender design -
+   still have parts to size against, and it gives the tool the whole library
+   rather than only what is already placed.
+
+   The columns are stated outright rather than composed into "Driver
+   Restrictions", because the composed form is order-dependent: a driver-level
+   MaxForwardVoltage(fV) between the watts and the rating reads as
+   "50W | 55fV | 0.35A", which parses as CC/CV UNDECLARED and makes the type
+   unusable for sizing. The tool prefers these columns and falls back to the
+   composed string for older hosts. */
 DECLARE @TypesCsv varchar(max);
-SELECT @TypesCsv = '"ElementTypeRef","ElementTypeName","Node","Driver Restrictions","Node Restrictions"'
+SELECT @TypesCsv = '"ElementTypeRef","ElementTypeName","MaxPower(W)","CurrentRange","OutputVoltage(V)",'
++ '"NodeMaxPower(W)","NodeMaxForwardVoltage(fV)","NodeCurrent","ControlType","BallastCountPerUoM","Channels"'
 + @NL + STRING_AGG(CONVERT(varchar(max),
-    '"'+REPLACE(ISNULL(t.ElementTypeRef,''),'"','""')+'",'
-  + '"'+REPLACE(ISNULL(t.ElementTypeName,''),'"','""')+'",'
-  + '"'+REPLACE(ISNULL(t.Node,''),'"','""')+'",'
-  + '"'+REPLACE(ISNULL(t.[Driver Restrictions],''),'"','""')+'",'
-  + '"'+REPLACE(ISNULL(t.[Node Restrictions],''),'"','""')+'"'
-  ), @NL)
-FROM (SELECT DISTINCT ElementTypeRef, ElementTypeName, Node, [Driver Restrictions], [Node Restrictions]
-      FROM #DriverAssignmentForm
-      WHERE ISNULL(ElementTypeRef,'')<>'') t;
+    '"'+REPLACE(ISNULL(t.Ref,''),'"','""')+'",'
+  + '"'+REPLACE(ISNULL(t.Name,''),'"','""')+'",'
+  + '"'+REPLACE(ISNULL(CONVERT(varchar(max),t.[MaxPower(W)]),''),'"','""')+'",'
+  + '"'+REPLACE(ISNULL(CONVERT(varchar(max),t.CurrentRange),''),'"','""')+'",'
+  + '"'+REPLACE(ISNULL(CONVERT(varchar(max),t.[OutputVoltage(V)]),''),'"','""')+'",'
+  + '"'+REPLACE(ISNULL(CONVERT(varchar(max),t.[NodeMaxPower(W)]),''),'"','""')+'",'
+  + '"'+REPLACE(ISNULL(CONVERT(varchar(max),t.[NodeMaxForwardVoltage(fV)]),''),'"','""')+'",'
+  + '"'+REPLACE(ISNULL(CONVERT(varchar(max),t.NodeCurrent),''),'"','""')+'",'
+  + '"'+REPLACE(ISNULL(CONVERT(varchar(max),t.ControlType),''),'"','""')+'",'
+  + '"'+REPLACE(ISNULL(CONVERT(varchar(max),t.BallastCountPerUoM),''),'"','""')+'",'
+  + '"'+CONVERT(varchar(10),t.Channels)+'"'
+  ), @NL) WITHIN GROUP (ORDER BY t.Ref)
+FROM (SELECT Ref, Name, [MaxPower(W)], CurrentRange, [OutputVoltage(V)],
+             [NodeMaxPower(W)], [NodeMaxForwardVoltage(fV)], NodeCurrent,
+             ControlType, BallastCountPerUoM,
+             LEN(Parameters) - LEN(REPLACE(Parameters,'<','')) AS Channels
+      FROM #ElementTypes
+      WHERE ISNULL(Parameters,'') LIKE '%<%') t;
+
+/* ---- 0b. requirement rows, for hubs that have fittings but no cables ----------------
+   At tender stage there are Positions and no Links, so there is nothing to
+   assign and both CSVs below come out empty. The fittings are still known, so
+   the drivers can be counted from them instead.
+
+   This is DJ 100053's job, but its body is not lifted in: {{>CalculatedPositions}}
+   above already carries Quantity (with the parent-replaced-by-children rule),
+   PositionLoad, PositionVf, PositionCurrent, SecondaryPowerType and an inherited
+   Link_SecondaryPowerRef resolved through #LinkRequirements - which is the
+   canonical inheritance, where 100053 hand-rolls its own COALESCE chain.
+
+   Link_SecondaryPowerRef is the PSU-HUB Position, so it is the same hub the rest
+   of this overlay keys on - but it is the raw Ref, while Pullzone is
+   COALESCE(ExtRef,Ref). Joining to #Positions for the label is what stops a hub
+   with an ExtRef silently producing an empty estimate.
+
+   SecondaryPowerType 'N/A' is a provision or a mains feed, not a driver load, so
+   it is excluded exactly as the tool excludes LV-PROV cables. */
+IF OBJECT_ID('tempdb..#SPRequirements') IS NOT NULL DROP TABLE #SPRequirements;
+SELECT
+       COALESCE(NULLIF(h.ExtRef,''), h.Ref)        AS HubLabel,
+       cp.Link_SecondaryPowerRef                   AS HubRef,
+       L.Name                                      AS LocationName,
+       cp.ControlTypeRef,
+       COALESCE(P.ControlGroupText, P2.ControlGroupText, P3.ControlGroupText) AS ControlGrouptext,
+       cp.PositionTypeRef,
+       cp.SecondaryPowerType                       AS [CC/CV],
+       SUM(cp.Quantity)                            AS SumQuantity,
+       NULLIF(MAX(cp.PositionVoltage),0)           AS CV_Voltage,
+       NULLIF(MAX(cp.PositionCurrent),0)           AS CC_Current,
+       NULLIF(SUM(cp.PositionVf),0)                AS SumVf,
+       SUM(cp.PositionLoad)                        AS SumPower
+INTO #SPRequirements
+FROM #CalculatedPositions cp
+JOIN #Positions h ON h.Ref = cp.Link_SecondaryPowerRef
+  AND h.TypeRef IN (SELECT TRIM(value) FROM STRING_SPLIT(@Container_TypeRef,','))
+LEFT JOIN #Positions P  ON P.Ref  = cp.PositionRef
+LEFT JOIN #Positions P2 ON P2.Ref = P.ContextRef
+LEFT JOIN #Positions P3 ON P3.Ref = P2.ContextRef
+LEFT JOIN #Locations L  ON L.Ref  = cp.LocationRef
+WHERE cp.Quantity > 0 AND cp.SecondaryPowerType IN ('CC','CV')
+GROUP BY COALESCE(NULLIF(h.ExtRef,''), h.Ref), cp.Link_SecondaryPowerRef, L.Name,
+         cp.ControlTypeRef, COALESCE(P.ControlGroupText, P2.ControlGroupText, P3.ControlGroupText),
+         cp.PositionTypeRef, cp.SecondaryPowerType;
 
 /* ---- 1. hubs: label (as the CSVs key on) -> Position Ref (as the overlay keys on) ----
    Pullzone in both CSVs is COALESCE(ExtRef,Ref) - the readable label. An overlay
    row must key on the Position Ref, which only resolves inside its own set. Match
    the two rather than assuming either.
 
-   A hub is anywhere cables OR drivers live, so the two sources are UNIONed. Taking
-   only the form's Pullzones hid exactly the hubs that need the tool most: a hub
-   with cables and no drivers yet got no launcher, because it has no driver rows to
-   be found in. That is the case the tool sizes drivers for. */
+   A hub is anywhere cables OR drivers OR fittings live, so the three sources are
+   UNIONed. Taking only the form's Pullzones hid exactly the hubs that need the
+   tool most: a hub with cables and no drivers got no launcher, because it has no
+   driver rows to be found in, and a tender hub with neither got none either. */
 IF OBJECT_ID('tempdb..#Hubs') IS NOT NULL DROP TABLE #Hubs;
 SELECT DISTINCT
        f.Pullzone                                  AS HubLabel,
@@ -111,7 +175,9 @@ FROM (SELECT DISTINCT Pullzone FROM #DriverAssignmentForm WHERE ISNULL(Pullzone,
       UNION
       SELECT DISTINCT PullZone FROM #LinkAllocation
       WHERE ISNULL(PullZone,'')<>''
-        AND PullzoneTypeRef IN (SELECT TRIM(value) FROM STRING_SPLIT(@Container_TypeRef,','))) f
+        AND PullzoneTypeRef IN (SELECT TRIM(value) FROM STRING_SPLIT(@Container_TypeRef,','))
+      UNION
+      SELECT DISTINCT HubLabel FROM #SPRequirements) f
 OUTER APPLY (
     SELECT TOP 1 p.Ref
     FROM #Positions p
@@ -173,6 +239,32 @@ WHERE l.PullzoneTypeRef IN (SELECT TRIM(value) FROM STRING_SPLIT(@Container_Type
   AND ISNULL(l.PullZone,'')<>''
 GROUP BY l.PullZone;
 
+/* ---- 2b. the assessment CSV, for a hub with no cables -------------------------------
+   Only for a hub with no cables. A hub that has links gets links, as before -
+   the SQL decides which circumstance a hub is in, and the tool's own detectMode
+   reaches the same answer from the payload, so the two halves agree. */
+IF OBJECT_ID('tempdb..#DataCsv') IS NOT NULL DROP TABLE #DataCsv;
+SELECT r.HubLabel,
+  '"Link_SecondaryPowerRef","LocationName","ControlTypeRef","ControlGrouptext","PositionTypeRef",'
++ '"SumQuantity","CC/CV","CV_Voltage","CC_Current","SumVf","SumPower"'
++ @NL + STRING_AGG(CONVERT(varchar(max),
+    '"'+REPLACE(ISNULL(CONVERT(varchar(max),r.HubRef),''),'"','""')+'",'
+  + '"'+REPLACE(ISNULL(CONVERT(varchar(max),r.LocationName),''),'"','""')+'",'
+  + '"'+REPLACE(ISNULL(CONVERT(varchar(max),r.ControlTypeRef),''),'"','""')+'",'
+  + '"'+REPLACE(ISNULL(CONVERT(varchar(max),r.ControlGrouptext),''),'"','""')+'",'
+  + '"'+REPLACE(ISNULL(CONVERT(varchar(max),r.PositionTypeRef),''),'"','""')+'",'
+  + '"'+REPLACE(ISNULL(CONVERT(varchar(max),r.SumQuantity),''),'"','""')+'",'
+  + '"'+REPLACE(ISNULL(CONVERT(varchar(max),r.[CC/CV]),''),'"','""')+'",'
+  + '"'+REPLACE(ISNULL(CONVERT(varchar(max),r.CV_Voltage),''),'"','""')+'",'
+  + '"'+REPLACE(ISNULL(CONVERT(varchar(max),r.CC_Current),''),'"','""')+'",'
+  + '"'+REPLACE(ISNULL(CONVERT(varchar(max),r.SumVf),''),'"','""')+'",'
+  + '"'+REPLACE(ISNULL(CONVERT(varchar(max),r.SumPower),''),'"','""')+'"'
+  ), @NL) WITHIN GROUP (ORDER BY r.ControlGrouptext, r.PositionTypeRef) AS Csv
+INTO #DataCsv
+FROM #SPRequirements r
+WHERE NOT EXISTS (SELECT * FROM #LinkCsv lc WHERE lc.HubLabel = r.HubLabel)
+GROUP BY r.HubLabel;
+
 /* ---- 3. the handler -----------------------------------------------------------------
    Self-built panel, not the Bootstrap modal: no dependency on SysEx modal ids,
    full width for a real application, and it cannot collide with a markdown modal
@@ -184,14 +276,21 @@ DECLARE @JS varchar(max) =
 +'var src=TOOL_ORIGIN+TOOL_PATH+''?parentOrigin=''+encodeURIComponent(location.origin);'
 +'var f=document.getElementById(''datf_''+ref);'
 +'var l=document.getElementById(''datl_''+ref);'
++'var d=document.getElementById(''data_''+ref);'
 +'if(!f||!l){IWalertmessage(''No data block for ''+ref);return;}'
-+'var form=f.textContent,links=l.textContent;'
++'var form=f.textContent,links=l.textContent,assess=d?d.textContent:'''';'
  -- The CSVs must keep their line breaks. If they are ever collapsed the tool
  -- reports a column error; catch it here, where the message can name the cause.
- -- The form block is legitimately empty on a hub with no drivers, so it is only
- -- checked when it has content. Nested ifs, not && - see the note further down.
-+'if(links.indexOf(''\n'')===-1){'
-+'IWalertmessage(''Driver tool: links CSV for ''+ref+'' has no line breaks - check the overlay writer.'');return;}'
+ -- Each block is only checked when it HAS content: the form is empty on a hub
+ -- with no drivers, and links are empty on a tender hub, which is the case the
+ -- assessment covers. One of links or assessment must be there, or the panel has
+ -- nothing to open on. Nested ifs, not && - see the note further down.
++'if(links===''''){if(assess===''''){'
++'IWalertmessage(''Driver tool: no cables and no requirement data for ''+ref+''.'');return;}}'
++'if(links!==''''){if(links.indexOf(''\n'')===-1){'
++'IWalertmessage(''Driver tool: links CSV for ''+ref+'' has no line breaks - check the overlay writer.'');return;}}'
++'if(assess!==''''){if(assess.indexOf(''\n'')===-1){'
++'IWalertmessage(''Driver tool: requirement CSV for ''+ref+'' has no line breaks - check the overlay writer.'');return;}}'
 +'if(form!==''''){if(form.indexOf(''\n'')===-1){'
 +'IWalertmessage(''Driver tool: driver CSV for ''+ref+'' has no line breaks - check the overlay writer.'');return;}}'
 +'var back=document.createElement(''div'');'
@@ -227,7 +326,7 @@ DECLARE @JS varchar(max) =
 +'var tlib=document.getElementById(''datt_''+ref);'
 +'if(tlib){fr.contentWindow.postMessage({type:''dat:types'',version:1,types:tlib.textContent},TOOL_ORIGIN);}'
 +'fr.contentWindow.postMessage({type:''dat:init'',version:1,'
-+'form:form,links:links,focusZone:hub,'
++'form:form,links:links,assessment:assess,focusZone:hub,'
 +'context:{branchId:''' + @Branch + ''',systemSetId:ver,hubRef:ref,hubLabel:hub}},TOOL_ORIGIN);}'
 +'if(m.type===''dat:dirty''){dirty=m.changeCount;st.textContent=dirty?dirty+'' unsaved'':'''';}'
 +'if(m.type===''dat:error''){IWalertmessage(''Driver tool: ''+m.message);}'
@@ -254,20 +353,28 @@ INSERT #SysEx_Overlay
 SELECT 'Position', h.HubRef, '>DriverAssignment.Open',
    '<script type="text/plain" id="datf_'+h.HubRef+'">'+ISNULL(fc.Csv,'')+'</'+'script>'
  + '<script type="text/plain" id="datl_'+h.HubRef+'">'+ISNULL(lc.Csv,'')+'</'+'script>'
+ + CASE WHEN dc.Csv IS NOT NULL THEN '<script type="text/plain" id="data_'+h.HubRef+'">'+dc.Csv+'</'+'script>' ELSE '' END
  + CASE WHEN @TypesCsv IS NOT NULL THEN '<script type="text/plain" id="datt_'+h.HubRef+'">'+@TypesCsv+'</'+'script>' ELSE '' END
  + '<a href="javascript:void(0)" class="btn btn-sm btn-primary" title="Assign drivers for this hub"'
  + ' onclick="'+@JS+'window.__datOpen('''+h.HubRef+''','''+h.HubLabel+''','''+@Ver+''');">'
  + 'Assign drivers</a>'
 FROM #Hubs h
 LEFT JOIN #FormCsv fc ON fc.HubLabel = h.HubLabel
-LEFT JOIN #LinkCsv lc ON lc.HubLabel = h.HubLabel;
+LEFT JOIN #LinkCsv lc ON lc.HubLabel = h.HubLabel
+LEFT JOIN #DataCsv dc ON dc.HubLabel = h.HubLabel;
 
--- A count, so the panel says something even before you click.
+-- A count, so the panel says something even before you click. A hub with no
+-- cables says what it does have, since "0 drivers, 0 cables" would read as
+-- nothing to do when there is a whole estimate waiting.
 INSERT #SysEx_Overlay
 SELECT 'Position', h.HubRef, 'DriverAssignment.Scope',
-       CONVERT(varchar(10),(SELECT COUNT(DISTINCT ElementRef) FROM #DriverAssignmentForm d WHERE d.Pullzone=h.HubLabel))
-     + ' drivers, '
-     + CONVERT(varchar(10),(SELECT COUNT(*) FROM #LinkAllocation a WHERE a.PullZone=h.HubLabel)) + ' cables'
+       CASE WHEN EXISTS (SELECT * FROM #LinkAllocation a WHERE a.PullZone=h.HubLabel)
+            THEN CONVERT(varchar(10),(SELECT COUNT(DISTINCT ElementRef) FROM #DriverAssignmentForm d WHERE d.Pullzone=h.HubLabel))
+               + ' drivers, '
+               + CONVERT(varchar(10),(SELECT COUNT(*) FROM #LinkAllocation a WHERE a.PullZone=h.HubLabel)) + ' cables'
+            ELSE CONVERT(varchar(20),(SELECT CONVERT(decimal(10,1),SUM(SumQuantity)) FROM #SPRequirements r WHERE r.HubLabel=h.HubLabel))
+               + ' units, no cables yet'
+       END
 FROM #Hubs h;
 
 -- SQL FOOTER --
