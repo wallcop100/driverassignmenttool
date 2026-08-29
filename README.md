@@ -81,10 +81,12 @@ node docs/screens.mjs    # -> docs/*.html
 node docs/shoot.mjs      # -> docs/img/*.png
 ```
 
-Capture needs playwright and one system library:
+Capture needs playwright, which is a **local tool, not a dependency of this
+repo** — it is not in `package.json`, because 200MB of browser has no business
+in the install for a static app. Set it up where you need it:
 
 ```
-npm i -D playwright && npx playwright install chromium
+npm i --no-save playwright && npx playwright install chromium
 sudo apt-get install -y libxkbcommon0     # Debian/Ubuntu, incl. Raspberry Pi
 ```
 
