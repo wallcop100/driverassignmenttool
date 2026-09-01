@@ -339,6 +339,20 @@ export function parseAssessment(text) {
   return out;
 }
 
+// The catalogue as the DESIGN states it: every type the hub rows use, plus the
+// whole library. Where both describe a type the library supplies the ratings but
+// the node list is whichever is longer — the same rule buildInventory uses, so an
+// observed 2CH instance is not reduced to 1CH by a thinner library row.
+function designInventory(drivers, library) {
+  const inventory = buildInventory(drivers);
+  for (const t of library) {
+    const seen = inventory.get(t.typeRef);
+    const merged = seen && seen.nodes.length > t.nodes.length ? { ...t, nodes: seen.nodes } : t;
+    inventory.set(t.typeRef, { ...merged, name: t.name || seen?.name || '' });
+  }
+  return inventory;
+}
+
 function buildInventory(drivers) {
   const inv = new Map();
   for (const d of drivers) {
@@ -378,6 +392,11 @@ export function buildModel(formText, linksText, typesText, presets, assessmentTe
   const links = parseLinks(linksText);
   const library = typesText ? parseTypes(typesText) : [];
   if (library.length) applyTypes(drivers, library);
+  // Snapshot the design's own ratings BEFORE a preset rewrites the drivers.
+  // buildInventory reads them back off the driver rows, so taking it afterwards
+  // would record our own numbers as the design's — which is precisely the
+  // confusion this exists to prevent.
+  const designDB = designInventory(drivers, library);
   if (presetTypes.length) applyPresets(drivers, presetTypes);
   const zones = [...new Set([...drivers.map((d) => d.zone), ...links.map((l) => l.zone)])].sort();
 
@@ -388,16 +407,15 @@ export function buildModel(formText, linksText, typesText, presets, assessmentTe
   // Where both describe a type, the library supplies the ratings but the node
   // list is whichever is longer — same rule buildInventory already uses, so an
   // observed 2CH instance is not reduced to 1CH by a thinner library row.
-  const inventory = buildInventory(drivers);
-  for (const t of library) {
-    const seen = inventory.get(t.typeRef);
-    const merged = seen && seen.nodes.length > t.nodes.length ? { ...t, nodes: seen.nodes } : t;
-    inventory.set(t.typeRef, { ...merged, name: t.name || seen?.name || '' });
-  }
-  // A preset overrides outright, node list included: the channel count was typed
-  // in, so a longer observed one is stale data, not extra information.
+  const inventory = designInventory(drivers, library);
+  // A preset overrides outright for SIZING, node list included: the channel count
+  // was typed in, so a longer observed one is stale data. But what the DesignDB
+  // said is kept beside it, because a preset on an existing type is a proposed
+  // change and not a fact — the page has to be able to show the design's own
+  // numbers rather than quietly showing ours in their place.
   for (const t of presetTypes) {
-    inventory.set(t.typeRef, { ...t, name: t.name || inventory.get(t.typeRef)?.name || '' });
+    const prior = designDB.get(t.typeRef) ?? null;
+    inventory.set(t.typeRef, { ...t, designDB: prior, name: t.name || prior?.name || '' });
   }
   const seen = detectMode({ drivers: drivers.length, links: links.length });
   if (!seen.mode) throw new Error(`This hub has ${seen.reason}.`);
@@ -422,7 +440,8 @@ export function buildEstimate(assessmentText, typesText, presets) {
   }
   const inventory = new Map(library.map((t) => [t.typeRef, t]));
   for (const t of presetTypes) {
-    inventory.set(t.typeRef, { ...t, name: t.name || inventory.get(t.typeRef)?.name || '' });
+    const prior = inventory.get(t.typeRef) ?? null;
+    inventory.set(t.typeRef, { ...t, designDB: prior, name: t.name || prior?.name || '' });
   }
   return {
     zones: [...new Set(requirements.map((r) => r.zone))].sort(),

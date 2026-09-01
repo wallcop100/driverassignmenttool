@@ -99,8 +99,13 @@ limit bound it, and the constraints along the top make the answer looser.
 
 ### Driver types
 
-One alphabetical list of parts, with the refs this job uses folded under each.
-Grouping by part is what makes a wrong rating obvious — the flagged rows are
-types whose stated wattage disagrees with the datasheet.
+What the design actually contains comes first; everything we brought to it —
+types invented here, and datasheet parts nothing uses — folds away under a count.
+Grouping by part is what makes a wrong rating obvious: the flagged rows are types
+whose stated wattage disagrees with the spec page.
+
+A type that is in the DesignDB always shows **the DesignDB's own numbers**. A
+preset on it appears as a pending change beneath, never in place of them, so it
+is never unclear which side a number came from.
 
 ![Driver types](img/driver-types.png)

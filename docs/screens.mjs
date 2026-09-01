@@ -37,6 +37,8 @@ for (const p of e.PARTS) {
   by.set(p.name, { key: p.name, part: p, spec: p, types: [] });
 }
 const list = [...by.values()].sort((a, b) => a.key.localeCompare(b.key));
+const inDesign = list.filter((g) => g.types.some(({ t }) => !t.invented));
+const templated = list.filter((g) => !g.types.some(({ t }) => !t.invented));
 
 // The part is matched on a free-text name, so a mismatch might be the match's
 // fault rather than the data's. Attribute the number to the spec page instead of
@@ -75,7 +77,7 @@ const OPEN = 'EldoLED SoloDrive 360/A';   // one row shown expanded
 // from the add list.
 const DISCONTINUED = new Set(e.PARTS.filter((x) => x.discontinued).map((x) => x.name));
 
-const rows = list.map((g) => {
+const rowsOf = (gs) => gs.map((g) => {
   const p = g.part; const s = g.spec ?? p;
   const eff = p.kind === 'dcdc' ? (g.types.length ? s : p) : p;
   const open = p.name === OPEN;
@@ -109,7 +111,16 @@ const rows = list.map((g) => {
   return `<div class="dp-part${open ? ' is-open' : ''}${gone ? ' is-gone' : ''}">${head}${refs}${add}</div>`;
 }).join('');
 
-const orphanHtml = orphans.length ? `<div class="dp-sub">No datasheet</div>` + orphans.map((t) => {
+const sec = (label, n, unit, fold, openState) =>
+  `<${fold ? 'button type="button"' : 'div'} class="dp-sec${fold ? ' is-fold' : ''}">`
+  + (fold ? `<span class="dp-caret">${openState ? '▾' : '▸'}</span>` : '')
+  + `${label}<span class="dp-sec-n">${n} ${unit}${n === 1 ? '' : 's'}</span></${fold ? 'button' : 'div'}>`;
+
+const rows = sec('In the design', inDesign.length, 'part')
+  + rowsOf(inDesign)
+  + sec('Templated — not in this design', templated.length, 'part', true, false);
+
+const orphanHtml = orphans.length ? sec('No datasheet', orphans.length, 'ref', true, false) + '' + [].map((t) => {
   const u = usage.get(t.typeRef);
   return `<div class="dp-ref is-plain"><span class="dp-ref-id">${esc(t.typeRef)}</span>
     <span class="dp-ref-spec">${esc(t.name || '—')}</span>
@@ -162,7 +173,7 @@ body{padding:24px;background:#f6f8fb}.mockhead{font:600 12px/1.4 system-ui;lette
   <div class="dp-head">
     <button class="btn btn-sm btn-outline-secondary">← HUB-B1</button>
     <h5 class="mb-0">Add drivers to HUB-B1</h5>
-    <span class="text-secondary small">${m.inventory.length} in this job · ${e.PARTS.length} on datasheet</span>
+    <span class="text-secondary small">${inDesign.length} in the design · ${templated.length} templated</span>
     <span class="dp-need" title="These types have no ratings, so nothing can be sized against them">2 types need ratings</span>
     <input class="form-control form-control-sm ms-auto" style="max-width:240px" placeholder="Filter…">
   </div>

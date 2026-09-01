@@ -902,3 +902,53 @@ test('preferring a single output never reaches for an emergency driver', () => {
     'ET-CCR-D-300-1CH-01',
   );
 });
+
+test('a preset on an existing type keeps what the DesignDB said', () => {
+  // The library states 185W and nothing else — the type the audit found. A
+  // preset supplies the real ratings, and both have to survive: sizing needs
+  // the preset, and the page must be able to show the design's own numbers
+  // rather than quietly showing ours in their place.
+  const lib = 'ElementTypeRef,ElementTypeName,MaxPower(W),Channels\n'
+    + 'ET-CCR-D-1050-1CH-01,EldoLED SOLODrive 360/A at 1050mA,185,1\n';
+  const links = GF_HEAD + [...Array(3)].map((_, i) => `L${i + 1},HUB-G,9,1.05,18,CC,CG1`).join('\n') + '\n';
+  const p = { typeRef: 'ET-CCR-D-1050-1CH-01', powerType: 'CC', maxPowerW: 30, currentA: 1.05,
+    outputs: 1, addresses: 1, nodeMaxFvV: 55, invented: false };
+  const m = engine.buildModel(null, links, lib, [p]);
+  const t = m.inventory.find((x) => x.typeRef === 'ET-CCR-D-1050-1CH-01');
+
+  assert.equal(t.maxPowerW, 30);              // what sizing uses
+  assert.equal(t.designDB.maxPowerW, 185);    // what the design actually says
+  assert.equal(t.designDB.powerType, null);   // ...including that it declared none
+  assert.equal(t.preset, true);
+  assert.equal(t.invented, false);
+
+  // and the preset is what makes it sizable at all
+  const plan = engine.planDrivers(m, {}, [], 'HUB-G');
+  assert.equal(plan.proposals[0].typeRef, 'ET-CCR-D-1050-1CH-01');
+  assert.deepEqual(plan.unmatched, []);
+});
+
+test('an invented type has no DesignDB side', () => {
+  const m = engine.buildModel(null, GF_HEAD + gfLinks(2) + '\n', GF_TYPES,
+    [{ typeRef: 'ET-NEW-X', powerType: 'CC', maxPowerW: 50, currentA: 0.35,
+       outputs: 2, addresses: 1, nodeMaxFvV: 55, invented: true }]);
+  const t = m.inventory.find((x) => x.typeRef === 'ET-NEW-X');
+  assert.equal(t.designDB, null);
+  assert.equal(t.invented, true);
+});
+
+test('the DesignDB snapshot is taken before a preset rewrites the drivers', () => {
+  // buildInventory reads the ratings back off the driver rows, so a snapshot
+  // taken after applyPresets would record our numbers as the design's — the
+  // exact confusion the split exists to prevent.
+  const form = 'Pullzone,ElementRef,ElementTypeRef,Driver Restrictions,Node,ToEntityType,ToEntityRefs\n'
+    + 'HUB-G,E1,ET-BIG,185W,OP.1,,\n';
+  const m = engine.buildModel(form, GF_HEAD + gfLinks(1) + '\n', null,
+    [{ typeRef: 'ET-BIG', powerType: 'CC', maxPowerW: 30, currentA: 1.05,
+       outputs: 1, addresses: 1, nodeMaxFvV: 55, invented: false }]);
+  const t = m.inventory.find((x) => x.typeRef === 'ET-BIG');
+  assert.equal(t.designDB.maxPowerW, 185);   // what the hub row states
+  assert.equal(t.designDB.powerType, null);  // and that it declares no CC/CV
+  assert.equal(t.maxPowerW, 30);             // what we propose, and what sizes
+  assert.equal(t.currentA, 1.05);
+});
