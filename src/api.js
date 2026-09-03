@@ -2,6 +2,7 @@
 // used when this talked to a Python sidecar. The parsed model is held here so
 // validate/eligibility/export keep their original (assignments, added) signatures.
 import demoForm from './demo/form.csv?raw';
+import demoAssessment from './demo/assessment.csv?raw';
 import demoLinks from './demo/links.csv?raw';
 import * as embed from './embed.js';
 import * as engine from './engine.js';
@@ -16,10 +17,10 @@ let applied = '[]';
 // The one ingest path: everything that produces a model goes through here, so
 // the module-level `model` above is always set. Host-posted CSVs (embed mode)
 // and dropped files land in the same place.
-export function parseText(formText, linksText, typesText) {
-  raw = { form: formText, links: linksText, types: typesText };
+export function parseText(formText, linksText, typesText, assessmentText) {
+  raw = { form: formText, links: linksText, types: typesText, assessment: assessmentText };
   applied = '[]';
-  model = engine.buildModel(formText, linksText, typesText);
+  model = engine.buildModel(formText, linksText, typesText, null, assessmentText);
   return model;
 }
 
@@ -30,8 +31,9 @@ export function rebuild(presets) {
   const list = Object.values(presets || {});
   const key = JSON.stringify(list);
   if (key === applied) return null;
-  if (raw.assessment) model = engine.buildEstimate(raw.assessment, raw.types, list);
-  else if (raw.links) model = engine.buildModel(raw.form, raw.links, raw.types, list);
+  // links + an assessment is one job at two stages, not an estimate-only model
+  if (raw.links) model = engine.buildModel(raw.form, raw.links, raw.types, list, raw.assessment);
+  else if (raw.assessment) model = engine.buildEstimate(raw.assessment, raw.types, list);
   else return null;
   applied = key;
   return model;
@@ -78,16 +80,18 @@ export function parseEstimate(assessmentText, typesText) {
   return model;
 }
 
-export async function estimate(opts) {
-  return engine.estimate(model, opts);
+export async function estimate(opts, zone) {
+  return engine.estimate(model, opts, zone);
 }
 
-export async function generateEstimatePatch(opts) {
-  return engine.generateEstimatePatch(engine.estimate(model, opts));
+export async function generateEstimatePatch(opts, zone) {
+  return engine.generateEstimatePatch(engine.estimate(model, opts, zone));
 }
 
+// The demo carries all three modes at once, because a real job does: most hubs
+// designed, HUB-B1 cabled but with no drivers, and HUB-J still at tender.
 export function loadDemo() {
-  return parseText(demoForm, demoLinks);
+  return parseText(demoForm, demoLinks, null, demoAssessment);
 }
 
 export async function validate(assignments, addedDrivers) {

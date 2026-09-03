@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { eligibility as computeEligibility } from '../engine.js';
+import { eligibility as computeEligibility, zoneMode } from '../engine.js';
 import { assignedRefs, isProvision, orphanClusters, zoneAccent, zoneStats } from '../state.js';
 import Search from './Search.jsx';
 import Tooltip from './Tooltip.jsx';
@@ -26,7 +26,12 @@ export default function Landing({ state, dispatch }) {
       const mainTray = model.links.filter((l) => l.zone === zone && !assigned.has(l.ref) && !isProvision(l));
       const elig = computeEligibility(model, zone, assignments, addedDrivers);
       const orphans = orphanClusters(mainTray, elig, model.inventory).length;
-      return { zone, ...s, unassigned, orphans };
+      // a hub with no cables at all is a tender estimate, not a 0% assignment
+      const mode = zoneMode(model, zone);
+      const units = mode === 'estimate'
+        ? (model.requirements || []).filter((r) => r.zone === zone).reduce((n, r) => n + r.qty, 0)
+        : 0;
+      return { zone, ...s, unassigned, orphans, mode, units };
     }).sort(SORTS[sort]);
   }, [model, assignments, addedDrivers, flags, sort]);
 
@@ -56,6 +61,20 @@ export default function Landing({ state, dispatch }) {
       <div className="list-group shadow-sm" data-tour="zones">
         {zones.map((z) => {
           const accent = zoneAccent(z.zone, model.zones);
+          if (z.mode === 'estimate') return (
+            <button key={z.zone}
+              className="list-group-item list-group-item-action d-flex align-items-center gap-3 py-3"
+              onClick={() => dispatch({ type: 'SET_VIEW', view: { page: 'estimate', zone: z.zone } })}>
+              <span className="zone-dot" style={{ background: accent }} />
+              <span className="fw-semibold flex-shrink-0" style={{ width: 90 }}>{z.zone}</span>
+              <span className="text-secondary small flex-grow-1">
+                {+z.units.toFixed(1)} units · no cables yet
+              </span>
+              <Tooltip content="No links and no drivers — sized from its Positions (DJ 100053)">
+                <span className="badge badge-tray flex-shrink-0">estimate</span>
+              </Tooltip>
+            </button>
+          );
           const val = metric === 'completion' ? z.completionPct : z.pct;
           const over = metric === 'capacity' && z.pct > 100;
           const label = metric === 'completion'

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import * as api from '../api.js';
-import { PARTS, combine, resolveSpec } from '../engine.js';
+import { PARTS, combine, currentFromName, currentFromRef, resolveSpec } from '../engine.js';
 import { effectiveDrivers, outRef } from '../state.js';
 import PresetEditor, { draftFrom, draftFromPart, rating, toPreset } from './PresetEditor.jsx';
 
@@ -49,6 +49,99 @@ function faults(type, spec) {
       `${t.currentA}A is outside the ${spec.minA}–${spec.maxA}A the ${spec.name} spec page gives.`]);
   }
   return out;
+}
+
+// One ElementType, as the design names it. Not folded under its datasheet part:
+// the design's name carries the current ("at 1050mA"), which is the whole of
+// what separates four otherwise identical SoloDrive types, and a part heading
+// throws it away. The matched part surfaces only when it disagrees.
+function TypeRow({ t, spec, usage, zone, dispatch, setDraft, addDriver, pick, setPick }) {
+  const f = faults(t, spec);
+  const u = usage.get(t.typeRef);
+  const d = t.designDB ?? t;
+  const opts = currentOptions(t, spec);
+  const chosen = pick[`A:${t.typeRef}`] ?? opts[0]?.a ?? null;
+  const blanks = d.maxPowerW == null || d.powerType == null
+    || (spec?.powerType === 'CC' && d.currentA == null)
+    || (d.nodes?.[0]?.maxFvV == null && spec?.maxFvV != null);
+  const disagrees = spec?.maxPowerW != null && d.maxPowerW != null
+    && Math.abs(d.maxPowerW - spec.maxPowerW) > 0.01;
+  const canFix = !!spec && (spec.powerType !== 'CC' || chosen != null);
+  const apply = (mode) => dispatch({ type: 'SET_PRESET', preset: fixPreset(t, spec, mode, chosen) });
+
+  return (
+    <div className={`dp-type ${f.length ? 'is-off' : ''}`}>
+      <div className="dp-type-head">
+        <span className={`type-power ${d.powerType ? `is-${d.powerType.toLowerCase()}` : 'is-unknown'}`}>
+          {d.powerType ?? '—'}
+        </span>
+        <span className="dp-name">{t.name || t.typeRef}</span>
+        <span className="dp-spec">{ratingsOf(d)}</span>
+        <span className="dp-ch">{d.nodes?.length ?? 1} out{d.ballast ? ` · ${d.ballast}CH` : ''}</span>
+        <span className="dp-count">
+          {u ? `${u.count} driver${u.count > 1 ? 's' : ''} · ${[...u.zones].sort().join(', ')}` : 'unused'}
+        </span>
+      </div>
+      <div className="dp-type-sub">
+        <span className="dp-ref-id">{t.typeRef}</span>
+        {t.invented && <span className="badge text-bg-warning preset-badge">not in DesignDB</span>}
+        {f.length > 0 && (
+          <span className="dp-fault" title={f.map((x) => x[1]).join(' ')}>
+            {f.map((x) => x[0]).join(' · ')}
+          </span>
+        )}
+        <span className="dp-ref-act">
+          {zone && (
+            <button className="btn btn-sm btn-link p-0 me-2"
+              onClick={() => { addDriver(t.typeRef); dispatch({ type: 'SET_VIEW', view: { page: 'zone', zone } }); }}>
+              add to {zone}
+            </button>
+          )}
+          <button className="btn btn-sm btn-link p-0" onClick={() => setDraft(draftFrom(t))}>edit</button>
+        </span>
+      </div>
+
+      {/* the ref and the name disagree about the current, so neither is taken on
+          trust — pick one, and the name is corrected to match it */}
+      {!t.preset && opts.length > 1 && (
+        <div className="dp-choose">
+          <span>{spec.name} runs {spec.minA}–{spec.maxA}A. This one is</span>
+          {opts.map((o) => (
+            <button key={o.from} type="button"
+              className={`dp-pick ${chosen === o.a ? 'is-on' : ''}`}
+              onClick={() => setPick({ ...pick, [`A:${t.typeRef}`]: o.a })}>
+              {o.a}A <em>per the {o.from}</em>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* two buttons, never one: filling a blank and overwriting a stated value
+          are different decisions and the second should always be deliberate */}
+      {!t.preset && canFix && (blanks || disagrees) && (
+        <div className="dp-fix">
+          {blanks && (
+            <button className="btn btn-sm btn-outline-primary" onClick={() => apply('fill')}>
+              Fill blanks from {spec.name}
+            </button>
+          )}
+          {disagrees && (
+            <button className="btn btn-sm btn-outline-warning" onClick={() => apply('replace')}>
+              Use the spec page ({fmt(spec.maxPowerW)}W)
+            </button>
+          )}
+        </div>
+      )}
+
+      {t.preset && (
+        <div className="dp-pending">
+          pending → {ratingsOf(t)}
+          <button className="btn btn-sm btn-link p-0 ms-2"
+            onClick={() => dispatch({ type: 'DELETE_PRESET', typeRef: t.typeRef })}>discard</button>
+        </div>
+      )}
+    </div>
+  );
 }
 
 // One part and the refs under it. Same row wherever it appears, so the sections
@@ -197,6 +290,52 @@ const ratingsOf = (t) => [
   (t.nodeMaxFvV ?? t.nodes?.[0]?.maxFvV) != null ? `${fmt(t.nodeMaxFvV ?? t.nodes[0].maxFvV)}fV/out` : null,
 ].filter(Boolean).join(' · ');
 
+// The current the design picked out of the datasheet's range. It says so twice —
+// in the ref and in the name — and when those disagree neither is authoritative,
+// so both are offered and the choice corrects the name to match. The ref is left
+// alone: it is the key Elements point at and the key the patch writes against,
+// so renaming it is a DesignDB migration, not a button.
+export function currentOptions(t, spec) {
+  if (spec?.powerType !== 'CC') return [];
+  const fromRef = currentFromRef(t.typeRef);
+  const fromName = currentFromName(t.name);
+  const inRange = (a) => a != null && (spec.minA == null || (a >= spec.minA && a <= spec.maxA));
+  if (spec.minA != null && spec.minA === spec.maxA) return [{ a: spec.minA, from: 'spec page' }];
+  const out = [];
+  if (inRange(fromRef)) out.push({ a: fromRef, from: 'ref' });
+  if (inRange(fromName) && fromName !== fromRef) out.push({ a: fromName, from: 'name' });
+  return out;
+}
+
+// The preset a fix would produce. `mode` is 'fill' — add only what the design
+// states nothing for — or 'replace', which also overwrites what disagrees.
+// Both go through SET_PRESET, so the result is pending and reviewable either way.
+export function fixPreset(t, spec, mode, currentA) {
+  if (!spec) return null;
+  const d = t.designDB ?? t;
+  const take = (mine, theirs) => (mode === 'replace' ? theirs ?? mine : mine ?? theirs);
+  const a = currentA ?? currentOptions(t, spec)[0]?.a ?? null;
+  // Aligning the name to the chosen current is safe; aligning the ref is not.
+  const name = a != null && currentFromName(t.name) != null && currentFromName(t.name) !== a
+    ? String(t.name).replace(NAME_MA_G, `${Math.round(a * 1000)}mA`)
+    : t.name || spec.name;
+  return {
+    typeRef: t.typeRef, name, powerType: spec.powerType,
+    maxPowerW: take(d.maxPowerW, spec.maxPowerW),
+    currentA: spec.powerType === 'CC' ? take(d.currentA, a) : null,
+    outputVoltageV: spec.powerType === 'CV' ? take(d.outputVoltageV, spec.outputV) : null,
+    outputs: d.nodes?.length ?? spec.outputs ?? 1,
+    addresses: take(d.ballast, spec.addresses),
+    nodeMaxLoadW: take(d.nodes?.[0]?.maxLoadW, spec.nodeMaxLoadW),
+    nodeMaxFvV: take(d.nodes?.[0]?.maxFvV, spec.maxFvV),
+    nodeCurrentA: take(d.nodeCurrentA, spec.nodeCurrentA),
+    controlType: take(d.controlType, spec.controlType),
+    nodeNames: d.nodes?.map((n) => n.name) ?? null,
+    invented: false,
+  };
+}
+const NAME_MA_G = /\d{2,4}\s*mA/i;
+
 // What the spec page would fill in for a type that states nothing. Built as the
 // preset the editor would build, so there is one path in and one thing to
 // review — and offered, never applied. A CC part whose datasheet gives a RANGE
@@ -277,7 +416,12 @@ export default function DriversPage({ state, dispatch, zone }) {
   const needle = q.trim().toLowerCase();
   const match = (g) => !needle || g.key.toLowerCase().includes(needle)
     || g.types.some((x) => x.t.typeRef.toLowerCase().includes(needle));
-  const inDesign = groups.inDesign.filter(match);
+  // the design's own types, flat and in their own names
+  const designTypes = groups.inDesign
+    .flatMap((g) => g.types.filter(({ t }) => !t.invented))
+    .filter(({ t }) => !needle || (t.name ?? '').toLowerCase().includes(needle)
+      || t.typeRef.toLowerCase().includes(needle))
+    .sort((a, b) => (a.t.name || a.t.typeRef).localeCompare(b.t.name || b.t.typeRef));
   const templated = groups.templated.filter(match);
 
   // A filter match opens the section it lands in, so folding never hides the
@@ -322,7 +466,7 @@ export default function DriversPage({ state, dispatch, zone }) {
         </button>
         <h5 className="mb-0">{zone ? `Add drivers to ${zone}` : 'Driver types'}</h5>
         <span className="text-secondary small">
-          {groups.inDesign.length} in the design · {groups.templated.length} templated
+          {designTypes.length} in the design · {groups.templated.length} templated
         </span>
         {needRatings > 0 && (
           <span className="dp-need" title="These types state no ratings, so nothing can be sized against them">
@@ -364,10 +508,13 @@ export default function DriversPage({ state, dispatch, zone }) {
       <div className="dp-list">
         <div className="dp-sec">
           In the design
-          <span className="dp-sec-n">{inDesign.length} part{inDesign.length === 1 ? '' : 's'}</span>
+          <span className="dp-sec-n">{designTypes.length} type{designTypes.length === 1 ? '' : 's'}</span>
         </div>
-        {inDesign.map((g) => <PartRow key={g.key} g={g} {...rowProps} />)}
-        {!inDesign.length && (
+        {designTypes.map(({ t, spec }) => (
+          <TypeRow key={t.typeRef} t={t} spec={spec} usage={usage} zone={zone} dispatch={dispatch}
+            setDraft={setDraft} addDriver={addDriver} pick={pick} setPick={setPick} />
+        ))}
+        {!designTypes.length && (
           <div className="dp-ref is-plain text-secondary">
             {needle ? `Nothing in the design matches “${q}”.` : 'No driver types in this design yet.'}
           </div>

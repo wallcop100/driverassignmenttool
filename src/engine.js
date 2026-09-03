@@ -390,6 +390,9 @@ export function buildModel(formText, linksText, typesText, presets, assessmentTe
   }
   const { drivers, baseline, originalRows, fieldnames } = formText?.trim() ? parseForm(formText) : EMPTY_FORM;
   const links = parseLinks(linksText);
+  // A job can be part designed and part still at tender, so requirements sit
+  // beside the cables rather than instead of them — mode is per hub.
+  const requirements = assessmentText?.trim() ? parseAssessment(assessmentText) : [];
   const library = typesText ? parseTypes(typesText) : [];
   if (library.length) applyTypes(drivers, library);
   // Snapshot the design's own ratings BEFORE a preset rewrites the drivers.
@@ -398,7 +401,8 @@ export function buildModel(formText, linksText, typesText, presets, assessmentTe
   // confusion this exists to prevent.
   const designDB = designInventory(drivers, library);
   if (presetTypes.length) applyPresets(drivers, presetTypes);
-  const zones = [...new Set([...drivers.map((d) => d.zone), ...links.map((l) => l.zone)])].sort();
+  const zones = [...new Set([...drivers.map((d) => d.zone), ...links.map((l) => l.zone),
+    ...requirements.map((r) => r.zone)])].sort();
 
   // The catalogue is the whole library plus any type only seen in the hub rows,
   // so a hub can be given a driver type it does not currently contain — the
@@ -417,11 +421,11 @@ export function buildModel(formText, linksText, typesText, presets, assessmentTe
     const prior = designDB.get(t.typeRef) ?? null;
     inventory.set(t.typeRef, { ...t, designDB: prior, name: t.name || prior?.name || '' });
   }
-  const seen = detectMode({ drivers: drivers.length, links: links.length });
+  const seen = detectMode({ drivers: drivers.length, links: links.length, requirements: requirements.length });
   if (!seen.mode) throw new Error(`This hub has ${seen.reason}.`);
   return {
     zones, drivers, links, baseline, originalRows, fieldnames,
-    requirements: [],
+    requirements,
     mode: seen.mode,
     modeReason: seen.reason,
     inventory: [...inventory.values()].sort((a, b) => a.typeRef.localeCompare(b.typeRef)),
@@ -771,6 +775,40 @@ function applyPresets(drivers, presetTypes) {
 // the part actually is. See catalogue.js.
 export { PARTS, combine, matchPart, matchParts, resolveSpec, reachableW } from './catalogue.js';
 
+// A CC part's datasheet gives a RANGE; the design picks one value out of it and
+// says so twice — in the ref (ET-CCR-D-1050-…) and in the name ("at 1050mA").
+// nextTypeRef below writes that convention; these two read it back.
+//
+// Both return amps, or null when there is nothing to read. They are deliberately
+// narrow: a number that is not clearly a milliamp figure is not guessed at.
+// CCR only: the same slot on a CVR ref is the output VOLTAGE, so reading it as
+// milliamps turns ET-CVR-D-24-2CH-01 into 0.024A.
+const REF_MA = /^ET-CCR-[A-Z]+-(\d{2,4})-/i;
+export function currentFromRef(typeRef) {
+  const m = REF_MA.exec(String(typeRef ?? ''));
+  return m ? Number(m[1]) / 1000 : null;
+}
+
+const NAME_MA = /(\d{2,4})\s*mA/i;
+export function currentFromName(name) {
+  const m = NAME_MA.exec(String(name ?? ''));
+  return m ? Number(m[1]) / 1000 : null;
+}
+
+// Which mode a single hub is in. The overlay already decides this per hub — it
+// sends links for a hub that has cables and an assessment for one that does not
+// — so a model holding both is the honest shape, and a job can be part designed
+// and part still at tender.
+export function zoneMode(model, zone) {
+  const links = (model.links || []).filter((l) => l.zone === zone).length;
+  if (links) {
+    const drivers = (model.drivers || []).filter((d) => d.zone === zone).length;
+    return drivers ? 'assign' : 'size';
+  }
+  if ((model.requirements || []).some((r) => r.zone === zone)) return 'estimate';
+  return null;
+}
+
 // The ref IS the spec in this library (ET-CCR-D-350-2CH-01 = CC, 350mA, 2CH), so
 // the next free one is composed from the ratings being entered rather than a
 // counter. A sibling's stem wins when there is one: naming is per-project and
@@ -1041,9 +1079,10 @@ export function planFromRequirements(model, zone, opts = {}) {
   return { zone, lines, unmatched, drivers, loadW: lines.reduce((w, l) => w + l.loadW, 0) };
 }
 
-// Every hub in the assessment, sized.
-export function estimate(model, opts) {
-  return model.zones.map((z) => planFromRequirements(model, z, opts));
+// Every hub in the assessment, sized — or just the one asked for.
+export function estimate(model, opts, zone) {
+  const zones = zone ? [zone] : [...new Set((model.requirements || []).map((r) => r.zone))].sort();
+  return zones.map((z) => planFromRequirements(model, z, opts));
 }
 
 // ---- export ----

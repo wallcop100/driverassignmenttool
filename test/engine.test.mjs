@@ -952,3 +952,34 @@ test('the DesignDB snapshot is taken before a preset rewrites the drivers', () =
   assert.equal(t.maxPowerW, 30);             // what we propose, and what sizes
   assert.equal(t.currentA, 1.05);
 });
+
+test('the current is read from the ref and from the name', () => {
+  assert.equal(engine.currentFromRef('ET-CCR-D-1050-1CH-01'), 1.05);
+  assert.equal(engine.currentFromRef('ET-CCR-S-350-1CH-01'), 0.35);
+  // a CV ref's number is the output VOLTAGE, not milliamps
+  assert.equal(engine.currentFromRef('ET-CVR-D-24-2CH-01'), null);
+  assert.equal(engine.currentFromName('SOLODrive 360/A at 350mA'), 0.35);
+  assert.equal(engine.currentFromName('LinearDrive 720/A'), null);
+});
+
+const demoModel = () => {
+  const d = path.join(dir, '..', 'src', 'demo');
+  const rd = (f) => fs.readFileSync(path.join(d, f), 'utf-8');
+  return engine.buildModel(rd('form.csv'), rd('links.csv'), null, null, rd('assessment.csv'));
+};
+
+test('each demo hub reports its own mode', () => {
+  const m = demoModel();
+  assert.equal(engine.zoneMode(m, 'HUB-A'), 'assign');
+  assert.equal(engine.zoneMode(m, 'HUB-B1'), 'size');
+  assert.equal(engine.zoneMode(m, 'HUB-J'), 'estimate');
+  assert.equal(engine.zoneMode(m, 'HUB-NOPE'), null);
+});
+
+test('the estimate scopes to one hub', () => {
+  const m = demoModel();
+  const one = engine.estimate(m, {}, 'HUB-J');
+  assert.equal(one.length, 1);
+  assert.equal(one[0].zone, 'HUB-J');
+  assert.ok(one[0].drivers > 0);
+});

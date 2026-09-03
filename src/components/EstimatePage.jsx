@@ -16,7 +16,7 @@ const WHY = {
   'driver W': 'watts per driver',
 };
 
-export default function EstimatePage({ state, dispatch }) {
+export default function EstimatePage({ state, dispatch, zone }) {
   const { model, prefs } = state;
   const [zones, setZones] = useState([]);
   const [copied, setCopied] = useState(false);
@@ -31,9 +31,9 @@ export default function EstimatePage({ state, dispatch }) {
   };
   useEffect(() => {
     let stale = false;
-    api.estimate(opts).then((z) => !stale && setZones(z)).catch((e) => setError(e.message));
+    api.estimate(opts, zone).then((z) => !stale && setZones(z)).catch((e) => setError(e.message));
     return () => { stale = true; };
-  }, [model, prefs.restrictControlGroup, prefs.splitByType, prefs.splitByLocation,
+  }, [model, zone, prefs.restrictControlGroup, prefs.splitByType, prefs.splitByLocation,
       prefs.preferSingleOutput, prefs.margin]);
 
   const setPref = (p) => dispatch({ type: 'SET_PREFS', prefs: p });
@@ -51,12 +51,14 @@ export default function EstimatePage({ state, dispatch }) {
     return { drivers, unmatched, byType: [...byType.entries()].sort() };
   }, [zones]);
 
-  const fittings = model.requirements.reduce((n, r) => n + r.qty, 0);
+  // scoped to one hub when routed from the landing page, whole job otherwise
+  const rows = zone ? model.requirements.filter((r) => r.zone === zone) : model.requirements;
+  const fittings = rows.reduce((n, r) => n + r.qty, 0);
 
   const copyPatch = async () => {
     setError(null);
     try {
-      await api.copyPatch(await api.generateEstimatePatch(opts));
+      await api.copyPatch(await api.generateEstimatePatch(opts, zone));
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch (e) {
@@ -79,7 +81,7 @@ export default function EstimatePage({ state, dispatch }) {
       <div className="dp-head">
         <h5 className="mb-0">Driver estimate</h5>
         <span className="text-secondary small">
-          {fmt(fittings)} units · {model.zones.length} hub{model.zones.length === 1 ? '' : 's'} · no links yet
+          {fmt(fittings)} units · {zone ?? `${zones.length} hub${zones.length === 1 ? '' : 's'}`} · no links yet
         </span>
         {totals.unmatched > 0 && (
           <span className="dp-need" title="No type in the library can take these, so they are not counted. Quantity is in the type's UoM — metres for tape, pieces for fittings">
@@ -168,7 +170,7 @@ export default function EstimatePage({ state, dispatch }) {
 
       {/* what the fittings actually are, since nothing else on this page says */}
       <details className="est-rows mt-3">
-        <summary>The {model.requirements.length} assessment rows behind this</summary>
+        <summary>The {rows.length} assessment rows behind this</summary>
         <div className="scrollx">
           <table className="table table-sm align-middle mt-2">
             <thead>
@@ -179,7 +181,7 @@ export default function EstimatePage({ state, dispatch }) {
               </tr>
             </thead>
             <tbody>
-              {model.requirements.map((r) => {
+              {rows.map((r) => {
                 const part = resolveSpec(r.positionType);
                 return (
                   <tr key={r.ref}>

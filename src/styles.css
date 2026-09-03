@@ -556,3 +556,15 @@ body { background: #f6f8fb; }
 }
 .dp-pending { color: #8a6d1f; }
 .dp-suggest { color: #64748b; font-family: inherit; }
+
+/* One ElementType as the design names it — flat, not folded under a part. */
+.dp-type { border-bottom: 1px solid var(--bs-border-color); padding: .5rem .75rem; }
+.dp-type.is-off { background: repeating-linear-gradient(45deg, transparent, transparent 8px, rgba(255,193,7,.07) 8px, rgba(255,193,7,.07) 16px); }
+.dp-type-head { display: flex; align-items: center; gap: .6rem; }
+.dp-type-sub { display: flex; align-items: center; gap: .6rem; font-size: .8125rem; color: var(--bs-secondary-color); margin-top: .15rem; }
+.dp-type-sub .dp-ref-act { margin-left: auto; white-space: nowrap; }
+.dp-choose { display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; font-size: .8125rem; margin-top: .4rem; }
+.dp-pick { border: 1px solid var(--bs-border-color); background: transparent; border-radius: 999px; padding: .1rem .6rem; font-size: .8125rem; }
+.dp-pick.is-on { border-color: var(--bs-primary); background: rgba(13,110,253,.08); }
+.dp-pick em { font-style: normal; color: var(--bs-secondary-color); }
+.dp-fix { display: flex; gap: .4rem; margin-top: .4rem; }

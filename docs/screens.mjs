@@ -116,8 +116,49 @@ const sec = (label, n, unit, fold, openState) =>
   + (fold ? `<span class="dp-caret">${openState ? '▾' : '▸'}</span>` : '')
   + `${label}<span class="dp-sec-n">${n} ${unit}${n === 1 ? '' : 's'}</span></${fold ? 'button' : 'div'}>`;
 
-const rows = sec('In the design', inDesign.length, 'part')
-  + rowsOf(inDesign)
+// The design's own types are flat, one row each, under the name the design gives
+// them — folding them under a datasheet part throws away the current, which is
+// the only thing separating four otherwise identical SoloDrive types.
+const designTypes = inDesign
+  .flatMap((g) => g.types.filter(({ t }) => !t.invented))
+  .sort((a, b) => (a.t.name || a.t.typeRef).localeCompare(b.t.name || b.t.typeRef));
+
+const typeRows = designTypes.map(({ t, spec }) => {
+  const f = faults(t, spec);
+  const u = usage.get(t.typeRef);
+  const opts = e.currentOptions ? [] : [];
+  const fromRef = e.currentFromRef(t.typeRef);
+  const fromName = e.currentFromName(t.name);
+  const choose = spec?.powerType === 'CC' && fromRef != null && fromName != null && fromRef !== fromName;
+  const blanks = t.maxPowerW == null || (spec?.powerType === 'CC' && t.currentA == null)
+    || (t.nodes?.[0]?.maxFvV == null && spec?.maxFvV != null);
+  const off = spec?.maxPowerW != null && t.maxPowerW != null
+    && Math.abs(t.maxPowerW - spec.maxPowerW) > 0.01;
+  return `<div class="dp-type${f.length ? ' is-off' : ''}">
+    <div class="dp-type-head">
+      <span class="type-power is-${(t.powerType || 'unknown').toLowerCase()}">${t.powerType ?? '—'}</span>
+      <span class="dp-name">${esc(t.name || t.typeRef)}</span>
+      <span class="dp-spec">${t.maxPowerW != null ? t.maxPowerW + 'W' : '—'}${rating(t) ? ' · ' + rating(t) : ''}${t.nodes[0]?.maxFvV != null ? ' · ' + t.nodes[0].maxFvV + 'fV' : ''}</span>
+      <span class="dp-ch">${t.nodes?.length ?? 1} out${t.ballast ? ' · ' + t.ballast + 'CH' : ''}</span>
+      <span class="dp-count">${u ? u.count + ' driver' + (u.count > 1 ? 's' : '') + ' · ' + [...u.zones].sort().join(', ') : 'unused'}</span>
+    </div>
+    <div class="dp-type-sub">
+      <span class="dp-ref-id">${esc(t.typeRef)}</span>
+      ${f.length ? `<span class="dp-fault" title="${f.map((x) => x[1]).join(' · ')}">${f.map((x) => x[0]).join(' · ')}</span>` : ''}
+      <span class="dp-ref-act"><button class="btn btn-sm btn-link p-0 me-2">add to HUB-B1</button><button class="btn btn-sm btn-link p-0">edit</button></span>
+    </div>
+    ${choose ? `<div class="dp-choose"><span>${esc(spec.name)} runs ${spec.minA}–${spec.maxA}A. This one is</span>
+      <button class="dp-pick is-on">${fromRef}A <em>per the ref</em></button>
+      <button class="dp-pick">${fromName}A <em>per the name</em></button></div>` : ''}
+    ${blanks || off ? `<div class="dp-fix">
+      ${blanks ? `<button class="btn btn-sm btn-outline-primary">Fill blanks from ${esc(spec.name)}</button>` : ''}
+      ${off ? `<button class="btn btn-sm btn-outline-warning">Use the spec page (${fmt(spec.maxPowerW)}W)</button>` : ''}
+    </div>` : ''}
+  </div>`;
+}).join('');
+
+const rows = sec('In the design', designTypes.length, 'type')
+  + typeRows
   + sec('Templated — not in this design', templated.length, 'part', true, false);
 
 const orphanHtml = orphans.length ? sec('No datasheet', orphans.length, 'ref', true, false) + '' + [].map((t) => {
@@ -173,7 +214,7 @@ body{padding:24px;background:#f6f8fb}.mockhead{font:600 12px/1.4 system-ui;lette
   <div class="dp-head">
     <button class="btn btn-sm btn-outline-secondary">← HUB-B1</button>
     <h5 class="mb-0">Add drivers to HUB-B1</h5>
-    <span class="text-secondary small">${inDesign.length} in the design · ${templated.length} templated</span>
+    <span class="text-secondary small">${designTypes.length} in the design · ${templated.length} templated</span>
     <span class="dp-need" title="These types have no ratings, so nothing can be sized against them">2 types need ratings</span>
     <input class="form-control form-control-sm ms-auto" style="max-width:240px" placeholder="Filter…">
   </div>

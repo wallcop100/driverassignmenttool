@@ -1,0 +1,7 @@
+Link_SecondaryPowerRef,LocationName,ControlTypeRef,ControlGrouptext,PositionTypeRef,SumQuantity,ControlAddressCount,CC/CV,CV_Voltage,CC_Current,SumVf,SumPower
+HUB-J,Pool House,DALI,L111-H-02,B02w,6,1,CC,,0.3,210,70.8
+HUB-J,Pool House,DALI,L111-H-03,B02w,4,1,CC,,0.3,140,47.2
+HUB-J,Pool House,DALI,L111-H-04,B02m,2,1,CC,,0.3,70,23.6
+HUB-J,Changing Rooms,DALI,L111-H-06,W03b,3,1,CC,,0.35,60,20.4
+HUB-J,Changing Rooms,DALI,L111-L-01,C01r,8.4,1,CV,24,,,201.6
+HUB-J,Plant Room,DALI,L111-L-02,C01r,3.2,1,CV,24,,,76.8

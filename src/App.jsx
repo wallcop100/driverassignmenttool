@@ -180,7 +180,7 @@ export default function App() {
   } else if (!model) {
     screen = <ImportScreen dispatch={dispatch} saved={saved} onResume={resume} onDiscard={discard} />;
   } else if (state.view.page === 'estimate') {
-    screen = <EstimatePage state={state} dispatch={dispatch} />;
+    screen = <EstimatePage state={state} dispatch={dispatch} zone={state.view.zone} />;
   } else if (state.view.page === 'drivers') {
     screen = <DriversPage state={state} dispatch={dispatch} zone={state.view.zone} />;
   } else if (state.view.page === 'zone') {
