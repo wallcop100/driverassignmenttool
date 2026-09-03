@@ -1059,7 +1059,11 @@ export function planFromRequirements(model, zone, opts = {}) {
       if (!best || better(cand, best) < 0) best = cand;
     }
 
-    if (!best) { unmatched.push({ key, qty, reason: 'no type in the library can take these' }); continue; }
+    if (!best) {
+      unmatched.push({ key, qty, rows: group.map((r) => r.ref),
+        reason: 'no type in the library can take these' });
+      continue;
+    }
 
     lines.push({
       key,
@@ -1072,6 +1076,10 @@ export function planFromRequirements(model, zone, opts = {}) {
       limit: best.limit,
       loadW: totalW,
       controlGroup: group[0].controlGroup,
+      // what the driver is actually for, and which assessment rows it answers
+      positionTypes: [...new Set(group.map((r) => r.positionType).filter(Boolean))],
+      locations: [...new Set(group.map((r) => r.location).filter(Boolean))],
+      rows: group.map((r) => r.ref),
     });
   }
 

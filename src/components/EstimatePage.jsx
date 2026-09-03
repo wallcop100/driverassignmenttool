@@ -53,7 +53,16 @@ export default function EstimatePage({ state, dispatch, zone }) {
 
   // scoped to one hub when routed from the landing page, whole job otherwise
   const rows = zone ? model.requirements.filter((r) => r.zone === zone) : model.requirements;
-  const fittings = rows.reduce((n, r) => n + r.qty, 0);
+  const posTypes = new Set(rows.map((r) => r.positionType).filter(Boolean));
+  // which driver each assessment row ended up on
+  const servedBy = useMemo(() => {
+    const m = new Map();
+    for (const z of zones) {
+      for (const l of z.lines) for (const ref of l.rows ?? []) m.set(ref, l.typeRef);
+      for (const u of z.unmatched) for (const ref of u.rows ?? []) m.set(ref, null);
+    }
+    return m;
+  }, [zones]);
 
   const copyPatch = async () => {
     setError(null);
@@ -81,21 +90,14 @@ export default function EstimatePage({ state, dispatch, zone }) {
       <div className="dp-head">
         <h5 className="mb-0">Driver estimate</h5>
         <span className="text-secondary small">
-          {fmt(fittings)} units · {zone ?? `${zones.length} hub${zones.length === 1 ? '' : 's'}`} · no links yet
+          {rows.length} row{rows.length === 1 ? '' : 's'} · {posTypes.size} PositionType{posTypes.size === 1 ? '' : 's'}
+          {' · '}{zone ?? `${zones.length} hub${zones.length === 1 ? '' : 's'}`} · no links yet
         </span>
         {totals.unmatched > 0 && (
-          <span className="dp-need" title="No type in the library can take these, so they are not counted. Quantity is in the type's UoM — metres for tape, pieces for fittings">
-            {fmt(totals.unmatched)} units unmatched
+          <span className="dp-need" title="No type in the library can take these, so no driver is counted for them">
+            {fmt(totals.unmatched)} UoM unmatched
           </span>
         )}
-        <label className="small d-flex align-items-center gap-1 mb-0 ms-auto"
-          title="Capacity left free on every driver">
-          Margin
-          <input type="number" className="form-control form-control-sm margin-input"
-            min="0" max="50" step="1" value={marginPct}
-            onChange={(e) => setPref({ margin: Math.min(50, Math.max(0, Number(e.target.value) || 0)) / 100 })} />
-          %
-        </label>
       </div>
 
       {/* Each of these makes the estimate looser, and the count higher. Turning
@@ -118,6 +120,13 @@ export default function EstimatePage({ state, dispatch, zone }) {
           <input type="checkbox" checked={!!prefs.preferSingleOutput}
             onChange={(e) => setPref({ preferSingleOutput: e.target.checked })} />
           Prefer single output
+        </label>
+        <span className="est-c-label ms-3">Spare capacity</span>
+        <label className="est-c" title="Capacity left free on every driver">
+          <input type="number" className="form-control form-control-sm margin-input"
+            min="0" max="50" step="1" value={marginPct}
+            onChange={(e) => setPref({ margin: Math.min(50, Math.max(0, Number(e.target.value) || 0)) / 100 })} />
+          % margin
         </label>
       </div>
 
@@ -147,7 +156,7 @@ export default function EstimatePage({ state, dispatch, zone }) {
               <div key={l.key} className="dp-ref">
                 <span className="dp-ref-id">{l.count} × {l.typeRef}</span>
                 <span className="dp-ref-spec">
-                  {fmt(l.qty)} units · {l.perDriver} per driver
+                  {l.positionTypes?.join(', ') || '—'} · {fmt(l.qty)} UoM · {l.perDriver} per driver
                   {l.perNode != null && ` · ${l.perNode} per output`}
                 </span>
                 <span className="dp-ref-use" title={`Limited by ${WHY[l.limit] ?? l.limit}`}>
@@ -158,7 +167,7 @@ export default function EstimatePage({ state, dispatch, zone }) {
             ))}
             {z.unmatched.map((u) => (
               <div key={u.key} className="dp-ref is-off">
-                <span className="dp-ref-id">{fmt(u.qty)} units</span>
+                <span className="dp-ref-id">{fmt(u.qty)} UoM</span>
                 <span className="dp-fault">
                   {u.reason ?? 'no type in the library can take these'} — {u.key}
                 </span>
@@ -176,8 +185,14 @@ export default function EstimatePage({ state, dispatch, zone }) {
             <thead>
               <tr>
                 <th>Hub</th><th>Location</th><th>PositionType</th><th>ControlGroup</th>
-                <th className="text-end">Qty</th><th className="text-end">W each</th>
-                <th className="text-end">fV each</th><th>Type</th>
+                <th className="text-end" title="SumQuantity — in the PositionType's UoM: metres for tape, pieces for fittings. DJ 100053 strips the unit off P.Dim, so the number does not say which">
+                  Quantity
+                </th>
+                <th className="text-end" title="PowerPerUoM — watts per metre for tape, per piece for a fitting">PowerPerUoM</th>
+                <th className="text-end" title="Forward voltage per UoM, from CC_Vf ÷ SumQuantity">fV per UoM</th>
+                <th>CC/CV</th>
+                <th className="text-end" title="CurrentPerUoM — the current this fitting is driven at">CC_Current</th>
+                <th title="The driver this row was sized onto">Driver</th>
               </tr>
             </thead>
             <tbody>
@@ -193,6 +208,8 @@ export default function EstimatePage({ state, dispatch, zone }) {
                     <td className="text-end">{fmt(r.wPer)}</td>
                     <td className="text-end">{fmt(r.fvPer) ?? '—'}</td>
                     <td>{r.powerType ?? '—'}</td>
+                    <td className="text-end">{r.currentA != null ? `${r.currentA}A` : '—'}</td>
+                    <td>{servedBy.get(r.ref) ?? <span className="dp-fault">no driver</span>}</td>
                   </tr>
                 );
               })}

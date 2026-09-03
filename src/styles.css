@@ -568,3 +568,4 @@ body { background: #f6f8fb; }
 .dp-pick.is-on { border-color: var(--bs-primary); background: rgba(13,110,253,.08); }
 .dp-pick em { font-style: normal; color: var(--bs-secondary-color); }
 .dp-fix { display: flex; gap: .4rem; margin-top: .4rem; }
+.est-c .margin-input { width: 58px; height: 26px; padding: 0 .35rem; }

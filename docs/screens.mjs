@@ -262,13 +262,13 @@ const estHtml = `<!doctype html><html><head><meta charset="utf-8"><title>Driver 
 <div class="frame"><div class="container-fluid py-3 drivers-page">
   <div class="dp-head">
     <h5 class="mb-0">Driver estimate</h5>
-    <span class="text-secondary small">${f1(units)} units · ${em.zones.length} hubs · no links yet</span>
-    <label class="small d-flex align-items-center gap-1 mb-0 ms-auto">Margin
-      <input type="number" class="form-control form-control-sm margin-input" value="5">%</label>
+    <span class="text-secondary small">${em.requirements.length} rows · ${em.zones.length} hubs · no links yet</span>
   </div>
   <div class="est-constraints"><span class="est-c-label">Keep separate</span>${boxes}
     <span class="est-c-label ms-3">Choosing a part</span>
-    <label class="est-c"><input type="checkbox" checked>Prefer single output</label></div>
+    <label class="est-c"><input type="checkbox" checked>Prefer single output</label>
+    <span class="est-c-label ms-3">Spare capacity</span>
+    <label class="est-c"><input type="number" class="form-control form-control-sm margin-input" value="5">% margin</label></div>
   <div class="est-total"><b>${zones.reduce((n, z) => n + z.drivers, 0)} drivers</b>
     <span class="text-secondary">${[...byType.entries()].sort().map(([t, n]) => `${n} × ${t}`).join(' · ')}</span>
     <button class="btn btn-sm btn-outline-secondary ms-auto">Export CSV</button>
@@ -280,10 +280,10 @@ const estHtml = `<!doctype html><html><head><meta charset="utf-8"><title>Driver 
         <span class="dp-count">${z.drivers} driver${z.drivers === 1 ? '' : 's'}</span></div>
       ${z.lines.map((l) => `<div class="dp-ref">
         <span class="dp-ref-id">${l.count} × ${esc(l.typeRef)}</span>
-        <span class="dp-ref-spec">${f1(l.qty)} units · ${l.perDriver} per driver${l.perNode ? ` · ${l.perNode} per output` : ''}</span>
+        <span class="dp-ref-spec">${esc(l.positionTypes?.join(', ') || '—')} · ${f1(l.qty)} UoM · ${l.perDriver} per driver${l.perNode ? ` · ${l.perNode} per output` : ''}</span>
         <span class="dp-ref-use">${l.limit} limited</span>
         <span class="dp-ref-use">${esc(l.controlGroup || '—')}</span></div>`).join('')}
-      ${z.unmatched.map((u) => `<div class="dp-ref is-off"><span class="dp-ref-id">${f1(u.qty)} units</span>
+      ${z.unmatched.map((u) => `<div class="dp-ref is-off"><span class="dp-ref-id">${f1(u.qty)} UoM</span>
         <span class="dp-fault">${esc(u.reason ?? 'no type in the library can take these')} — ${esc(u.key)}</span></div>`).join('')}
     </div>`).join('')}</div>
 </div></div>
