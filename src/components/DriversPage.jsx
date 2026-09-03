@@ -55,41 +55,37 @@ function faults(type, spec) {
 // the design's name carries the current ("at 1050mA"), which is the whole of
 // what separates four otherwise identical SoloDrive types, and a part heading
 // throws it away. The matched part surfaces only when it disagrees.
-function TypeRow({ t, spec, usage, zone, dispatch, setDraft, addDriver, pick, setPick }) {
+function TypeRow({ t, spec, usage, zone, dispatch, edit, editKey, draft, setDraft, closeEdit,
+                  inventory, presets, addDriver, pick, setPick }) {
   const f = faults(t, spec);
   const u = usage.get(t.typeRef);
   const d = t.designDB ?? t;
   const opts = currentOptions(t, spec);
   const chosen = pick[`A:${t.typeRef}`] ?? opts[0]?.a ?? null;
-  const blanks = d.maxPowerW == null || d.powerType == null
-    || (spec?.powerType === 'CC' && d.currentA == null)
-    || (d.nodes?.[0]?.maxFvV == null && spec?.maxFvV != null);
-  const disagrees = spec?.maxPowerW != null && d.maxPowerW != null
-    && Math.abs(d.maxPowerW - spec.maxPowerW) > 0.01;
+  // Judged against what the card currently shows, pending preset included, so
+  // filling the blanks does not take the disagreement button away with it.
+  const blanks = t.maxPowerW == null || t.powerType == null
+    || (spec?.powerType === 'CC' && t.currentA == null)
+    || (t.nodes?.[0]?.maxFvV == null && spec?.maxFvV != null);
+  const disagrees = spec?.maxPowerW != null && t.maxPowerW != null
+    && Math.abs(t.maxPowerW - spec.maxPowerW) > 0.01;
   const canFix = !!spec && (spec.powerType !== 'CC' || chosen != null);
   const apply = (mode) => dispatch({ type: 'SET_PRESET', preset: fixPreset(t, spec, mode, chosen) });
+  const editing = editKey === t.typeRef;
 
   return (
-    <div className={`dp-type ${f.length ? 'is-off' : ''}`}>
+    <div className={`dp-type ${f.length ? 'is-off' : ''} ${editing ? 'is-editing' : ''}`}>
       <div className="dp-type-head">
-        <span className={`type-power ${d.powerType ? `is-${d.powerType.toLowerCase()}` : 'is-unknown'}`}>
-          {d.powerType ?? '—'}
+        {/* The Ref is what people are looking for — it is the key on the
+            Elements sheet and the thing they type. The name is context. */}
+        <span className="dp-type-ref">{t.typeRef}</span>
+        <span className={`type-power ${t.powerType ? `is-${t.powerType.toLowerCase()}` : 'is-unknown'}`}>
+          {t.powerType ?? '—'}
         </span>
-        <span className="dp-name">{t.name || t.typeRef}</span>
-        <span className="dp-spec">{ratingsOf(d)}</span>
-        <span className="dp-ch">{d.nodes?.length ?? 1} out{d.ballast ? ` · ${d.ballast}CH` : ''}</span>
+        <span className="dp-type-name">{t.name || '—'}</span>
         <span className="dp-count">
           {u ? `${u.count} driver${u.count > 1 ? 's' : ''} · ${[...u.zones].sort().join(', ')}` : 'unused'}
         </span>
-      </div>
-      <div className="dp-type-sub">
-        <span className="dp-ref-id">{t.typeRef}</span>
-        {t.invented && <span className="badge text-bg-warning preset-badge">not in DesignDB</span>}
-        {f.length > 0 && (
-          <span className="dp-fault" title={f.map((x) => x[1]).join(' ')}>
-            {f.map((x) => x[0]).join(' · ')}
-          </span>
-        )}
         <span className="dp-ref-act">
           {zone && (
             <button className="btn btn-sm btn-link p-0 me-2"
@@ -97,13 +93,32 @@ function TypeRow({ t, spec, usage, zone, dispatch, setDraft, addDriver, pick, se
               add to {zone}
             </button>
           )}
-          <button className="btn btn-sm btn-link p-0" onClick={() => setDraft(draftFrom(t))}>edit</button>
+          <button className="btn btn-sm btn-link p-0"
+            onClick={() => (editing ? closeEdit() : edit(t.typeRef, draftFrom(t)))}>
+            {editing ? 'close' : 'edit'}
+          </button>
         </span>
       </div>
 
+      {t.invented && <span className="badge text-bg-warning preset-badge">not in DesignDB</span>}
+      {f.length > 0 && (
+        <div className="dp-fault" title={f.map((x) => x[1]).join(' ')}>
+          {f.map((x) => x[0]).join(' · ')}
+        </div>
+      )}
+
+      {/* Every column, always — the card is the record, so nothing is hidden
+          behind an edit press and nothing opens in a box somewhere else. */}
+      {editing ? (
+        <Editor draft={draft} setDraft={setDraft} inventory={inventory} presets={presets}
+          dispatch={dispatch} closeEdit={closeEdit} />
+      ) : (
+        <Fields t={t} spec={spec} />
+      )}
+
       {/* the ref and the name disagree about the current, so neither is taken on
           trust — pick one, and the name is corrected to match it */}
-      {!t.preset && opts.length > 1 && (
+      {!editing && opts.length > 1 && (
         <div className="dp-choose">
           <span>{spec.name} runs {spec.minA}–{spec.maxA}A. This one is</span>
           {opts.map((o) => (
@@ -118,7 +133,7 @@ function TypeRow({ t, spec, usage, zone, dispatch, setDraft, addDriver, pick, se
 
       {/* two buttons, never one: filling a blank and overwriting a stated value
           are different decisions and the second should always be deliberate */}
-      {!t.preset && canFix && (blanks || disagrees) && (
+      {!editing && canFix && (blanks || disagrees) && (
         <div className="dp-fix">
           {blanks && (
             <button className="btn btn-sm btn-outline-primary" onClick={() => apply('fill')}>
@@ -133,9 +148,9 @@ function TypeRow({ t, spec, usage, zone, dispatch, setDraft, addDriver, pick, se
         </div>
       )}
 
-      {t.preset && (
+      {t.preset && !editing && (
         <div className="dp-pending">
-          pending → {ratingsOf(t)}
+          pending
           <button className="btn btn-sm btn-link p-0 ms-2"
             onClick={() => dispatch({ type: 'DELETE_PRESET', typeRef: t.typeRef })}>discard</button>
         </div>
@@ -144,10 +159,66 @@ function TypeRow({ t, spec, usage, zone, dispatch, setDraft, addDriver, pick, se
   );
 }
 
+// The editor, mounted inside whichever card was opened — never in a box of its
+// own at the top of the page, where the values being edited are out of sight.
+function Editor({ draft, setDraft, inventory, presets, dispatch, closeEdit }) {
+  return (
+    <PresetEditor draft={draft} setDraft={setDraft} inventory={inventory}
+      onSave={() => { dispatch({ type: 'SET_PRESET', preset: toPreset(draft) }); closeEdit(); }}
+      onCancel={closeEdit}
+      onDelete={presets[draft.typeRef]
+        ? () => { dispatch({ type: 'DELETE_PRESET', typeRef: draft.typeRef }); closeEdit(); }
+        : null} />
+  );
+}
+
+// The ElementTypes columns as the sheet names them, read-only. A value the spec
+// page disagrees with is marked; a blank it could fill is offered. Same markup
+// as the editor, so opening one changes the inputs, not the layout.
+function Fields({ t, spec }) {
+  const cell = (col, val, want, tip) => {
+    const off = want != null && val != null && Math.abs(val - want) > 1e-9;
+    return (
+      <div className={`spec-cell is-read ${off ? 'is-off' : ''}`} title={tip} key={col}>
+        <span className="v">{val == null || val === '' ? '—' : val}</span>
+        <span className="col">{col}</span>
+        {want != null && (off || val == null) && <span className="ds">datasheet {fmt(want)}</span>}
+      </div>
+    );
+  };
+  const node = t.nodes?.[0] ?? {};
+  return (
+    <>
+      <div className="spec-row">
+        <span className="spec-group">Driver</span>
+        {cell('Type', t.powerType ?? null, null, 'Constant current or constant voltage')}
+        {cell('MaxPower(W)', t.maxPowerW, spec?.maxPowerW, 'Total power, shared across all outputs')}
+        {t.powerType === 'CV'
+          ? cell('OutputVoltage(V)', t.outputVoltageV, spec?.outputV, 'Volts the driver puts out')
+          : cell('CurrentRange', t.currentA, null, 'Amps — one current for the whole driver')}
+        {cell('BallastCountPerUoM', t.ballast ?? t.addresses, spec?.addresses, 'DALI addresses — the nCH in the Ref')}
+        {cell('ControlType', t.controlType ?? null, null, 'DALI, PHASE or Local')}
+      </div>
+      <div className="spec-row">
+        <span className="spec-group">Per output</span>
+        {cell('Parameters', t.nodes?.length ?? t.outputs, spec?.outputs, 'LED outputs — written as {<OP.1,<OP.2}')}
+        {cell('NodeMaxForwardVoltage(fV)', node.maxFvV, spec?.maxFvV, 'Per output. Usually the limit that binds')}
+        {cell('NodeMaxPower(W)', node.maxLoadW, spec?.nodeMaxLoadW, 'Only if an output has its own cap')}
+        {cell('NodeCurrent', t.nodeCurrentA, spec?.nodeCurrentA, 'Amps. Only if current is settable per output')}
+      </div>
+    </>
+  );
+}
+
 // One part and the refs under it. Same row wherever it appears, so the sections
 // differ only in what they contain and how loudly they announce it.
 function PartRow(props) {
-  const { g, open, setOpen, pick, setPick, usage, zone, dispatch, setDraft, addDriver, addFromPart } = props;
+  const { g, open, setOpen, pick, setPick, usage, zone, dispatch, addDriver, addFromPart,
+    edit, editKey, draft, setDraft, closeEdit, inventory, presets } = props;
+  const mount = (key) => (editKey === key
+    ? <Editor draft={draft} setDraft={setDraft} inventory={inventory} presets={presets}
+        dispatch={dispatch} closeEdit={closeEdit} />
+    : null);
   
   const p = g.part;
   const isOpen = open === g.key;
@@ -211,9 +282,10 @@ function PartRow(props) {
             add to {zone}
           </button>
         )}
-        <button className="btn btn-sm btn-link p-0" onClick={() => setDraft(
-          draftFrom(presets[t.typeRef] ? { ...t, ...presets[t.typeRef], nodes: t.nodes } : t),
-        )}>edit</button>
+        <button className="btn btn-sm btn-link p-0" onClick={() => (editKey === t.typeRef ? closeEdit()
+          : edit(t.typeRef, draftFrom(presets[t.typeRef] ? { ...t, ...presets[t.typeRef], nodes: t.nodes } : t)))}>
+          {editKey === t.typeRef ? 'close' : 'edit'}
+        </button>
       </span>
       {/* a preset on a real type is a proposed change, shown as one */}
       {t.designDB && (
@@ -235,6 +307,7 @@ function PartRow(props) {
           </button>
         </span>
       )}
+      {mount(t.typeRef)}
     </div>
   );
       })}
@@ -273,11 +346,13 @@ function PartRow(props) {
       {zone ? `Add to ${zone}` : 'Add type'}
     </button>
     <button className="btn btn-sm btn-link"
-      onClick={() => setDraft({ ...draftFromPart(p, needsPsu ? psu : null), currentA: choice.currentA ?? '' })}>
-      edit values
+      onClick={() => (editKey === `new:${g.key}` ? closeEdit()
+        : edit(`new:${g.key}`, { ...draftFromPart(p, needsPsu ? psu : null), currentA: choice.currentA ?? '' }))}>
+      {editKey === `new:${g.key}` ? 'close' : 'edit values'}
     </button>
   </div>
       )}
+      {isOpen && mount(`new:${g.key}`)}
     </div>
   );
   
@@ -358,7 +433,8 @@ function suggestionFor(t, spec) {
 export default function DriversPage({ state, dispatch, zone }) {
   const { model, presets, addedDrivers, assignments, prefs } = state;
   const [open, setOpen] = useState(null);       // expanded row key
-  const [draft, setDraft] = useState(null);     // full editor, the override path
+  const [draft, setDraft] = useState(null);     // the editor, mounted in its own card
+  const [editKey, setEditKey] = useState(null); // which card is open
   const [q, setQ] = useState('');
   const [pick, setPick] = useState({});         // per-row current / supply choices
   const [plan, setPlan] = useState(null);
@@ -452,10 +528,10 @@ export default function DriversPage({ state, dispatch, zone }) {
     setOpen(null);
   };
 
-  const rowProps = { open, setOpen, pick, setPick, usage, zone, dispatch, setDraft, addDriver, addFromPart };
-
-  const savePreset = () => { dispatch({ type: 'SET_PRESET', preset: toPreset(draft) }); setDraft(null); };
-  const removePreset = () => { dispatch({ type: 'DELETE_PRESET', typeRef: draft.typeRef }); setDraft(null); };
+  const edit = (key, d) => { setEditKey(key); setDraft(d); };
+  const closeEdit = () => { setEditKey(null); setDraft(null); };
+  const rowProps = { open, setOpen, pick, setPick, usage, zone, dispatch, edit, editKey, draft, setDraft,
+    closeEdit, inventory: model.inventory, presets, addDriver, addFromPart };
 
   return (
     <div className="container-fluid py-3 drivers-page">
@@ -497,22 +573,13 @@ export default function DriversPage({ state, dispatch, zone }) {
         </div>
       )}
 
-      {draft && (
-        <div className="dp-editor">
-          <PresetEditor draft={draft} setDraft={setDraft} inventory={model.inventory}
-            onSave={savePreset} onCancel={() => setDraft(null)}
-            onDelete={presets[draft.typeRef] ? removePreset : null} />
-        </div>
-      )}
-
       <div className="dp-list">
         <div className="dp-sec">
           In the design
           <span className="dp-sec-n">{designTypes.length} type{designTypes.length === 1 ? '' : 's'}</span>
         </div>
         {designTypes.map(({ t, spec }) => (
-          <TypeRow key={t.typeRef} t={t} spec={spec} usage={usage} zone={zone} dispatch={dispatch}
-            setDraft={setDraft} addDriver={addDriver} pick={pick} setPick={setPick} />
+          <TypeRow key={t.typeRef} t={t} spec={spec} {...rowProps} />
         ))}
         {!designTypes.length && (
           <div className="dp-ref is-plain text-secondary">
@@ -552,8 +619,14 @@ export default function DriversPage({ state, dispatch, zone }) {
                       </button>
                     )}
                     <button className="btn btn-sm btn-link p-0"
-                      onClick={() => setDraft(draftFrom(t))}>edit</button>
+                      onClick={() => (editKey === t.typeRef ? closeEdit() : edit(t.typeRef, draftFrom(t)))}>
+                      {editKey === t.typeRef ? 'close' : 'edit'}
+                    </button>
                   </span>
+                  {editKey === t.typeRef && (
+                    <Editor draft={draft} setDraft={setDraft} inventory={model.inventory}
+                      presets={presets} dispatch={dispatch} closeEdit={closeEdit} />
+                  )}
                 </div>
               );
             })}

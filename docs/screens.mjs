@@ -126,7 +126,6 @@ const designTypes = inDesign
 const typeRows = designTypes.map(({ t, spec }) => {
   const f = faults(t, spec);
   const u = usage.get(t.typeRef);
-  const opts = e.currentOptions ? [] : [];
   const fromRef = e.currentFromRef(t.typeRef);
   const fromName = e.currentFromName(t.name);
   const choose = spec?.powerType === 'CC' && fromRef != null && fromName != null && fromRef !== fromName;
@@ -134,18 +133,37 @@ const typeRows = designTypes.map(({ t, spec }) => {
     || (t.nodes?.[0]?.maxFvV == null && spec?.maxFvV != null);
   const off = spec?.maxPowerW != null && t.maxPowerW != null
     && Math.abs(t.maxPowerW - spec.maxPowerW) > 0.01;
+  const node = t.nodes?.[0] ?? {};
+  const cell = (col, val, want) => {
+    const bad = want != null && val != null && Math.abs(val - want) > 1e-9;
+    return `<div class="spec-cell is-read${bad ? ' is-off' : ''}">
+      <span class="v">${val == null || val === '' ? '—' : esc(val)}</span>
+      <span class="col">${col}</span>
+      ${want != null && (bad || val == null) ? `<span class="ds">datasheet ${fmt(want)}</span>` : ''}
+    </div>`;
+  };
   return `<div class="dp-type${f.length ? ' is-off' : ''}">
     <div class="dp-type-head">
+      <span class="dp-type-ref">${esc(t.typeRef)}</span>
       <span class="type-power is-${(t.powerType || 'unknown').toLowerCase()}">${t.powerType ?? '—'}</span>
-      <span class="dp-name">${esc(t.name || t.typeRef)}</span>
-      <span class="dp-spec">${t.maxPowerW != null ? t.maxPowerW + 'W' : '—'}${rating(t) ? ' · ' + rating(t) : ''}${t.nodes[0]?.maxFvV != null ? ' · ' + t.nodes[0].maxFvV + 'fV' : ''}</span>
-      <span class="dp-ch">${t.nodes?.length ?? 1} out${t.ballast ? ' · ' + t.ballast + 'CH' : ''}</span>
+      <span class="dp-type-name">${esc(t.name || '—')}</span>
       <span class="dp-count">${u ? u.count + ' driver' + (u.count > 1 ? 's' : '') + ' · ' + [...u.zones].sort().join(', ') : 'unused'}</span>
-    </div>
-    <div class="dp-type-sub">
-      <span class="dp-ref-id">${esc(t.typeRef)}</span>
-      ${f.length ? `<span class="dp-fault" title="${f.map((x) => x[1]).join(' · ')}">${f.map((x) => x[0]).join(' · ')}</span>` : ''}
       <span class="dp-ref-act"><button class="btn btn-sm btn-link p-0 me-2">add to HUB-B1</button><button class="btn btn-sm btn-link p-0">edit</button></span>
+    </div>
+    ${f.length ? `<div class="dp-fault" title="${f.map((x) => x[1]).join(' · ')}">${f.map((x) => x[0]).join(' · ')}</div>` : ''}
+    <div class="spec-row"><span class="spec-group">Driver</span>
+      ${cell('Type', t.powerType ?? null, null)}
+      ${cell('MaxPower(W)', t.maxPowerW, spec?.maxPowerW)}
+      ${t.powerType === 'CV' ? cell('OutputVoltage(V)', t.outputVoltageV, spec?.outputV)
+        : cell('CurrentRange', t.currentA, null)}
+      ${cell('BallastCountPerUoM', t.ballast, spec?.addresses)}
+      ${cell('ControlType', t.controlType ?? null, null)}
+    </div>
+    <div class="spec-row"><span class="spec-group">Per output</span>
+      ${cell('Parameters', t.nodes?.length ?? 1, spec?.outputs)}
+      ${cell('NodeMaxForwardVoltage(fV)', node.maxFvV, spec?.maxFvV)}
+      ${cell('NodeMaxPower(W)', node.maxLoadW, spec?.nodeMaxLoadW)}
+      ${cell('NodeCurrent', t.nodeCurrentA, spec?.nodeCurrentA)}
     </div>
     ${choose ? `<div class="dp-choose"><span>${esc(spec.name)} runs ${spec.minA}–${spec.maxA}A. This one is</span>
       <button class="dp-pick is-on">${fromRef}A <em>per the ref</em></button>

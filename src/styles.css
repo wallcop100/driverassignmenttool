@@ -426,7 +426,7 @@ body { background: #f6f8fb; }
 .type-row.is-selected { background: #e8f1ff; box-shadow: inset 3px 0 0 #2563eb; }
 .type-power {
   font-size: 10px; font-weight: 700; letter-spacing: 0.03em; text-align: center;
-  padding: 2px 0; border-radius: 5px;
+  min-width: 34px; padding: 3px 7px; border-radius: 5px;
 }
 .type-power.is-cc { background: #e0f2fe; color: #0369a1; }
 .type-power.is-cv { background: #dcfce7; color: #15803d; }
@@ -457,7 +457,6 @@ body { background: #f6f8fb; }
   background: #f3f0ff; border: 1px solid #d9cffc; border-radius: 8px;
   padding: 10px 14px; margin-bottom: 14px;
 }
-.dp-editor { border: 1px solid #e2d7b4; border-radius: 8px; overflow: hidden; margin-bottom: 14px; }
 .dp-list { border: 1px solid #e6ebf2; border-radius: 8px; overflow: hidden; background: #fff; }
 
 .dp-part + .dp-part { border-top: 1px solid #eef1f6; }
@@ -469,7 +468,7 @@ body { background: #f6f8fb; }
 .dp-part-head:hover { background: #f6f9fd; }
 .dp-part { position: relative; }
 .dp-part-head .type-power {
-  min-width: 40px; padding: 3px 9px; font-size: 11px; letter-spacing: 0.04em; border-radius: 4px;
+  min-width: 46px; padding: 3px 10px; font-size: 11px; letter-spacing: 0.04em; border-radius: 4px;
 }
 .dp-count { min-width: 56px; }
 .dp-flag {
@@ -558,14 +557,42 @@ body { background: #f6f8fb; }
 .dp-suggest { color: #64748b; font-family: inherit; }
 
 /* One ElementType as the design names it — flat, not folded under a part. */
-.dp-type { border-bottom: 1px solid var(--bs-border-color); padding: .5rem .75rem; }
-.dp-type.is-off { background: repeating-linear-gradient(45deg, transparent, transparent 8px, rgba(255,193,7,.07) 8px, rgba(255,193,7,.07) 16px); }
-.dp-type-head { display: flex; align-items: center; gap: .6rem; }
-.dp-type-sub { display: flex; align-items: center; gap: .6rem; font-size: .8125rem; color: var(--bs-secondary-color); margin-top: .15rem; }
-.dp-type-sub .dp-ref-act { margin-left: auto; white-space: nowrap; }
+.dp-type {
+  border-bottom: 1px solid var(--bs-border-color);
+  padding: .55rem .75rem .55rem calc(.75rem - 3px);
+  border-left: 3px solid transparent;
+}
+/* A type worth a look gets a rail, not a hatch — the hatch shouted and made the
+   numbers underneath harder to read, which is the opposite of the job. */
+.dp-type.is-off { border-left-color: #e0b93c; background: #fffdf6; }
+.dp-type.is-editing { border-left-color: #2563eb; background: #f8fbff; }
+.dp-type-head { display: flex; align-items: center; gap: .7rem; }
+/* The Ref is the key on the Elements sheet — it leads the card. */
+.dp-type-ref {
+  font-family: var(--bs-font-monospace); font-size: 14px; font-weight: 600;
+  color: #0f172a; overflow-wrap: anywhere;
+}
+.dp-type-name { color: #64748b; font-size: 13px; overflow-wrap: anywhere; }
+.dp-type-head .type-power {
+  min-width: 46px; padding: 3px 10px; font-size: 11px; letter-spacing: .04em; border-radius: 4px;
+}
+.dp-type-head .dp-count { margin-left: auto; white-space: nowrap; color: #94a3b8; font-size: 12.5px; }
+.dp-type-head .dp-ref-act { white-space: nowrap; }
+.dp-type .dp-fault { display: block; margin: .3rem 0 0; font-size: 12.5px; }
+.dp-type .spec-row { padding: 7px 0; }
+.dp-type .preset-editor, .dp-ref .preset-editor, .dp-part .preset-editor {
+  background: none; border-top: 0; padding: .25rem 0 0 !important;
+  flex: 0 0 100%;   /* dp-ref is a flex row; the editor is a block within it */
+}
+/* Read-only twin of a spec-cell input: same box, same rhythm, no border. */
+.spec-cell.is-read .v {
+  font-size: 13px; font-weight: 600; color: #0f172a; padding: 3px 6px;
+  border: 1px solid transparent;
+}
+.spec-cell.is-read.is-off .v { color: #b3261e; }
 .dp-choose { display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; font-size: .8125rem; margin-top: .4rem; }
 .dp-pick { border: 1px solid var(--bs-border-color); background: transparent; border-radius: 999px; padding: .1rem .6rem; font-size: .8125rem; }
 .dp-pick.is-on { border-color: var(--bs-primary); background: rgba(13,110,253,.08); }
 .dp-pick em { font-style: normal; color: var(--bs-secondary-color); }
-.dp-fix { display: flex; gap: .4rem; margin-top: .4rem; }
+.dp-fix { display: flex; gap: .4rem; margin-top: .5rem; flex-wrap: wrap; }
 .est-c .margin-input { width: 58px; height: 26px; padding: 0 .35rem; }
