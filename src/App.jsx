@@ -1,6 +1,7 @@
 import { useEffect, useReducer, useRef, useState } from 'react';
 import * as api from './api.js';
-import DriversPage from './components/DriversPage.jsx';
+import DriverPicker from './components/DriverPicker.jsx';
+import TypesPage from './components/TypesPage.jsx';
 import EstimatePage from './components/EstimatePage.jsx';
 import ImportScreen from './components/ImportScreen.jsx';
 import Landing from './components/Landing.jsx';
@@ -182,7 +183,13 @@ export default function App() {
   } else if (state.view.page === 'estimate') {
     screen = <EstimatePage state={state} dispatch={dispatch} zone={state.view.zone} />;
   } else if (state.view.page === 'drivers') {
-    screen = <DriversPage state={state} dispatch={dispatch} zone={state.view.zone} />;
+    // Reached from a hub, so it is a picker. Without one there is nothing to add
+    // a driver to, and the types page is what was meant.
+    screen = state.view.zone
+      ? <DriverPicker state={state} dispatch={dispatch} zone={state.view.zone} />
+      : <TypesPage state={state} dispatch={dispatch} zone={null} />;
+  } else if (state.view.page === 'types') {
+    screen = <TypesPage state={state} dispatch={dispatch} zone={state.view.zone ?? null} />;
   } else if (state.view.page === 'zone') {
     screen = <ZonePage state={state} dispatch={dispatch} zone={state.view.zone}
       onResetToCurrentSet={embedded ? resetToCurrentSet : null} />;

@@ -8,6 +8,7 @@
 // Writes docs/driver-types.html and docs/estimate.html.
 import fs from 'node:fs';
 import * as e from '../src/engine.js';
+import { canFill, canReplace, faults, ratingsOf } from '../src/typeFaults.js';
 
 const root = new URL('..', import.meta.url).pathname.replace(/\/$/, '');
 const m = e.buildModel(
@@ -17,172 +18,121 @@ const m = e.buildModel(
 const fmt = (n) => (n == null ? null : (Number.isInteger(n) ? n : +n.toFixed(2)));
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
 
-// usage per type, as the page computes it
+// usage per type, as both screens compute it
 const usage = new Map();
 for (const d of m.drivers) {
   const c = usage.get(d.typeRef) ?? { count: 0, zones: new Set() };
   c.count += 1; if (d.zone) c.zones.add(d.zone); usage.set(d.typeRef, c);
 }
-// group by part
-const by = new Map(); const orphans = [];
-for (const t of m.inventory) {
-  const spec = e.resolveSpec(t.name || t.typeRef);
-  const part = spec?.driver ?? spec;
-  if (!part) { orphans.push(t); continue; }
-  if (!by.has(part.name)) by.set(part.name, { key: part.name, part, spec, types: [] });
-  by.get(part.name).types.push({ t, spec });
-}
-for (const p of e.PARTS) {
-  if (p.kind === 'supply' || by.has(p.name)) continue;
-  by.set(p.name, { key: p.name, part: p, spec: p, types: [] });
-}
-const list = [...by.values()].sort((a, b) => a.key.localeCompare(b.key));
-const inDesign = list.filter((g) => g.types.some(({ t }) => !t.invented));
-const templated = list.filter((g) => !g.types.some(({ t }) => !t.invented));
-
-// The part is matched on a free-text name, so a mismatch might be the match's
-// fault rather than the data's. Attribute the number to the spec page instead of
-// asserting it, and lean on the part name in the row above rather than repeating
-// it — the tooltip carries the full sentence, match included.
-const faults = (t, spec) => {
-  const out = [];
-  if (t.maxPowerW == null) {
-    out.push(['no MaxPower(W) — nothing to size against',
-      'Without a max power this type cannot be checked or sized against.']);
-  } else if (spec?.maxPowerW != null && Math.abs(t.maxPowerW - spec.maxPowerW) > 0.01) {
-    const times = t.maxPowerW / spec.maxPowerW;
-    out.push([`${t.maxPowerW}W here · spec page says ${fmt(spec.maxPowerW)}W`,
-      `This type states ${t.maxPowerW}W. The ${spec.name} spec page says ${fmt(spec.maxPowerW)}W`
-      + `${times >= 1.5 ? ` — ${fmt(times)}× higher, so checks against it would pass an overload` : ''}. `
-      + 'If this is not a ' + spec.name + ', the name is what matched it.']);
-  }
-  if (t.powerType === 'CC' && t.currentA == null) {
-    out.push(['no CurrentRange — reads as undeclared',
-      'With CurrentRange empty the driver has no declared CC/CV type, so it matches no cable.']);
-  } else if (t.powerType === 'CC' && t.currentA != null && spec?.minA != null
-    && (t.currentA < spec.minA || t.currentA > spec.maxA)) {
-    out.push([`${t.currentA}A · spec page range is ${spec.minA}–${spec.maxA}A`,
-      `${t.currentA}A is outside the ${spec.minA}–${spec.maxA}A the ${spec.name} spec page gives.`]);
-  }
-  return out;
+const zoneList = (zones) => {
+  const z = [...zones].sort();
+  return z.length > 2 ? `${z[0]} +${z.length - 1}` : z.join(', ');
 };
 
-const rating = (t) => (t.powerType === 'CC' && t.currentA != null ? `${t.currentA}A`
-  : t.powerType === 'CV' && t.outputVoltageV != null ? `${t.outputVoltageV}V` : null);
+// flagged first, then by Ref — the reason to open the page is at the top of it
+const cards = m.inventory
+  .map((t) => { const spec = e.resolveSpec(t.name || t.typeRef); return { t, spec, f: faults(t, spec) }; })
+  .sort((a, b) => (b.f.length > 0) - (a.f.length > 0) || a.t.typeRef.localeCompare(b.t.typeRef));
 
-const EXT = '<svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M14 3v2h3.6l-9.8 9.8 1.4 1.4L19 6.4V10h2V3h-7zM5 5h5V3H3v18h18v-7h-2v5H5V5z"/></svg>';
+const badge = (t) => `<span class="type-power is-${(t.powerType || 'unknown').toLowerCase()}">${t.powerType ?? '—'}</span>`;
 
-const OPEN = 'EldoLED SoloDrive 360/A';   // one row shown expanded
-// Still in the data, no longer specified. Kept so existing refs resolve, hidden
-// from the add list.
-const DISCONTINUED = new Set(e.PARTS.filter((x) => x.discontinued).map((x) => x.name));
-
-const rowsOf = (gs) => gs.map((g) => {
-  const p = g.part; const s = g.spec ?? p;
-  const eff = p.kind === 'dcdc' ? (g.types.length ? s : p) : p;
-  const open = p.name === OPEN;
-  const gone = DISCONTINUED.has(p.name);
-  if (gone && !g.types.length) return '';   // nothing uses it and you can't buy it
-  const troubled = g.types.some(({ t, spec }) => faults(t, spec).length);
-  const head = `<button type="button" class="dp-part-head">
-      <span class="type-power is-${p.powerType.toLowerCase()}">${p.powerType}</span>
-      <span class="dp-name">${esc(p.name)}${gone ? '<span class="dp-gone">discontinued</span>' : ''}</span>
-      <span class="dp-spec">${fmt(eff.maxPowerW)}W${p.powerType === 'CC' && p.minA != null ? ` · ${p.minA === p.maxA ? p.minA + 'A' : p.minA + '–' + p.maxA + 'A'}` : ''}${eff.outputV != null ? ` · ${eff.outputV}V` : ''}${eff.maxFvV != null ? ` · ${eff.maxFvV}fV/out` : ''}</span>
-      <span class="dp-ch">${eff.outputs ?? 1} out${eff.addresses ? ` · ${eff.addresses}CH` : ''}</span>
-      ${troubled ? '<span class="dp-flag" title="One of the types under this part is worth a look">!</span>' : ''}
-      <span class="dp-count">${g.types.length ? g.types.length + ' in use' : ''}</span>
-    </button>`;
-  const refs = !open ? '' : g.types.map(({ t, spec }) => {
-    const f = faults(t, spec); const u = usage.get(t.typeRef);
-    return `<div class="dp-ref${f.length ? ' is-off' : ''}">
-      <span class="dp-ref-id">${esc(t.typeRef)}</span>
-      <span class="dp-ref-spec">${t.maxPowerW != null ? t.maxPowerW + 'W' : '—'}${rating(t) ? ' · ' + rating(t) : ''}${t.nodes[0]?.maxFvV != null ? ' · ' + t.nodes[0].maxFvV + 'fV' : ''}</span>
-      <span class="dp-ref-use">${u ? u.count + ' driver' + (u.count > 1 ? 's' : '') + ' · ' + [...u.zones].sort().join(', ') : 'unused'}</span>
-      ${f.length ? `<span class="dp-fault" title="${f.map((x) => x[1]).join(' · ')}">${f.map((x) => x[0]).join(' · ')}</span>` : ''}
-      <span class="dp-ref-act"><button class="btn btn-sm btn-link p-0 me-2">add to HUB-B1</button><button class="btn btn-sm btn-link p-0">edit</button></span>
-    </div>`;
-  }).join('');
-  const add = open ? `<div class="dp-add">
-      <label><span>CurrentRange</span><input class="form-control form-control-sm" type="number" placeholder="0.15–1.4" value="0.35"></label>
-      <span class="dp-newref">ET-CCR-D-350-1CH-01</span>
-      <button class="btn btn-sm btn-primary ms-auto">Add to HUB-B1</button>
-      <button class="btn btn-sm btn-link">edit values</button>
-    </div>` : '';
-  return `<div class="dp-part${open ? ' is-open' : ''}${gone ? ' is-gone' : ''}">${head}${refs}${add}</div>`;
-}).join('');
-
-const sec = (label, n, unit, fold, openState) =>
-  `<${fold ? 'button type="button"' : 'div'} class="dp-sec${fold ? ' is-fold' : ''}">`
-  + (fold ? `<span class="dp-caret">${openState ? '▾' : '▸'}</span>` : '')
-  + `${label}<span class="dp-sec-n">${n} ${unit}${n === 1 ? '' : 's'}</span></${fold ? 'button' : 'div'}>`;
-
-// The design's own types are flat, one row each, under the name the design gives
-// them — folding them under a datasheet part throws away the current, which is
-// the only thing separating four otherwise identical SoloDrive types.
-const designTypes = inDesign
-  .flatMap((g) => g.types.filter(({ t }) => !t.invented))
-  .sort((a, b) => (a.t.name || a.t.typeRef).localeCompare(b.t.name || b.t.typeRef));
-
-const typeRows = designTypes.map(({ t, spec }) => {
-  const f = faults(t, spec);
+/* ---- the types page: one card per ElementType ---- */
+const cardHtml = cards.map(({ t, spec, f }) => {
   const u = usage.get(t.typeRef);
-  const fromRef = e.currentFromRef(t.typeRef);
-  const fromName = e.currentFromName(t.name);
-  const choose = spec?.powerType === 'CC' && fromRef != null && fromName != null && fromRef !== fromName;
-  const blanks = t.maxPowerW == null || (spec?.powerType === 'CC' && t.currentA == null)
-    || (t.nodes?.[0]?.maxFvV == null && spec?.maxFvV != null);
-  const off = spec?.maxPowerW != null && t.maxPowerW != null
-    && Math.abs(t.maxPowerW - spec.maxPowerW) > 0.01;
-  return `<div class="dp-type${f.length ? ' is-off' : ''}">
-    <div class="dp-type-head">
-      <span class="dp-type-ref">${esc(t.typeRef)}</span>
-      <span class="type-power is-${(t.powerType || 'unknown').toLowerCase()}">${t.powerType ?? '—'}</span>
-      <span class="dp-type-name">${esc(t.name || '—')}</span>
-      <span class="dp-spec">${t.maxPowerW != null ? t.maxPowerW + 'W' : '—'}${rating(t) ? ' · ' + rating(t) : ''}${t.nodes[0]?.maxFvV != null ? ' · ' + t.nodes[0].maxFvV + 'fV/out' : ''}</span>
-      <span class="dp-count">${u ? u.count + ' × ' + (u.zones.size > 2 ? [...u.zones].sort()[0] + ' +' + (u.zones.size - 1) : [...u.zones].sort().join(', ')) : 'unused'}</span>
-      ${blanks && spec ? '<button class="dp-chip is-fill">Fill blanks</button>' : ''}
-      ${off ? `<button class="dp-chip is-replace">Use ${fmt(spec.maxPowerW)}W</button>` : ''}
-      <span class="dp-ref-act"><button class="btn btn-sm btn-link p-0 me-2">add</button><button class="btn btn-sm btn-link p-0">edit</button></span>
+  return `<div class="tp-card${f.length ? ' is-off' : ''}">
+    <div class="tp-card-top"><span class="tp-ref">${esc(t.typeRef)}</span></div>
+    <div class="tp-line">${badge(t)}<span class="tp-name">${esc(t.name || '—')}</span></div>
+    <div class="tp-spec">${esc(ratingsOf(t))}</div>
+    ${f.length ? `<div class="tp-fault" title="${esc(f.map((x) => x[1]).join(' '))}">${esc(f.map((x) => x[0]).join(' · '))}</div>` : ''}
+    <div class="tp-foot">
+      <span class="tp-use">${u ? u.count + ' × ' + zoneList(u.zones) : 'unused'}</span>
+      <button class="tp-icon"><span class="material-icons">edit</span></button>
+      <button class="tp-icon"><span class="material-icons">more_vert</span></button>
     </div>
-    ${f.length ? `<div class="dp-fault" title="${f.map((x) => x[1]).join(' · ')}">${f.map((x) => x[0]).join(' · ')}</div>` : ''}
-    ${choose ? `<div class="dp-choose"><span>${esc(spec.name)} runs ${spec.minA}–${spec.maxA}A. This one is</span>
-      <button class="dp-pick is-on">${fromRef}A <em>per the ref</em></button>
-      <button class="dp-pick">${fromName}A <em>per the name</em></button></div>` : ''}
   </div>`;
 }).join('');
 
-const rows = sec('In the design', designTypes.length, 'type')
-  + typeRows
-  + sec('Templated — not in this design', templated.length, 'part', true, false);
+// the ⋮ menu, opened on the one card that has both fixes to offer
+const flagged = cards.find(({ t, spec }) => canFill(t, spec) && canReplace(t, spec)) ?? cards[0];
+const menuHtml = `<div class="tp-card is-off" style="max-width:320px">
+  <div class="tp-card-top"><span class="tp-ref">${esc(flagged.t.typeRef)}</span></div>
+  <div class="tp-line">${badge(flagged.t)}<span class="tp-name">${esc(flagged.t.name)}</span></div>
+  <div class="tp-spec">${esc(ratingsOf(flagged.t))}</div>
+  <div class="tp-fault">${esc(flagged.f.map((x) => x[0]).join(' · '))}</div>
+  <div class="tp-foot">
+    <span class="tp-use">1 × HUB-E</span>
+    <button class="tp-icon"><span class="material-icons">edit</span></button>
+    <span class="tp-menu-wrap"><button class="tp-icon"><span class="material-icons">more_vert</span></button>
+      <div class="tp-menu" style="position:static;margin-top:4px">
+        <button>Fill blanks from ${esc(flagged.spec.name)}</button>
+        <button class="is-warn">Use the spec page (${fmt(flagged.spec.maxPowerW)}W)</button>
+      </div></span>
+  </div>
+</div>`;
 
-const orphanHtml = orphans.length ? sec('No datasheet', orphans.length, 'ref', true, false) + '' + [].map((t) => {
-  const u = usage.get(t.typeRef);
-  return `<div class="dp-ref is-plain"><span class="dp-ref-id">${esc(t.typeRef)}</span>
-    <span class="dp-ref-spec">${esc(t.name || '—')}</span>
-    <span class="dp-ref-use">${u ? u.count + ' drivers' : 'unused'}</span>
-    <span class="dp-ref-act"><button class="btn btn-sm btn-link p-0 me-2">add to HUB-B1</button><button class="btn btn-sm btn-link p-0">edit</button></span></div>`;
-}).join('') : '';
+/* ---- the picker: add a driver to a hub ---- */
+const pickerHtml = m.inventory
+  .map((t) => ({ t, f: faults(t, e.resolveSpec(t.name || t.typeRef)) }))
+  .sort((a, b) => (usage.get(b.t.typeRef)?.count ?? 0) - (usage.get(a.t.typeRef)?.count ?? 0))
+  .map(({ t, f }) => `<div class="pk-row${f.length ? ' is-off' : ''}">
+    <span class="pk-ref">${esc(t.typeRef)}</span>${badge(t)}
+    <span class="pk-spec">${esc(ratingsOf(t))}</span>
+    <span class="pk-name">${esc(t.name || '—')}</span>
+    ${f.length ? '<span class="pk-warn"><span class="material-icons">warning_amber</span></span>' : ''}
+    <span class="pk-use">${usage.get(t.typeRef)?.count ?? 0} in use</span>
+    <span class="pk-add">add</span>
+  </div>`).join('');
+
+/* ---- the new-type dialog: filters, then what they leave ---- */
+const seg = (vals, on) => `<div class="nt-seg">${vals.map((v) => `<button class="${v === on ? 'is-on' : ''}">${v}</button>`).join('')}</div>`;
+const matches = e.PARTS.filter((p) => p.kind !== 'supply' && !p.discontinued
+  && p.powerType === 'CC' && p.maxA != null && p.maxA >= 0.5);
+const dialogHtml = `<div class="nt-dialog" style="box-shadow:none;border:1px solid #dbe3ee">
+  <div class="nt-head"><b>New driver type</b>
+    <span class="text-secondary small">${matches.length} of ${e.PARTS.length} parts</span>
+    <button class="btn btn-sm btn-link ms-auto p-0">close</button></div>
+  <div class="nt-filters">
+    <div class="nt-filter"><span>Type</span>${seg(['CC', 'CV', 'any'], 'CC')}</div>
+    <label class="nt-filter"><span>Current ≥</span><input type="number" value="500"><em>mA</em></label>
+    <label class="nt-filter"><span>Power ≥</span><input type="number" placeholder="W"><em>W</em></label>
+    <div class="nt-filter"><span>Outputs</span>${seg(['1', '2', 'any'], 'any')}</div>
+    <input class="form-control form-control-sm nt-q" placeholder="Filter by name…">
+  </div>
+  <div class="nt-list">${matches.map((p, i) => `<div class="nt-part${i === 0 ? ' is-on' : ''}">
+    <span class="type-power is-${p.powerType.toLowerCase()}">${p.powerType}</span>
+    <span class="nt-part-name">${esc(p.name)}</span>
+    <span class="nt-part-spec">${p.maxPowerW != null ? fmt(p.maxPowerW) + 'W' : 'W set by the supply'}${p.minA != null ? ` · ${p.minA}–${p.maxA}A` : ''}${p.maxFvV != null ? ` · ${p.maxFvV}fV/out` : ''}</span>
+    <span class="nt-part-ch">${p.outputs ?? 1} out</span></div>`).join('')}</div>
+  <div class="nt-pick">
+    <label class="nt-filter"><span>CurrentRange</span><input type="number" value="700"><em>mA</em></label>
+    <span class="nt-ref">ET-CCR-D-700-1CH-01</span>
+  </div>
+  <div class="nt-foot">
+    <button class="btn btn-sm btn-link p-0 me-auto">edit all fields</button>
+    <button class="btn btn-sm btn-outline-secondary">Cancel</button>
+    <button class="btn btn-sm btn-outline-primary">Create</button>
+    <button class="btn btn-sm btn-primary">Create and add to HUB-B1</button>
+  </div>
+</div>`;
 
 const editor = `<div class="preset-editor px-3 py-3">
-  <div class="spec-pick">
-    <label><span>Part</span><select class="form-select form-select-sm"><option>EldoLED LinearDrive 220D</option></select></label>
-    <label><span>Supply</span><select class="form-select form-select-sm"><option>Meanwell HLG-185-24</option></select></label>
-  </div>
-  <div class="spec-ref"><input value="ET-CVR-D-24-2CH-01"></div>
+  <div class="spec-pick"><div class="spec-head"><b>ET-CCR-D-1050-1CH-01</b>
+    <span class="text-secondary"> · EldoLED SoloDrive 360/A</span></div></div>
+  <div class="spec-ref"><span>ET-CCR-D-1050-1CH-01</span></div>
   <div class="spec-row"><span class="spec-group">Driver</span>
-    <div class="spec-cell"><select><option>CV</option></select><span class="col">Type</span></div>
-    <div class="spec-cell"><input value="180" class="is-off"><span class="col">MaxPower(W)</span><span class="ds">datasheet 185</span></div>
-    <div class="spec-cell"><input value="24"><span class="col">OutputVoltage(V)</span></div>
-    <div class="spec-cell"><input value="2"><span class="col">BallastCountPerUoM</span></div>
+    <div class="spec-cell"><select><option>CC</option></select><span class="col">Type</span></div>
+    <div class="spec-cell"><input value="185" class="is-off"><span class="col">MaxPower(W)</span><span class="ds">datasheet 30</span></div>
+    <div class="spec-cell"><input value="1.05"><span class="col">CurrentRange</span></div>
+    <div class="spec-cell"><input value="1"><span class="col">BallastCountPerUoM</span></div>
     <div class="spec-cell"><input value="DALI"><span class="col">ControlType</span></div>
   </div>
   <div class="spec-row"><span class="spec-group">Per output</span>
-    <div class="spec-cell"><input value="2"><span class="col">Parameters</span></div>
-    <div class="spec-cell"><input placeholder="—"><span class="col">NodeMaxForwardVoltage(fV)</span></div>
+    <div class="spec-cell"><input value="1"><span class="col">Parameters</span></div>
+    <div class="spec-cell"><input placeholder="—"><span class="col">NodeMaxForwardVoltage(fV)</span><span class="ds">datasheet 55</span></div>
     <div class="spec-cell"><input placeholder="—"><span class="col">NodeMaxPower(W)</span></div>
     <div class="spec-cell"><input placeholder="—"><span class="col">NodeCurrent</span></div>
   </div>
-  <div class="preset-note">EldoLED LinearDrive 220D + Meanwell HLG-185-24 · 185W at 24V</div>
+  <div class="preset-note">EldoLED SoloDrive 360/A · 0.15–1.4A</div>
   <div class="d-flex gap-2 mt-3 align-items-center">
     <button class="btn btn-sm btn-primary">Save</button>
     <button class="btn btn-sm btn-outline-secondary">Cancel</button>
@@ -190,38 +140,57 @@ const editor = `<div class="preset-editor px-3 py-3">
   </div>
 </div>`;
 
-const html = `<!doctype html><html><head><meta charset="utf-8"><title>Driver UI as it stands</title>
+const html = `<!doctype html><html><head><meta charset="utf-8"><title>Driver types and the picker</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons">
 <style>${fs.readFileSync(`${root}/node_modules/bootstrap/dist/css/bootstrap.min.css`, 'utf8')}</style>
 <style>${fs.readFileSync(`${root}/src/styles.css`, 'utf8')}</style>
 <style>
-.dp-part-head .type-power{min-width:40px;padding:3px 9px;font-size:11px;letter-spacing:.04em;border-radius:4px}
-.dp-count{min-width:56px;text-align:right;margin-right:0}
-.dp-gone{font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:#94a3b8;border:1px solid #dbe3ee;border-radius:3px;padding:1px 5px;margin-left:8px;font-weight:400}
-.dp-part.is-gone .dp-name,.dp-part.is-gone .dp-spec,.dp-part.is-gone .dp-ch{color:#94a3b8}
+body{padding:24px;background:#f6f8fb}
+.mockhead{font:600 12px/1.4 system-ui;letter-spacing:.08em;text-transform:uppercase;color:#94a3b8;margin:26px 0 8px}
+.mockhead:first-child{margin-top:0}
+.frame{background:#fff;border:1px solid #dbe3ee;border-radius:10px;padding:14px}
 .dp-need{font-size:12px;color:#8a6d1f;background:#fdf6e3;border:1px solid #e2d7b4;border-radius:4px;padding:2px 8px}
-.dp-fault{color:#8a6d1f;border-bottom:1px dotted #c9a227;cursor:help}
-body{padding:24px;background:#f6f8fb}.mockhead{font:600 12px/1.4 system-ui;letter-spacing:.08em;text-transform:uppercase;color:#94a3b8;margin:26px 0 8px}
-.frame{background:#fff;border:1px solid #dbe3ee;border-radius:10px;overflow:hidden}</style>
+</style>
 </head><body>
-<div class="mockhead">Driver types — reached from a hub (Add driver / Types)</div>
-<div class="frame"><div class="container-fluid py-3 drivers-page">
+<div class="mockhead">Add a driver to a hub — the picker</div>
+<div class="frame"><div class="picker-page">
   <div class="dp-head">
     <button class="btn btn-sm btn-outline-secondary">← HUB-B1</button>
-    <h5 class="mb-0">Add drivers to HUB-B1</h5>
-    <span class="text-secondary small">${designTypes.length} in the design · ${templated.length} templated</span>
-    <span class="dp-need" title="These types have no ratings, so nothing can be sized against them">2 types need ratings</span>
+    <h5 class="mb-0">Add a driver to HUB-B1</h5>
     <input class="form-control form-control-sm ms-auto" style="max-width:240px" placeholder="Filter…">
   </div>
   <div class="dp-suggest"><div><b>HUB-B1 has 26 cables and no drivers yet</b>
     <div class="text-secondary small">4 × ET-CVR-D-24-2CH-01 would hold them, one ControlGroup each</div></div>
     <button class="btn btn-sm btn-primary ms-auto">Add these 4 drivers</button></div>
-  <div class="dp-list">${rows}${orphanHtml}</div>
+  <div class="pk-list">${pickerHtml}</div>
+  <div class="pk-foot"><button class="btn btn-sm btn-outline-primary">New type…</button>
+    <button class="btn btn-sm btn-link ms-auto">Manage types →</button></div>
 </div></div>
-<div class="mockhead">The field editor, behind “edit” on a row</div>
+
+<div class="mockhead">Driver types — the design's own ElementTypes, flagged first</div>
+<div class="frame"><div class="types-page">
+  <div class="dp-head">
+    <button class="btn btn-sm btn-outline-secondary">← Zones</button>
+    <h5 class="mb-0">Driver types</h5>
+    <span class="text-secondary small">${m.inventory.length} types in the design</span>
+    <span class="dp-need">${cards.filter((c) => c.f.length).length} worth a look</span>
+    <input class="form-control form-control-sm ms-auto" style="max-width:220px" placeholder="Filter…">
+    <button class="btn btn-sm btn-primary">New type</button>
+  </div>
+  <div class="tp-grid">${cardHtml}</div>
+</div></div>
+
+<div class="mockhead">The remedies, behind ⋮</div>
+<div class="frame">${menuHtml}</div>
+
+<div class="mockhead">✎ — every ElementTypes field, in the card</div>
 <div class="frame">${editor}</div>
+
+<div class="mockhead">New type — filters, then the shortlist they leave</div>
+${dialogHtml}
 </body></html>`;
 fs.writeFileSync(new URL('./driver-types.html', import.meta.url), html);
-console.log('rows:', list.length, 'orphans:', orphans.length);
+console.log('cards:', cards.length, '· flagged:', cards.filter((c) => c.f.length).length);
 
 /* ---- estimate: the third mode, from a requirement assessment ---- */
 const estTypes = fs.readFileSync(`${root}/src/demo/form.csv`, 'utf8');   // types come from the demo library

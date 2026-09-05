@@ -471,22 +471,12 @@ body { background: #f6f8fb; }
   min-width: 46px; padding: 3px 10px; font-size: 11px; letter-spacing: 0.04em; border-radius: 4px;
 }
 .dp-count { min-width: 56px; }
-.dp-flag {
-  width: 16px; height: 16px; border-radius: 50%; background: #fdf6e3; border: 1px solid #e2d7b4;
-  color: #8a6d1f; font-size: 11px; font-weight: 700; line-height: 14px; text-align: center; flex: 0 0 auto;
-}
-.dp-gone {
-  font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; color: #94a3b8;
-  border: 1px solid #dbe3ee; border-radius: 3px; padding: 1px 5px; margin-left: 8px; font-weight: 400;
-}
-.dp-part.is-gone .dp-name, .dp-part.is-gone .dp-spec, .dp-part.is-gone .dp-ch { color: #94a3b8; }
 .dp-need {
   font-size: 12px; color: #8a6d1f; background: #fdf6e3; border: 1px solid #e2d7b4;
   border-radius: 4px; padding: 2px 8px;
 }
 .dp-name { font-weight: 600; color: #16212e; }
 .dp-spec { color: #475569; font-variant-numeric: tabular-nums; }
-.dp-ch { color: #64748b; white-space: nowrap; }
 .dp-count { margin-left: auto; font-size: 11.5px; color: #94a3b8; white-space: nowrap; }
 
 .dp-ref {
@@ -500,22 +490,6 @@ body { background: #f6f8fb; }
 .dp-ref-spec { font-variant-numeric: tabular-nums; }
 .dp-ref-use { color: #94a3b8; }
 .dp-fault { color: #8a6d1f; border-bottom: 1px dotted #c9a227; cursor: help; }
-.dp-ref-act { margin-left: auto; white-space: nowrap; }
-
-.dp-add {
-  display: flex; align-items: flex-end; gap: 14px; flex-wrap: wrap;
-  padding: 10px 14px 12px 52px; background: #f6f9fd; border-top: 1px solid #eef1f6;
-}
-.dp-add label { display: flex; flex-direction: column; gap: 2px; font-size: 11px; color: #64748b; }
-.dp-add input, .dp-add select { min-width: 150px; }
-.dp-newref {
-  font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 13px;
-  font-weight: 600; color: #1f4e79; padding-bottom: 4px;
-}
-.dp-sub {
-  padding: 7px 14px; font-size: 11px; letter-spacing: 0.07em; text-transform: uppercase;
-  color: #94a3b8; background: #f6f9fd; border-top: 1px solid #eef1f6;
-}
 
 /* ---- tender estimate ---- */
 .est-total {
@@ -535,70 +509,137 @@ body { background: #f6f8fb; }
 .est-c-label { font-size: 10.5px; letter-spacing: .07em; text-transform: uppercase; color: #94a3b8; }
 .est-c { display: inline-flex; align-items: center; gap: 5px; margin: 0; cursor: pointer; color: #475569; }
 
-/* section headers on the driver types page — the design's own types first, and
-   everything we brought folded under its own count */
-.dp-sec {
-  display: flex; align-items: center; gap: 8px; width: 100%; padding: 7px 14px;
-  font-size: 11px; letter-spacing: .07em; text-transform: uppercase; color: #64748b;
-  background: #f6f9fd; border: 0; border-top: 1px solid #eef1f6; text-align: left;
+/* ---- Types page: one card per ElementType ---------------------------------
+   Cards rather than rows because the question here is "is this type right",
+   which is asked of one type at a time. A grid keeps forty of them on two
+   screens; the card that is being edited takes the full width so the editor has
+   room and its neighbours reflow rather than being covered. */
+.tp-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 10px; align-items: start;
 }
-.dp-sec.is-fold { cursor: pointer; }
-.dp-sec.is-fold:hover { background: #eef2f7; color: #1f4e79; }
-.dp-sec-n { margin-left: auto; color: #94a3b8; letter-spacing: 0; text-transform: none; font-size: 11.5px; }
-.dp-caret { color: #94a3b8; }
-.dp-list > .dp-sec:first-child { border-top: 0; }
-
-/* a preset on a real type is a proposal, not the design's own number */
-.dp-pending, .dp-suggest {
-  flex-basis: 100%; padding-left: 0; font-size: 11.5px;
+.tp-empty { grid-column: 1 / -1; padding: 24px; text-align: center; }
+.tp-card {
+  border: 1px solid #e6ebf2; border-left: 3px solid transparent; border-radius: 8px;
+  background: #fff; padding: 9px 11px; font-size: 13px; display: flex;
+  flex-direction: column; gap: 4px; min-width: 0;
+}
+/* A type worth a look gets a rail, not a hatch — the state shows, the remedies
+   stay in the menu. */
+.tp-card.is-off { border-left-color: #e0b93c; background: #fffdf6; }
+.tp-card.is-editing { grid-column: 1 / -1; border-left-color: #2563eb; background: #f8fbff; }
+.tp-card-top { display: flex; align-items: center; gap: 8px; }
+.tp-ref {
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 12.5px; font-weight: 600; color: #0f172a; overflow-wrap: anywhere;
 }
-.dp-pending { color: #8a6d1f; }
-.dp-suggest { color: #64748b; font-family: inherit; }
+.tp-dot {
+  margin-left: auto; font-size: 10px; letter-spacing: .05em; text-transform: uppercase;
+  color: #8a6d1f; background: #fdf6e3; border: 1px solid #e2d7b4; border-radius: 3px; padding: 0 5px;
+}
+.tp-line { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.tp-line .type-power { flex: 0 0 auto; min-width: 42px; padding: 2px 9px; font-size: 10.5px; }
+.tp-name { color: #64748b; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tp-spec { color: #475569; font-variant-numeric: tabular-nums; }
+.tp-fault { color: #8a6d1f; font-size: 12px; cursor: help; }
+.tp-foot { display: flex; align-items: center; gap: 2px; margin-top: 2px; }
+.tp-use { color: #94a3b8; font-size: 12px; margin-right: auto; white-space: nowrap; }
+.tp-icon {
+  border: 0; background: none; color: #94a3b8; border-radius: 5px; padding: 2px; line-height: 0;
+}
+.tp-icon:hover { background: #eef2f7; color: #1f4e79; }
+.tp-icon .material-icons { font-size: 17px; }
+.tp-menu-wrap { position: relative; display: inline-flex; }
+.tp-menu {
+  position: absolute; right: 0; top: 100%; z-index: 20; min-width: 240px;
+  background: #fff; border: 1px solid #dbe3ee; border-radius: 7px;
+  box-shadow: 0 6px 20px rgba(15, 23, 42, .13); padding: 4px; display: flex; flex-direction: column;
+}
+.tp-menu button {
+  border: 0; background: none; text-align: left; padding: 6px 9px; border-radius: 5px;
+  font-size: 12.5px; color: #16212e;
+}
+.tp-menu button:hover { background: #f1f5f9; }
+.tp-menu button.is-warn { color: #8a6d1f; }
+.tp-menu button em { font-style: normal; color: #94a3b8; }
+.tp-menu-none { padding: 6px 9px; font-size: 12.5px; color: #94a3b8; }
+.tp-card .preset-editor { background: none; border-top: 1px solid #e2d7b4; padding: 8px 0 0 !important; }
 
-/* One ElementType as the design names it — flat, not folded under a part. */
-.dp-type {
-  border-bottom: 1px solid #eef1f6;
-  padding: 5px 12px 5px 9px;
-  border-left: 3px solid transparent;
-  font-size: 13px;
+/* ---- Picker: add a driver to this hub ---- */
+.pk-list { border: 1px solid #e6ebf2; border-radius: 8px; overflow: hidden; background: #fff; }
+.pk-row {
+  display: flex; align-items: center; gap: 12px; width: 100%; padding: 6px 12px;
+  background: none; border: 0; border-bottom: 1px solid #f1f5f9; text-align: left; font-size: 13px;
 }
-/* A type worth a look gets a rail, not a hatch — the hatch shouted over the
-   numbers it was drawing attention to. */
-.dp-type.is-off { border-left-color: #e0b93c; background: #fffdf6; }
-.dp-type.is-editing { border-left-color: #2563eb; background: #f8fbff; }
-.dp-type:hover { background: #f8fafd; }
-.dp-type.is-off:hover { background: #fffbea; }
-.dp-type-head { display: flex; align-items: center; gap: 10px; min-height: 26px; }
-/* The Ref is the key on the Elements sheet — it leads, and it is the width the
-   longest ref needs, so the columns after it line up down the list. */
-.dp-type-ref {
-  font-family: var(--bs-font-monospace); font-size: 12.5px; font-weight: 600;
-  color: #0f172a; flex: 0 0 178px; overflow-wrap: anywhere;
+.pk-row:last-child { border-bottom: 0; }
+.pk-row:hover { background: #f2f7ff; }
+.pk-row.is-off { background: #fffdf6; }
+.pk-row.is-off:hover { background: #fffbea; }
+.pk-ref {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-weight: 600;
+  color: #0f172a; flex: 0 0 178px;
 }
-.dp-type-name {
-  color: #64748b; flex: 1 1 auto; min-width: 0;
+.pk-row .type-power { flex: 0 0 auto; min-width: 42px; padding: 2px 9px; font-size: 10.5px; }
+.pk-spec { color: #475569; font-variant-numeric: tabular-nums; flex: 0 0 auto; white-space: nowrap; }
+.pk-name {
+  color: #94a3b8; flex: 1 1 auto; min-width: 0;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.dp-type-head .type-power { flex: 0 0 auto; min-width: 42px; padding: 2px 9px; font-size: 10.5px; }
-.dp-type-head .dp-spec { flex: 0 0 auto; color: #475569; white-space: nowrap; }
-.dp-type-head .dp-count { flex: 0 0 auto; color: #94a3b8; font-size: 12px; white-space: nowrap; }
-.dp-type-head .dp-ref-act { flex: 0 0 auto; white-space: nowrap; }
-.dp-type .dp-fault { font-size: 12px; padding-left: 188px; }
+.pk-warn { color: #c9a227; line-height: 0; cursor: help; }
+.pk-warn .material-icons { font-size: 17px; }
+.pk-use { color: #94a3b8; font-size: 12px; white-space: nowrap; }
+.pk-add { color: #1f4e79; font-weight: 600; font-size: 12.5px; }
+.pk-empty { padding: 24px; text-align: center; }
+.pk-foot { display: flex; align-items: center; margin-top: 12px; }
 
-/* One-click resolution, on the row itself: the fix should not need the card
-   opened to be found. */
-.dp-chip {
-  flex: 0 0 auto; border-radius: 999px; padding: 1px 9px; font-size: 11.5px;
-  white-space: nowrap; cursor: pointer; border: 1px solid;
+/* ---- New type: filters, then the shortlist they leave ---- */
+.nt-backdrop {
+  position: fixed; inset: 0; z-index: 1050; background: rgba(15, 23, 42, .35);
+  display: flex; align-items: flex-start; justify-content: center; padding: 40px 16px;
 }
-.dp-chip.is-fill { border-color: #bcd3f7; background: #eef5ff; color: #1d4ed8; }
-.dp-chip.is-replace { border-color: #e2d7b4; background: #fdf6e3; color: #8a6d1f; }
-.dp-chip.is-pending { border-color: #cbd5e1; background: #f1f5f9; color: #475569; }
-.dp-chip:hover { filter: brightness(0.97); }
+.nt-dialog {
+  background: #fff; border-radius: 10px; width: min(720px, 100%); max-height: 100%;
+  display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 12px 40px rgba(15, 23, 42, .3);
+}
+.nt-head { display: flex; align-items: center; gap: 10px; padding: 11px 14px; border-bottom: 1px solid #eef1f6; }
+.nt-filters {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  padding: 10px 14px; background: #f8fafd; border-bottom: 1px solid #eef1f6;
+}
+.nt-filter { display: flex; align-items: center; gap: 5px; font-size: 12px; color: #64748b; margin: 0; }
+.nt-filter input[type="number"] {
+  width: 68px; border: 1px solid #dbe3ee; border-radius: 5px; padding: 2px 6px; font-size: 12.5px;
+}
+.nt-filter em { font-style: normal; color: #94a3b8; }
+.nt-q { max-width: 170px; margin-left: auto; }
+.nt-seg { display: inline-flex; border: 1px solid #dbe3ee; border-radius: 6px; overflow: hidden; }
+.nt-seg button {
+  border: 0; background: #fff; padding: 2px 10px; font-size: 12px; color: #475569;
+  border-right: 1px solid #dbe3ee;
+}
+.nt-seg button:last-child { border-right: 0; }
+.nt-seg button.is-on { background: #1f4e79; color: #fff; }
+.nt-list { overflow-y: auto; flex: 1 1 auto; min-height: 120px; }
+.nt-part {
+  display: flex; align-items: center; gap: 12px; width: 100%; padding: 7px 14px;
+  background: none; border: 0; border-bottom: 1px solid #f1f5f9; text-align: left; font-size: 13px;
+}
+.nt-part:hover { background: #f2f7ff; }
+.nt-part.is-on { background: #e8f1ff; box-shadow: inset 3px 0 0 #2563eb; }
+.nt-part .type-power { flex: 0 0 auto; min-width: 42px; padding: 2px 9px; font-size: 10.5px; }
+.nt-part-name { font-weight: 600; color: #16212e; flex: 0 0 auto; }
+.nt-part-spec { color: #475569; font-variant-numeric: tabular-nums; }
+.nt-part-ch { margin-left: auto; color: #94a3b8; font-size: 12px; white-space: nowrap; }
+.nt-empty { padding: 28px; text-align: center; color: #94a3b8; font-size: 13px; }
+.nt-pick {
+  display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  padding: 10px 14px; border-top: 1px solid #eef1f6; background: #fffdf5;
+}
+.nt-ref {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 12.5px;
+  color: #1f4e79; margin-left: auto;
+}
+.nt-foot { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-top: 1px solid #eef1f6; }
+.nt-dialog .preset-editor { overflow-y: auto; }
 
-.dp-choose { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 12px; padding: 3px 0 2px 188px; }
-.dp-pick { border: 1px solid #dbe3ee; background: #fff; border-radius: 999px; padding: 1px 9px; font-size: 12px; }
-.dp-pick.is-on { border-color: #2563eb; background: #eef5ff; color: #1d4ed8; }
-.dp-pick em { font-style: normal; color: #94a3b8; }
 .est-c .margin-input { width: 58px; height: 26px; padding: 0 .35rem; }

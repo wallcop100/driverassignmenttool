@@ -97,15 +97,28 @@ limit bound it, and the constraints along the top make the answer looser.
 
 ![Driver estimate](img/estimate.png)
 
+### Adding a driver
+
+Reached from a hub, so it asks one question. The design's own types, most-used
+first, one press each. A hub with no drivers yet gets its sizing offered at the
+top. A type that needs correcting is marked, not corrected here — an audit in the
+middle of an assignment is a different job.
+
 ### Driver types
 
-What the design actually contains comes first; everything we brought to it —
-types invented here, and datasheet parts nothing uses — folds away under a count.
-Grouping by part is what makes a wrong rating obvious: the flagged rows are types
-whose stated wattage disagrees with the spec page.
+One card per ElementType in the design, flagged first: the reason to open this
+screen is at the top of it. The card shows what the DesignDB states — never a
+datasheet number in its place, so it is never unclear which side a value came
+from — with what the spec page disagrees about written underneath.
 
-A type that is in the DesignDB always shows **the DesignDB's own numbers**. A
-preset on it appears as a pending change beneath, never in place of them, so it
-is never unclear which side a number came from.
+The pencil expands the card to every ElementTypes column, editable in place. The
+⋮ menu holds the remedies: **Fill blanks** adds only what the design states
+nothing for, **Use the spec page** overwrites what disagrees, and where the Ref
+and the Name disagree about the current, both are offered and the choice corrects
+the Name. The Ref is never renamed — it is the key Elements point at.
+
+Defining a type the design does not have yet is a set of filters over the
+datasheet catalogue (CC, ≥500mA, 2 outputs), then the shortlist they leave. The
+current and the supply are asked for because the datasheet cannot know them.
 
 ![Driver types](img/driver-types.png)
