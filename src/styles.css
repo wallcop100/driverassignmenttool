@@ -565,30 +565,42 @@ body { background: #f6f8fb; }
 .tp-menu-none { padding: 6px 9px; font-size: 12.5px; color: #94a3b8; }
 .tp-card .preset-editor { background: none; border-top: 1px solid #e2d7b4; padding: 8px 0 0 !important; }
 
-/* ---- Picker: add a driver to this hub ---- */
+/* ---- Picker: add a driver to this hub ----
+   Three things carry the row — the Ref you are looking for, the Name that says
+   which one it is, and a description of what it does. The rest is checked after
+   the fact, so it is sized like a footnote. */
 .pk-list { border: 1px solid #e6ebf2; border-radius: 8px; overflow: hidden; background: #fff; }
 .pk-row {
-  display: flex; align-items: center; gap: 12px; width: 100%; padding: 6px 12px;
-  background: none; border: 0; border-bottom: 1px solid #f1f5f9; text-align: left; font-size: 13px;
+  display: flex; align-items: baseline; gap: 12px; width: 100%; padding: 7px 12px;
+  background: none; border: 0; border-bottom: 1px solid #f1f5f9; text-align: left;
 }
 .pk-row:last-child { border-bottom: 0; }
 .pk-row:hover { background: #f2f7ff; }
 .pk-row.is-off { background: #fffdf6; }
 .pk-row.is-off:hover { background: #fffbea; }
 .pk-ref {
-  font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-weight: 600;
-  color: #0f172a; flex: 0 0 178px;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 13px;
+  font-weight: 600; color: #0f172a; flex: 0 0 180px;
 }
-.pk-row .type-power { flex: 0 0 auto; min-width: 42px; padding: 2px 9px; font-size: 10.5px; }
-.pk-spec { color: #475569; font-variant-numeric: tabular-nums; flex: 0 0 auto; white-space: nowrap; }
 .pk-name {
-  color: #94a3b8; flex: 1 1 auto; min-width: 0;
+  font-size: 13px; color: #16212e; flex: 1 1 34%; min-width: 0;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.pk-warn { color: #c9a227; line-height: 0; cursor: help; }
-.pk-warn .material-icons { font-size: 17px; }
-.pk-use { color: #94a3b8; font-size: 12px; white-space: nowrap; }
-.pk-add { color: #1f4e79; font-weight: 600; font-size: 12.5px; }
+.pk-desc {
+  font-size: 11.5px; color: #94a3b8; font-variant-numeric: tabular-nums;
+  flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.pk-pt {
+  font-size: 9.5px; font-weight: 700; letter-spacing: .04em; border-radius: 3px;
+  padding: 1px 5px; margin-right: 6px;
+}
+.pk-pt.is-cc { background: #e0f2fe; color: #0369a1; }
+.pk-pt.is-cv { background: #dcfce7; color: #15803d; }
+.pk-pt.is-unknown { background: #eef2f7; color: #94a3b8; }
+.pk-warn { color: #c9a227; line-height: 0; cursor: help; align-self: center; }
+.pk-warn .material-icons { font-size: 15px; }
+.pk-use { color: #cbd5e1; font-size: 11px; white-space: nowrap; min-width: 16px; text-align: right; }
+.pk-add { color: #1f4e79; font-size: 11.5px; }
 .pk-empty { padding: 24px; text-align: center; }
 .pk-foot { display: flex; align-items: center; margin-top: 12px; }
 

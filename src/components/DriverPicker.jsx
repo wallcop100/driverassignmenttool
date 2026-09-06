@@ -88,18 +88,25 @@ export default function DriverPicker({ state, dispatch, zone }) {
         {types.map(({ t, f }) => (
           <button key={t.typeRef} className={`pk-row ${f.length ? 'is-off' : ''}`}
             onClick={() => add(t.typeRef)}>
+            {/* Ref, then Name, then what it is. Everything else on the row is
+                something you check after you have found the right one, so none
+                of it competes with those three for the eye. */}
             <span className="pk-ref">{t.typeRef}</span>
-            <span className={`type-power ${t.powerType ? `is-${t.powerType.toLowerCase()}` : 'is-unknown'}`}>
-              {t.powerType ?? '—'}
+            <span className="pk-name" title={t.name || ''}>{t.name || '—'}</span>
+            <span className="pk-desc">
+              <span className={`pk-pt ${t.powerType ? `is-${t.powerType.toLowerCase()}` : 'is-unknown'}`}>
+                {t.powerType ?? '—'}
+              </span>
+              {ratingsOf(t)}
+              {` · ${t.nodes?.length ?? 1} out`}
+              {t.ballast ? ` · ${t.ballast}CH` : ''}
             </span>
-            <span className="pk-spec">{ratingsOf(t)}</span>
-            <span className="pk-name">{t.name || '—'}</span>
             {f.length > 0 && (
               <span className="pk-warn" title={`${f.map((x) => x[0]).join(' · ')} — correct it on the types page`}>
                 <span className="material-icons">warning_amber</span>
               </span>
             )}
-            <span className="pk-use">{usage.get(t.typeRef) ?? 0} in use</span>
+            <span className="pk-use">{usage.get(t.typeRef) ?? 0}</span>
             <span className="pk-add">add</span>
           </button>
         ))}

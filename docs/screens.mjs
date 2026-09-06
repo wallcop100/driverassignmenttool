@@ -75,11 +75,11 @@ const pickerHtml = m.inventory
   .map((t) => ({ t, f: faults(t, e.resolveSpec(t.name || t.typeRef)) }))
   .sort((a, b) => (usage.get(b.t.typeRef)?.count ?? 0) - (usage.get(a.t.typeRef)?.count ?? 0))
   .map(({ t, f }) => `<div class="pk-row${f.length ? ' is-off' : ''}">
-    <span class="pk-ref">${esc(t.typeRef)}</span>${badge(t)}
-    <span class="pk-spec">${esc(ratingsOf(t))}</span>
+    <span class="pk-ref">${esc(t.typeRef)}</span>
     <span class="pk-name">${esc(t.name || '—')}</span>
+    <span class="pk-desc"><span class="pk-pt is-${(t.powerType || 'unknown').toLowerCase()}">${t.powerType ?? '—'}</span>${esc(ratingsOf(t))} · ${t.nodes?.length ?? 1} out${t.ballast ? ` · ${t.ballast}CH` : ''}</span>
     ${f.length ? '<span class="pk-warn"><span class="material-icons">warning_amber</span></span>' : ''}
-    <span class="pk-use">${usage.get(t.typeRef)?.count ?? 0} in use</span>
+    <span class="pk-use">${usage.get(t.typeRef)?.count ?? 0}</span>
     <span class="pk-add">add</span>
   </div>`).join('');
 
