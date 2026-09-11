@@ -1007,3 +1007,19 @@ test('the estimate scopes to one hub', () => {
   assert.equal(one[0].zone, 'HUB-J');
   assert.ok(one[0].drivers > 0);
 });
+
+test('Elements.ContextRef takes the hub Position Ref, not its label', () => {
+  const m = gfModel(gfLinks(1));
+  const added = [{ ref: 'E5000X', typeRef: 'T100', zone: 'CSB' }];
+  const a = { 'E5000X|OP.1': { toEntityType: 'Link', refs: ['L1'] } };
+  // The host knows the hub is Position P8110 labelled CSB. ContextRef is an FK
+  // by Ref, so the label would not resolve.
+  const withCtx = engine.generatePatchScript(m, a, added, [], { hubRef: 'P8110', hubLabel: 'CSB' });
+  assert.match(withCtx, /EL_ContextRef\).setValue\("P8110"\)/);
+  assert.ok(!withCtx.includes('CHECK ContextRef'));
+
+  // Standalone, only the label was ever known — say so rather than pretend.
+  const without = engine.generatePatchScript(m, a, added, []);
+  assert.match(without, /EL_ContextRef\).setValue\("CSB"\)/);
+  assert.match(without, /CHECK ContextRef: CSB is the hub label, not its Position Ref/);
+});

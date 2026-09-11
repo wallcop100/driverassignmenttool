@@ -114,8 +114,12 @@ export async function exportCsv(assignments, addedDrivers) {
   return engine.exportCsv(model, assignments, addedDrivers);
 }
 
-export async function generatePatch(assignments, addedDrivers, presets) {
-  return engine.generatePatchScript(model, assignments, addedDrivers, Object.values(presets || {}));
+// `context` carries the host's hubRef — Elements.ContextRef needs the Position
+// Ref, and the CSVs only ever carry the label.
+export async function generatePatch(assignments, addedDrivers, presets, context) {
+  return engine.generatePatchScriptMulti([{
+    model, assignments, addedDrivers, presets: Object.values(presets || {}), context,
+  }]);
 }
 
 // One script covering every hub saved in this branch+set. The hub on screen is

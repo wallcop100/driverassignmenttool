@@ -38,7 +38,7 @@ export default function ReviewModal({ state, dispatch, onClose }) {
   const doPatch = async () => {
     setError(null);
     try {
-      const script = await api.generatePatch(state.assignments, state.addedDrivers, state.presets);
+      const script = await api.generatePatch(state.assignments, state.addedDrivers, state.presets, state.context);
       await api.copyPatch(script);
       setPatchCopied(true);
       setTimeout(() => setPatchCopied(false), 2000);

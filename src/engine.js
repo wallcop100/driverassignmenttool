@@ -1303,10 +1303,11 @@ const elementHeader = () => `\t\t//${ELEMENT_SHEET}\n`
   // read once rather than re-measured after every write
   + `\t\tlet EL_row=${ELEMENT_SHEET}.getUsedRange().getRowCount();\n\n`;
 
-function elementBlock(zone, line) {
+function elementBlock(zone, line, note) {
   const q = (x) => `"${esc(x)}"`;
   const set = (v, val) => `\t\t${ELEMENT_SHEET}.getCell(EL_row,${v}).setValue(${val})\n`;
   return `\t\t//${esc(zone)} · ${esc(line.typeRef)} × ${line.count}\n`
+    + (note ? `\t\t//${esc(note)}\n` : '')
     + set('EL_Ref', q(PLACEHOLDER_REF))
     + (line.name ? set('EL_Name', q(line.name)) : '')
     + set('EL_TypeRef', q(line.typeRef))
@@ -1332,12 +1333,29 @@ export function generateEstimatePatch(estimates) {
 // driver — not one per type with a Quantity, as the estimate does: these are
 // individual drivers with cables assigned to them one at a time, and the person
 // resolving the placeholder Refs needs a row per physical driver to resolve.
+//
+// Elements.ContextRef is a foreign key BY Ref, and a hub's zone label is
+// COALESCE(ExtRef, Ref) — on a project where the hub Positions carry ExtRefs
+// (P8110 labelled CSB) the label is not a key at all. The host tells us the real
+// Position Ref in dat:init's context, and it is the only place it appears: the
+// CSVs carry the label and nothing else. Without it, say so in the script rather
+// than writing a key that does not resolve.
 function addedElements(sessions) {
   const out = [];
   for (const sn of sessions || []) {
     const byType = new Map((sn.model?.inventory ?? []).map((t) => [t.typeRef, t]));
+    const hubRef = sn.hubRef ?? sn.context?.hubRef ?? null;
+    const hubLabel = sn.context?.hubLabel ?? null;
     for (const d of sn.addedDrivers ?? []) {
-      out.push({ zone: d.zone, line: { typeRef: d.typeRef, count: 1, name: byType.get(d.typeRef)?.name || '' } });
+      // one hub per session, so the context's ref is this driver's hub — unless
+      // the session is standalone, where only the label was ever known
+      const known = hubRef && (!hubLabel || hubLabel === d.zone || hubRef === d.zone);
+      out.push({
+        zone: known ? hubRef : d.zone,
+        label: d.zone,
+        resolved: !!known,
+        line: { typeRef: d.typeRef, count: 1, name: byType.get(d.typeRef)?.name || '' },
+      });
     }
   }
   return out;
@@ -1355,13 +1373,16 @@ export function generatePatchScriptMulti(sessions) {
   const types = presets.length ? typeHeader() + presets.map(typeBlock).join('') : '';
   const added = addedElements(sessions);
   const elements = added.length
-    ? elementHeader() + added.map(({ zone, line }) => elementBlock(zone, line)).join('')
+    ? elementHeader() + added.map(({ zone, line, label, resolved }) => elementBlock(
+      zone, line,
+      resolved ? null : `CHECK ContextRef: ${label} is the hub label, not its Position Ref`,
+    )).join('')
     : '';
   // ElementTypes, then the Elements that use them, then the links that point at
   // those Elements — the order a person would apply them by hand.
   return PATCH_HEADER + types + elements + body + PATCH_FOOTER;
 }
 
-export function generatePatchScript(model, assignments, addedDrivers, presets) {
-  return generatePatchScriptMulti([{ model, assignments, addedDrivers, presets }]);
+export function generatePatchScript(model, assignments, addedDrivers, presets, context) {
+  return generatePatchScriptMulti([{ model, assignments, addedDrivers, presets, context }]);
 }

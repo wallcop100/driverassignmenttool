@@ -77,11 +77,20 @@ DECLARE @EntityTypeFilter AS varchar(max) = @Container_TypeRef;
    per-hub CSV leaves them blank. One row per type+node so node-level limits are
    preserved. Sent once before dat:init — postMessage preserves order.
 
-   Sourced from #ElementTypes, not from the drivers in use: a driver is a type
-   with output nodes (Parameters carrying '<'), which is the same rule DriverForm
-   applies. That is what lets a page with NO drivers anywhere - a tender design -
-   still have parts to size against, and it gives the tool the whole library
-   rather than only what is already placed.
+   Sourced from #ElementTypes, not from the drivers in use. That is what lets a
+   page with NO drivers anywhere - a tender design - still have parts to size
+   against, and it gives the tool the whole library rather than only what is
+   already placed.
+
+   A driver is a type with output nodes. '<' is the DIRECTION marker, and LED
+   driver types are very often written without one - {OP.01}, {OP.01,OP.02} -
+   which is what DriverForm's @NodeWarning is about. Requiring '<' therefore
+   dropped real drivers from the library: on one live set, 11 of 11 driver types;
+   on another, 9 of 21, seven of which are placed and in use. The symptom is a
+   tool that offers only the types the open hub already has. So an OP. node
+   counts as an output whether or not anyone marked its direction, and Channels
+   counts nodes rather than '<'s - a {OP.01,OP.02} type is 2CH, not 0CH, and a
+   0CH type cannot be sized against at all.
 
    The columns are stated outright rather than composed into "Driver
    Restrictions", because the composed form is order-dependent: a driver-level
@@ -108,9 +117,15 @@ SELECT @TypesCsv = '"ElementTypeRef","ElementTypeName","MaxPower(W)","CurrentRan
 FROM (SELECT Ref, Name, [MaxPower(W)], CurrentRange, [OutputVoltage(V)],
              [NodeMaxPower(W)], [NodeMaxForwardVoltage(fV)], NodeCurrent,
              ControlType, BallastCountPerUoM,
-             LEN(Parameters) - LEN(REPLACE(Parameters,'<','')) AS Channels
+             CASE WHEN Parameters LIKE '%<%'
+                  THEN LEN(Parameters) - LEN(REPLACE(Parameters,'<',''))
+                  -- no direction markers: every comma separated entry is a node
+                  ELSE LEN(REPLACE(REPLACE(Parameters,'{',''),'}',''))
+                     - LEN(REPLACE(REPLACE(REPLACE(Parameters,'{',''),'}',''),',','')) + 1
+             END AS Channels
       FROM #ElementTypes
-      WHERE ISNULL(Parameters,'') LIKE '%<%') t;
+      WHERE ISNULL(Parameters,'') LIKE '%<%'
+         OR ISNULL(Parameters,'') LIKE '%OP.%') t;
 
 /* ---- 0b. requirement rows, for hubs that have fittings but no cables ----------------
    At tender stage there are Positions and no Links, so there is nothing to
