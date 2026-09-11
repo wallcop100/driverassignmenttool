@@ -4,7 +4,16 @@
 // built on it.
 import { currentFromName, currentFromRef } from './engine.js';
 
-export const fmt = (n) => (n == null ? null : (Number.isInteger(n) ? n : +n.toFixed(2)));
+export const fmt = (n) => {
+  if (n == null || n === '') return null;
+  // Anything that is not a number comes back as it went in. It used to reach
+  // toFixed and throw, so one ControlType of "DALI" in a preview took the whole
+  // page down.
+  if (typeof n !== 'number') return Number.isFinite(Number(n)) && String(n).trim() !== ''
+    ? fmt(Number(n)) : n;
+  if (!Number.isFinite(n)) return null;
+  return Number.isInteger(n) ? n : +n.toFixed(2);
+};
 
 // What the stated ratings and the spec page disagree about. The part is matched
 // on a free-text name, so a mismatch might be the match's fault rather than the
@@ -108,3 +117,55 @@ export const canFill = (t, spec) => !!spec && (t.maxPowerW == null || t.powerTyp
 
 export const canReplace = (t, spec) => !!spec && spec.maxPowerW != null && t.maxPowerW != null
   && Math.abs(t.maxPowerW - spec.maxPowerW) > 0.01;
+
+// Everything the datasheet can settle without asking. A type's Name matches a
+// part, and the two things a datasheet cannot know are usually already written
+// down: the current is in the Ref (ET-CCR-D-350-1CH-01) and the supply is in the
+// Name ("LinDrive 200D & Meanwell HLG-185-24"), so resolveSpec has already
+// paired them. What is left over is what the wizard has to ask about.
+//
+// Returns { ready, asks } — ready are types that can be filled in one press.
+export function autoFillable(inventory, resolveSpec) {
+  const ready = [];
+  const asks = [];
+  for (const t of inventory ?? []) {
+    const spec = resolveSpec(t.name || t.typeRef);
+    const part = spec?.driver ?? spec ?? null;
+    if (!part) { asks.push({ t, spec, why: 'no datasheet match' }); continue; }
+    // A supply named on its own IS the driver — an unswitched PSU feeding a tape
+    // run directly, one output, ControlType Local, which is how page 140180
+    // lists the PCV24100. A supply named ALONGSIDE a DC/DC driver is the other
+    // half of a pair, and resolveSpec has already combined the two.
+    // a DC/DC driver with no supply named is a pair we cannot complete
+    if (part.kind === 'dcdc' && !spec.supply) { asks.push({ t, spec, why: 'which supply?' }); continue; }
+    let currentA = null;
+    if (spec.powerType === 'CC') {
+      const opts = currentOptions(t, spec);
+      if (!opts.length) { asks.push({ t, spec, why: 'which current?' }); continue; }
+      currentA = opts[0].a;
+    }
+    ready.push({ t, spec, currentA });
+  }
+  return { ready, asks };
+}
+
+// The preset autoFillable's `ready` entry becomes. Ratings from the datasheet,
+// the Ref and the node names left exactly as the design has them.
+export function fillFromSpec({ t, spec, currentA }) {
+  return {
+    typeRef: t.typeRef,
+    name: t.name || spec.name,
+    powerType: spec.powerType,
+    maxPowerW: spec.maxPowerW ?? null,
+    currentA: spec.powerType === 'CC' ? currentA : null,
+    outputVoltageV: spec.powerType === 'CV' ? spec.outputV ?? null : null,
+    outputs: spec.outputs ?? t.nodes?.length ?? 1,
+    addresses: spec.addresses ?? t.ballast ?? null,
+    nodeMaxLoadW: spec.nodeMaxLoadW ?? null,
+    nodeMaxFvV: spec.maxFvV ?? null,
+    nodeCurrentA: spec.nodeCurrentA ?? null,
+    controlType: spec.controlType ?? null,
+    nodeNames: spec.nodeNames ?? null,
+    invented: false,
+  };
+}

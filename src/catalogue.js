@@ -87,7 +87,14 @@ export const PARTS = [
     maxPowerW: 192, outputs: 2, addresses: 2, controlType: 'DMX', page: 105847,
     note: 'Spec page says "Outputs: 4" while its description says 2-channel — outputs unconfirmed' },
   // What the 220D became. DT6, so two outputs on two addresses as before.
-  { name: 'EldoLED LinearDrive 200D-D2Z2D', re: /200d?d2z2d/, powerType: 'CV', kind: 'dcdc',
+  //
+  // A design that writes just "LinDrive 200D" means this one: the DT6 is the
+  // default of the pair and the DT8 always says so in its code. Without the
+  // looser arm such a name matched no driver at all, leaving only the Meanwell
+  // in the name to match — so the type resolved to a bare supply and reported
+  // itself as ControlType Local, unswitched, with no DC/DC driver in front of it.
+  { name: 'EldoLED LinearDrive 200D-D2Z2D',
+    re: /200d?d2z2d|lin[a-z]*200(?!d?d2z2c)/, powerType: 'CV', kind: 'dcdc',
     maxPowerW: 200, outputs: 2, addresses: 2, controlType: 'DALI', page: 105745, common: true },
   // The tuneable-white one, written D2Z2C2 on the datasheet. DT8 drives a dynamic
   // white fitting from ONE address across both channels — and, because those two

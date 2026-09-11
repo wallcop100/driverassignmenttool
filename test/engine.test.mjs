@@ -1128,7 +1128,13 @@ test('the patch creates the V4.6 columns a pre-4.6 workbook has not got', () => 
   assert.match(script, /columnIndex\(WS_ET, "Ref", false\)/);
   assert.match(script, /columnIndex\(WS_ET, "InternalNotesText", false\)/);
   // it appends to the header rather than throwing, and says so
-  assert.match(script, /ws.getCell\(0, at\).setValue\(name\)/);
+  assert.match(script, /cell.setValue\(name\)/);
+  // an added header reads as new: red, italic, bold
+  assert.match(script, /f.setColor\("#C00000"\)/);
+  assert.match(script, /f.setBold\(true\)/);
+  // and an electrical value it supplied is red italic, not bold
+  assert.match(script, /function setElectrical/);
+  assert.match(script, /setElectrical\(WS_ET.getCell\(row, col_ET_MaxPowerW\), t.maxPowerW\)/);
   assert.match(script, /Added column " \+ name \+ " to "/);
   // and the used range is read after any column was added, so the array has it
   assert.ok(script.indexOf('columnIndex(WS_ET, "MaxPower(W)", true)') < script.indexOf('const data_ET'));

@@ -31,8 +31,15 @@ export default function TypesPage({ state, dispatch, zone }) {
   // of the V4.6 attributes, and the fix is the same few rows for the whole job.
   // Judged on what the DesignDB says, so it stays true while you fill them in
   // here: the offer only goes away once it is patched and re-sent.
-  const unset = model.inventory.filter((t) => statedAttributes(t) === 0).length;
-  const onboarding = needsSetup(model);
+  // Judged on the types this job actually places. A library of parts nobody has
+  // used is not what needs filling in, and counting it made the offer read as a
+  // much bigger job than it is.
+  const inUse = useMemo(
+    () => model.inventory.filter((t) => drivers.some((d) => d.typeRef === t.typeRef)),
+    [model.inventory, drivers],
+  );
+  const unset = inUse.filter((t) => statedAttributes(t) === 0).length;
+  const onboarding = needsSetup({ inventory: inUse });
 
   // ':' is banned inside a node name. Correcting it is a rename, so it is safe
   // to do for the whole job at once — and it has to be, because a node written
@@ -150,7 +157,7 @@ export default function TypesPage({ state, dispatch, zone }) {
       {onboarding && (
         <div className="dp-suggest sw-offer">
           <div>
-            <b>None of this project’s {model.inventory.length} driver types have their attributes filled in</b>
+            <b>None of this project’s {inUse.length} driver types in use have their attributes filled in</b>
             <div className="text-secondary small">
               Watts, current, outputs and forward voltage all live on ElementTypes.
               Without them nothing can be sized or checked. The datasheet fills in
@@ -166,7 +173,7 @@ export default function TypesPage({ state, dispatch, zone }) {
       {!onboarding && unset > 0 && Object.keys(presets).length > 0 && (
         <div className="dp-suggest sw-offer is-part">
           <div>
-            <b>{unset} of {model.inventory.length} driver types still have nothing filled in</b>
+            <b>{unset} of {inUse.length} driver types in use still have nothing filled in</b>
             <div className="text-secondary small">Patch what you have, or carry on through the rest.</div>
           </div>
           <button className="btn btn-sm btn-outline-primary ms-auto" onClick={() => setSetup(true)}>
@@ -229,6 +236,7 @@ export default function TypesPage({ state, dispatch, zone }) {
       )}
       {setup && (
         <SetupWizard model={model} presets={presets} dispatch={dispatch}
+          only={new Set(drivers.map((d) => d.typeRef))}
           onClose={() => setSetup(false)} />
       )}
     </div>

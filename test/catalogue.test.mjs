@@ -14,7 +14,11 @@ const LIVE = [
   ['EldoLED - SoloDrive 240/A', 'EldoLED SoloDrive 240/A', 24],
   ['EldoLED - DualDrive 562/A', 'EldoLED DualDrive 562/A', 24],
   ['Meanwell - HLG-185-48', 'Meanwell HLG-185-48', 22],       // derived from the part number
-  ['EldoLED LinDrive 200D & Meanwell HLG-185-24', 'Meanwell HLG-185-24', 21], // 200D alone is ambiguous
+  // "200D" alone does not say D2Z2D or D2Z2C, but the DT6 is the default of the
+  // pair and the DT8 always carries its code. Resolving to the Meanwell instead
+  // was worse than picking: it made the type a bare unswitched supply, reporting
+  // ControlType Local with no DC/DC driver in front of it. 21 live types.
+  ['EldoLED LinDrive 200D & Meanwell HLG-185-24', 'EldoLED LinearDrive 200D-D2Z2D', 21],
   ['Eldoled SLO360/A', 'EldoLED SoloDrive 360/A', 20],
   ['EldoLED - LINDrive 220D & Meanwel HLG-185-24', 'EldoLED LinearDrive 220D', 19],
   ['PowerLED - PCV24101', null, 19],                          // 24101 is not 24100

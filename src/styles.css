@@ -761,3 +761,7 @@ body { background: #f6f8fb; }
 .sw-val { font-weight: 600; font-variant-numeric: tabular-nums; }
 .sw-blank .sw-col, .sw-blank .sw-val { color: #cbd5e1; font-weight: 400; }
 .sw-offer.is-banned { background: #fdf8ec; border-color: #e6d3a3; }
+.sw-all {
+  display: flex; align-items: center; gap: 12px; padding: 10px 14px;
+  background: #eef5ff; border-bottom: 1px solid #bcd3f7;
+}

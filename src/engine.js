@@ -1232,29 +1232,36 @@ const esc = (v) => String(v).replace(/"/g, '\\"');
 // MaxPower(W) column to find — and find() on a missing header throws, taking the
 // whole script with it. `add` columns are appended to the header row instead,
 // which is what makes onboarding an older workbook a single paste.
-const COL_HELPER = `  // Find a column by header. Columns listed as addable are appended to the
-`
-  + `  // header row when the workbook has not got them yet (pre-V4.6 books).
-`
-  + `  function columnIndex(ws: ExcelScript.Worksheet, name: string, add: boolean): number {
-`
-  + `    const found = ws.getCell(0, 0).getEntireRow().find(name, { completeMatch: true });
-`
-  + `    if (found) { return found.getColumnIndex(); }
-`
-  + `    if (!add) { throw new Error("Column not found: " + name); }
-`
-  + `    const at = ws.getUsedRange().getColumnCount();
-`
-  + `    ws.getCell(0, at).setValue(name);
-`
-  + `    console.log("Added column " + name + " to " + ws.getName());
-`
-  + `    return at;
-`
-  + `  }
-
-`;
+const COL_HELPER = [
+  '  // Find a column by header. Columns listed as addable are appended to the',
+  '  // header row when the workbook has not got them yet (pre-V4.6 books), and',
+  '  // a header this script created is marked so it reads as new in the sheet.',
+  '  function columnIndex(ws: ExcelScript.Worksheet, name: string, add: boolean): number {',
+  '    const found = ws.getCell(0, 0).getEntireRow().find(name, { completeMatch: true });',
+  '    if (found) { return found.getColumnIndex(); }',
+  '    if (!add) { throw new Error("Column not found: " + name); }',
+  '    const at = ws.getUsedRange().getColumnCount();',
+  '    const cell = ws.getCell(0, at);',
+  '    cell.setValue(name);',
+  '    const f = cell.getFormat().getFont();',
+  '    f.setColor("#C00000");',
+  '    f.setItalic(true);',
+  '    f.setBold(true);',
+  '    console.log("Added column " + name + " to " + ws.getName());',
+  '    return at;',
+  '  }',
+  '',
+  '  // An electrical value supplied by this script, as against one the design',
+  '  // already held. Red italic, not bold: the header carries the bold.',
+  '  function setElectrical(cell: ExcelScript.Range, value: number | string) {',
+  '    cell.setValue(value);',
+  '    const f = cell.getFormat().getFont();',
+  '    f.setColor("#C00000");',
+  '    f.setItalic(true);',
+  '  }',
+  '',
+  '',
+].join('\n');
 
 const header = (sheet, code, cols, addable = []) => `    const WS_${code} = DB.getWorksheet("${sheet}");\n`
   + cols.map((c) => `    const col_${code}_${c.replace(/[^A-Za-z0-9]/g, '')} = `
@@ -1351,15 +1358,15 @@ const typeSection = (types) => `    // --- CHANGE / ADD: ElementTypes ---\n`
   + `        WS_ET.getCell(row, col_ET_Name).setValue(t.name);\n`
   + `        WS_ET.getCell(row, col_ET_InternalNotesText).setValue(${JSON.stringify(NEW_TYPE_NOTE)});\n`
   + `      }\n`
-  + `      if (t.maxPowerW !== null) { WS_ET.getCell(row, col_ET_MaxPowerW).setValue(t.maxPowerW); }\n`
-  + `      if (t.outputVoltageV !== null) { WS_ET.getCell(row, col_ET_OutputVoltageV).setValue(t.outputVoltageV); }\n`
-  + `      if (t.currentA !== null) { WS_ET.getCell(row, col_ET_CurrentRange).setValue(t.currentA); }\n`
-  + `      WS_ET.getCell(row, col_ET_Parameters).setValue(t.parameters);\n`
-  + `      if (t.nodeMaxLoadW !== null) { WS_ET.getCell(row, col_ET_NodeMaxPowerW).setValue(t.nodeMaxLoadW); }\n`
-  + `      if (t.nodeCurrentA !== null) { WS_ET.getCell(row, col_ET_NodeCurrent).setValue(t.nodeCurrentA); }\n`
-  + `      if (t.addresses !== null) { WS_ET.getCell(row, col_ET_BallastCountPerUoM).setValue(t.addresses); }\n`
-  + `      if (t.controlType !== null) { WS_ET.getCell(row, col_ET_ControlType).setValue(t.controlType); }\n`
-  + `      if (t.nodeMaxFvV !== null) { WS_ET.getCell(row, col_ET_NodeMaxForwardVoltagefV).setValue(t.nodeMaxFvV); }\n`
+  + `      if (t.maxPowerW !== null) { setElectrical(WS_ET.getCell(row, col_ET_MaxPowerW), t.maxPowerW); }\n`
+  + `      if (t.outputVoltageV !== null) { setElectrical(WS_ET.getCell(row, col_ET_OutputVoltageV), t.outputVoltageV); }\n`
+  + `      if (t.currentA !== null) { setElectrical(WS_ET.getCell(row, col_ET_CurrentRange), t.currentA); }\n`
+  + `      setElectrical(WS_ET.getCell(row, col_ET_Parameters), t.parameters);\n`
+  + `      if (t.nodeMaxLoadW !== null) { setElectrical(WS_ET.getCell(row, col_ET_NodeMaxPowerW), t.nodeMaxLoadW); }\n`
+  + `      if (t.nodeCurrentA !== null) { setElectrical(WS_ET.getCell(row, col_ET_NodeCurrent), t.nodeCurrentA); }\n`
+  + `      if (t.addresses !== null) { setElectrical(WS_ET.getCell(row, col_ET_BallastCountPerUoM), t.addresses); }\n`
+  + `      if (t.controlType !== null) { setElectrical(WS_ET.getCell(row, col_ET_ControlType), t.controlType); }\n`
+  + `      if (t.nodeMaxFvV !== null) { setElectrical(WS_ET.getCell(row, col_ET_NodeMaxForwardVoltagefV), t.nodeMaxFvV); }\n`
   + `      WS_ET.getCell(row, col_ET_IsPropertiesTBC).${CLEAR};\n`
   + `      console.log((isNew ? "Added type " : "Updated type ") + t.ref);\n`
   + `    }\n\n`;

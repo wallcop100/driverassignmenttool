@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { PARTS, combine, resolveSpec, statedAttributes } from '../engine.js';
 import PresetEditor, { draftFrom, draftFromPart, toPreset } from './PresetEditor.jsx';
-import { fmt } from '../typeFaults.js';
+import { autoFillable, fillFromSpec, fmt } from '../typeFaults.js';
 
 // Onboarding a project to Lighting DesignDB V4.6. Every driver ElementType on
 // the job states none of the ten attributes the checks run on, so nothing here
@@ -18,8 +18,17 @@ const stepFor = (t) => {
   return { t, spec, part: spec?.driver ?? spec ?? null };
 };
 
-export default function SetupWizard({ model, presets, dispatch, onClose }) {
-  const steps = useMemo(() => model.inventory.map(stepFor), [model.inventory]);
+export default function SetupWizard({ model, presets, dispatch, onClose, only }) {
+  // Only the types this walk is about. From the types page that is the ones in
+  // use — a library of forty parts nobody has placed is not what you came to
+  // fill in — and the caller says so rather than the wizard guessing.
+  const inventory = useMemo(
+    () => (only ? model.inventory.filter((t) => only.has(t.typeRef)) : model.inventory),
+    [model.inventory, only],
+  );
+  const steps = useMemo(() => inventory.map(stepFor), [inventory]);
+  const auto = useMemo(() => autoFillable(inventory, resolveSpec), [inventory]);
+  const pending = auto.ready.filter((r) => !presets[r.t.typeRef]);
   const [i, setI] = useState(0);
   const [draft, setDraft] = useState(null);
   const [choice, setChoice] = useState({});   // per typeRef: { part, psu, currentA }
@@ -69,6 +78,30 @@ export default function SetupWizard({ model, presets, dispatch, onClose }) {
           </span>
           <button className="btn btn-sm btn-link ms-auto p-0" onClick={onClose}>close</button>
         </div>
+
+        {pending.length > 0 && (
+          <div className="sw-all">
+            <div>
+              <b>{pending.length} of these need no questions</b>
+              <div className="text-secondary small">
+                Their datasheet is matched, the current is in the Ref and the supply
+                is in the Name. {auto.asks.length > 0
+                  ? `The other ${auto.asks.length} are asked about below.`
+                  : 'That is all of them.'}
+              </div>
+            </div>
+            <button className="btn btn-sm btn-primary ms-auto"
+              onClick={() => {
+                for (const r of pending) {
+                  dispatch({ type: 'SET_PRESET', preset: fillFromSpec(r) });
+                }
+                const next = steps.findIndex((s) => auto.asks.some((a) => a.t.typeRef === s.t.typeRef));
+                if (next >= 0) setI(next);
+              }}>
+              Fill in all {pending.length}
+            </button>
+          </div>
+        )}
 
         <div className="sw-rail">
           {steps.map((s, n) => (
