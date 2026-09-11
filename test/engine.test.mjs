@@ -6,6 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 import * as engine from '../src/engine.js';
+import * as tf from '../src/typeFaults.js';
 
 const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'sample-data');
 const pick = (pat) => fs.readdirSync(dir).find((f) => f.includes(pat));
@@ -1196,4 +1197,48 @@ test('a ballast count alone does not mean the project has been filled in', () =>
     .replace('SoloDrive 360/A,1,DALI,1\n', 'SoloDrive 360/A,1,DALI,1,30\n')
     .replace('LIN200D-D2Z2D,2,DALI,2\n', 'LIN200D-D2Z2D,2,DALI,2,\n');
   assert.equal(engine.needsSetup(engine.buildModel(null, GF_HEAD + gfLinks(1) + '\n', started)), false);
+});
+
+test('the mA in a CC ref is found wherever the project puts it', () => {
+  // ET-CCR-D-350-1CH-01 and ET-CCR-D-1CH-500-01 are both live conventions
+  assert.equal(engine.currentFromRef('ET-CCR-D-350-1CH-01'), 0.35);
+  assert.equal(engine.currentFromRef('ET-CCR-D-1CH-500-01'), 0.5);
+  assert.equal(engine.currentFromRef('ET-CCR-L-1CH-500-01'), 0.5);
+  assert.equal(engine.currentFromRef('ET-CCR-D-1050-1CH-EM-01'), 1.05);
+  // the trailing -01 is the variant, never the current
+  assert.equal(engine.currentFromRef('ET-CCR-FEED-PROV'), null);
+  // and a CVR ref's number is the output VOLTAGE
+  assert.equal(engine.currentFromRef('ET-CVR-D-24-2CH-01'), null);
+  assert.equal(engine.currentFromRef('ET-CVR-48-01'), null);
+});
+
+test('control gear is not a driver type, however the host sends it', () => {
+  // the library filter lets a Crestron DIN module through — it has '<' nodes —
+  // but its nodes are DALI B 1 / CRESNET, not LED outputs
+  const types = 'ElementTypeRef,Node,Driver Restrictions,ElementTypeName\n'
+    + 'ET-CCR-D-1CH-500-01,OP.01,,EldoLED - SoloDrive 360/A\n'
+    + 'ET-MOD-DALI,DALI B 1,,Crestron - DIN-DLI\n'
+    + 'ET-PROCESSOR-C,CRESNET,,Crestron - DIN-AP4\n';
+  const m = engine.buildModel(null, GF_HEAD + gfLinks(1) + '\n', types);
+  assert.equal(m.inventory.length, 3, 'all three arrive');
+  assert.deepEqual(engine.driverTypes(m).map((t) => t.typeRef), ['ET-CCR-D-1CH-500-01']);
+  // and the onboarding offer counts only the drivers
+  assert.equal(engine.needsSetup(m), true);
+});
+
+test('a project-wide library is filled in from its names and refs alone', () => {
+  const types = 'ElementTypeRef,Node,Driver Restrictions,ElementTypeName\n'
+    + 'ET-CCR-D-1CH-500-01,OP.01,,EldoLED - SoloDrive 360/A\n'
+    + 'ET-CVR-D-24-2CH-01,OP.01,,EldoLED - LinDrive 200D & Meanwell HLG-185-24\n'
+    + 'ET-CVR-D-24-2CH-01,OP.02,,EldoLED - LinDrive 200D & Meanwell HLG-185-24\n';
+  const m = engine.buildModel(null, GF_HEAD + gfLinks(1) + '\n', types);
+  const { ready, asks } = tf.autoFillable(engine.driverTypes(m), engine.resolveSpec);
+  assert.equal(asks.length, 0, 'the Name names the supply and the Ref names the current');
+  const byRef = Object.fromEntries(ready.map((r) => [r.t.typeRef, tf.fillFromSpec(r)]));
+  assert.equal(byRef['ET-CCR-D-1CH-500-01'].currentA, 0.5);
+  assert.equal(byRef['ET-CCR-D-1CH-500-01'].maxPowerW, 30);
+  // the pair, not the bare supply: DALI, and the supply's 185W ceiling
+  assert.equal(byRef['ET-CVR-D-24-2CH-01'].controlType, 'DALI');
+  assert.equal(byRef['ET-CVR-D-24-2CH-01'].maxPowerW, 185);
+  assert.equal(byRef['ET-CVR-D-24-2CH-01'].outputVoltageV, 24);
 });

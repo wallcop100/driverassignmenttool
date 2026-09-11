@@ -496,8 +496,22 @@ export function statedAttributes(t) {
     .filter((v) => v != null && v !== '').length;
 }
 
+// An LED driver names its outputs OP.n — "one `<`-prefixed node per LED output"
+// (page 140180). The library the host sends is wider than that: the same rule
+// that lets a driver through lets a Crestron DIN module through too, and its
+// nodes are DALI B 1, L1/N1, NET. Those are control gear, they have none of
+// these attributes and never will, and they were the irrelevant rows.
+export function isDriverType(t) {
+  return (t?.nodes ?? []).some((n) => /^OP[.\d]/i.test(String(n.name ?? '')));
+}
+
+// The project's driver types — every one the host sent, not just the open hub's.
+// A driver type belongs to the job, and filling it in once should settle it
+// everywhere it is used.
+export const driverTypes = (model) => (model?.inventory ?? []).filter(isDriverType);
+
 export function needsSetup(model) {
-  const types = model?.inventory ?? [];
+  const types = driverTypes(model);
   if (types.length < 1) return false;
   return types.every((t) => statedAttributes(t) === 0);
 }
@@ -828,10 +842,19 @@ export { PARTS, combine, matchPart, matchParts, resolveSpec, reachableW } from '
 // narrow: a number that is not clearly a milliamp figure is not guessed at.
 // CCR only: the same slot on a CVR ref is the output VOLTAGE, so reading it as
 // milliamps turns ET-CVR-D-24-2CH-01 into 0.024A.
-const REF_MA = /^ET-CCR-[A-Z]+-(\d{2,4})-/i;
+// The milliamps out of a CC ref. Projects do not agree on where it goes:
+// ET-CCR-D-350-1CH-01 puts it before the channel count and ET-CCR-D-1CH-500-01
+// after it, and both are live. So rather than a fixed position, take the one
+// plain number among the segments — the channel count carries CH, the trailing
+// -01 is the variant, and what is left is the current.
 export function currentFromRef(typeRef) {
-  const m = REF_MA.exec(String(typeRef ?? ''));
-  return m ? Number(m[1]) / 1000 : null;
+  const parts = String(typeRef ?? '').split('-');
+  // CCR only: the same slot on a CVR ref is the output VOLTAGE, so reading it as
+  // milliamps turns ET-CVR-D-24-2CH-01 into 0.024A.
+  if (parts.length < 4 || !/^ET$/i.test(parts[0]) || !/^CCR$/i.test(parts[1])) return null;
+  const middle = parts.slice(2, -1);                 // drop ET, CCR and the variant
+  const mA = middle.find((p) => /^\d{2,4}$/.test(p));
+  return mA ? Number(mA) / 1000 : null;
 }
 
 const NAME_MA = /(\d{2,4})\s*mA/i;

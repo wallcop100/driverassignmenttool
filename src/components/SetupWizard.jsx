@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
-import { PARTS, combine, resolveSpec, statedAttributes } from '../engine.js';
+import { PARTS, combine, resolveSpec } from '../engine.js';
 import PresetEditor, { draftFrom, draftFromPart, toPreset } from './PresetEditor.jsx';
-import { autoFillable, fillFromSpec, fmt } from '../typeFaults.js';
+import { autoFillable, currentOptions, fillFromSpec, fmt } from '../typeFaults.js';
 
 // Onboarding a project to Lighting DesignDB V4.6. Every driver ElementType on
 // the job states none of the ten attributes the checks run on, so nothing here
@@ -13,9 +13,21 @@ import { autoFillable, fillFromSpec, fmt } from '../typeFaults.js';
 // off the spec page, and what is left is what a datasheet cannot know: which
 // current a CC driver is set to, and which supply a DC/DC driver runs on.
 
+// Everything the Name and the Ref already answer, so the step opens with them
+// filled in rather than asking again. "LinDrive 200D & Meanwell HLG-185-24"
+// names its supply; ET-CCR-D-350-1CH-01 names its current. Leaving those blank
+// made the wizard ask about types that needed no asking.
 const stepFor = (t) => {
   const spec = resolveSpec(t.name || t.typeRef);
-  return { t, spec, part: spec?.driver ?? spec ?? null };
+  const part = spec?.driver ?? spec ?? null;
+  const opts = currentOptions(t, spec);
+  return {
+    t,
+    spec,
+    part,
+    supply: spec?.supply ?? null,
+    currentMa: opts.length ? String(Math.round(opts[0].a * 1000)) : '',
+  };
 };
 
 export default function SetupWizard({ model, presets, dispatch, onClose, only }) {
@@ -39,13 +51,17 @@ export default function SetupWizard({ model, presets, dispatch, onClose, only })
 
   const key = step.t.typeRef;
   const picked = choice[key] ?? {};
-  // the matched part unless the user has said otherwise
-  const part = PARTS.find((p) => p.name === picked.part) ?? step.part;
-  const psu = PARTS.find((p) => p.name === picked.psu) ?? null;
+  // What the name resolved to, unless the user has said otherwise. `undefined`
+  // means untouched, so the match stands; an empty string means they cleared it.
+  const part = PARTS.find((p) => p.name === picked.part) ?? (picked.part == null ? step.part : null);
+  const psu = picked.psu == null
+    ? step.supply
+    : (PARTS.find((p) => p.name === picked.psu) ?? null);
+  const currentMa = picked.currentA ?? step.currentMa;
   const spec = part ? combine(part, part.kind === 'dcdc' ? psu : null) : null;
   const needsPsu = part?.kind === 'dcdc';
   const needsCurrent = spec?.powerType === 'CC' && !(spec.minA != null && spec.minA === spec.maxA);
-  const ready = !!spec && (!needsPsu || psu) && (!needsCurrent || Number(picked.currentA) > 0);
+  const ready = !!spec && (!needsPsu || psu) && (!needsCurrent || Number(currentMa) > 0);
 
   const set = (patch) => setChoice({ ...choice, [key]: { ...picked, ...patch } });
 
@@ -57,7 +73,7 @@ export default function SetupWizard({ model, presets, dispatch, onClose, only })
       ...d,
       typeRef: step.t.typeRef,
       name: step.t.name || d.name,
-      currentA: needsCurrent ? Number(picked.currentA) / 1000 : (spec.minA ?? ''),
+      currentA: needsCurrent ? Number(currentMa) / 1000 : (spec.minA ?? ''),
       invented: false,
     });
   };
@@ -137,7 +153,7 @@ export default function SetupWizard({ model, presets, dispatch, onClose, only })
               {needsPsu && (
                 <label className="fld sw-part">
                   <span className="fld-col">On which supply?</span>
-                  <select className="form-select form-select-sm" value={picked.psu ?? ''}
+                  <select className="form-select form-select-sm" value={psu?.name ?? ''}
                     onChange={(e) => set({ psu: e.target.value })}>
                     <option value="">Choose…</option>
                     {PARTS.filter((p) => p.kind === 'supply').map((p) => (
@@ -154,7 +170,7 @@ export default function SetupWizard({ model, presets, dispatch, onClose, only })
                   <span className="fld-box">
                     <input type="number" min="0" step="10" style={{ width: 90 }}
                       placeholder={spec.minA != null ? `${spec.minA * 1000}–${spec.maxA * 1000}` : 'mA'}
-                      value={picked.currentA ?? ''} onChange={(e) => set({ currentA: e.target.value })} />
+                      value={currentMa} onChange={(e) => set({ currentA: e.target.value })} />
                     mA
                   </span>
                   <span className="fld-ds">the Ref usually says: {step.t.typeRef}</span>

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import * as api from '../api.js';
-import { bannedNodes, fixNodeName, needsSetup, resolveSpec, statedAttributes } from '../engine.js';
+import { bannedNodes, driverTypes, fixNodeName, needsSetup, resolveSpec, statedAttributes } from '../engine.js';
 import { effectiveDrivers } from '../state.js';
 import { canFill, canReplace, currentOptions, faults, fixPreset, fmt } from '../typeFaults.js';
 import FaultDialog from './FaultDialog.jsx';
@@ -36,12 +36,9 @@ export default function TypesPage({ state, dispatch, zone }) {
   // used is not what needs filling in. Judged on what the DesignDB says, too, so
   // it stays true while you fill them in — the offer goes once it is patched and
   // the host sends the data back.
-  const inUse = useMemo(
-    () => model.inventory.filter((t) => drivers.some((d) => d.typeRef === t.typeRef)),
-    [model.inventory, drivers],
-  );
+  const inUse = useMemo(() => driverTypes(model), [model]);
   const unset = inUse.filter((t) => statedAttributes(t) === 0).length;
-  const onboarding = needsSetup({ inventory: inUse });
+  const onboarding = needsSetup(model);
 
   // ':' is banned inside a node name. Correcting it is a rename, so it is safe
   // to do for the whole job at once — and it has to be, because a node written
@@ -158,7 +155,7 @@ export default function TypesPage({ state, dispatch, zone }) {
           <div>
             <b>
               {onboarding
-                ? `None of this hub’s ${inUse.length} driver types have their attributes filled in`
+                ? `None of this project’s ${inUse.length} driver types have their attributes filled in`
                 : `${unset} of ${inUse.length} driver types still have nothing filled in`}
             </b>
             <div className="text-secondary small">
@@ -228,7 +225,7 @@ export default function TypesPage({ state, dispatch, zone }) {
       )}
       {setup && (
         <SetupWizard model={model} presets={presets} dispatch={dispatch}
-          only={new Set(drivers.map((d) => d.typeRef))}
+          only={new Set(inUse.map((t) => t.typeRef))}
           onClose={() => setSetup(false)} />
       )}
     </div>
