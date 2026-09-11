@@ -9,6 +9,7 @@ import IssuesBadge from './IssuesBadge.jsx';
 import LabelConfig from './LabelConfig.jsx';
 import ReviewModal from './ReviewModal.jsx';
 import Search from './Search.jsx';
+import SetupNotice from './SetupNotice.jsx';
 import Tooltip from './Tooltip.jsx';
 import Tray from './Tray.jsx';
 
@@ -158,6 +159,8 @@ export default function ZonePage({ state, dispatch, zone, onResetToCurrentSet })
           </div>
         </div>
       </header>
+
+      <SetupNotice state={state} dispatch={dispatch} className="zone-notice" />
 
       <div className="zone-toolbar">
         <button className="btn btn-sm btn-outline-primary"

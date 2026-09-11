@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
-import { bannedNodes, eligibility as computeEligibility, needsSetup, zoneMode } from '../engine.js';
+import { eligibility as computeEligibility, zoneMode } from '../engine.js';
 import { assignedRefs, isProvision, orphanClusters, zoneAccent, zoneStats } from '../state.js';
 import Search from './Search.jsx';
+import SetupNotice from './SetupNotice.jsx';
 import Tooltip from './Tooltip.jsx';
 
 const SORTS = {
@@ -16,12 +17,6 @@ const SORTS = {
 export default function Landing({ state, dispatch }) {
   const { model, assignments, addedDrivers, flags } = state;
   const [sort, setSort] = useState('problems');
-  const inUse = useMemo(
-    () => model.inventory.filter((t) => model.drivers.some((d) => d.typeRef === t.typeRef)),
-    [model.inventory, model.drivers],
-  );
-  const onboarding = useMemo(() => needsSetup({ inventory: inUse }), [inUse]);
-  const banned = useMemo(() => bannedNodes(model), [model]);
   const [metric, setMetric] = useState('completion'); // completion% (default) | capacity%
 
   const zones = useMemo(() => {
@@ -43,38 +38,7 @@ export default function Landing({ state, dispatch }) {
 
   return (
     <div className="container py-4" style={{ maxWidth: 860 }}>
-      {/* Nothing on any of these hubs can be sized or checked until the driver
-          types state something, so it is said where you land rather than two
-          screens in on a page you would only open if you already knew. */}
-      {(onboarding || banned.length > 0) && (
-        <div className="dp-suggest sw-offer mb-3">
-          <div>
-            {onboarding ? (
-              <>
-                <b>This project’s driver types have no attributes filled in</b>
-                <div className="text-secondary small">
-                  Watts, current and forward voltage all live on ElementTypes. Until
-                  they are there, every driver reads as undetermined and nothing is
-                  checked. Most fill in from their datasheet in one press.
-                </div>
-              </>
-            ) : (
-              <>
-                <b>
-                  {banned.length} driver type{banned.length === 1 ? '' : 's'} use a colon in a node name
-                </b>
-                <div className="text-secondary small">
-                  The colon is spoken for elsewhere in Parameters syntax and has to go.
-                </div>
-              </>
-            )}
-          </div>
-          <button className="btn btn-sm btn-primary ms-auto"
-            onClick={() => dispatch({ type: 'SET_VIEW', view: { page: 'types' } })}>
-            {onboarding ? 'Fill them in' : 'Correct them'}
-          </button>
-        </div>
-      )}
+      <SetupNotice state={state} dispatch={dispatch} className="mb-3" />
 
       <div className="d-flex align-items-center gap-3 mb-3 flex-wrap">
         <h4 className="mb-0">Pullzones</h4>

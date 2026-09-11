@@ -27,13 +27,15 @@ export default function TypesPage({ state, dispatch, zone }) {
   const [plan, setPlan] = useState(null);
   const [setup, setSetup] = useState(false);
 
+  const drivers = useMemo(() => effectiveDrivers(model, addedDrivers, state.deletedDrivers),
+    [model, addedDrivers, state.deletedDrivers]);
+
   // Nothing in this tool works against a project whose driver types state none
   // of the V4.6 attributes, and the fix is the same few rows for the whole job.
-  // Judged on what the DesignDB says, so it stays true while you fill them in
-  // here: the offer only goes away once it is patched and re-sent.
-  // Judged on the types this job actually places. A library of parts nobody has
-  // used is not what needs filling in, and counting it made the offer read as a
-  // much bigger job than it is.
+  // Judged on the types this job actually places: a library of parts nobody has
+  // used is not what needs filling in. Judged on what the DesignDB says, too, so
+  // it stays true while you fill them in — the offer goes once it is patched and
+  // the host sends the data back.
   const inUse = useMemo(
     () => model.inventory.filter((t) => drivers.some((d) => d.typeRef === t.typeRef)),
     [model.inventory, drivers],
@@ -46,8 +48,6 @@ export default function TypesPage({ state, dispatch, zone }) {
   // that way is referenced from hubs this session never opens.
   const banned = useMemo(() => bannedNodes(model), [model]);
 
-  const drivers = useMemo(() => effectiveDrivers(model, addedDrivers, state.deletedDrivers),
-    [model, addedDrivers, state.deletedDrivers]);
   const usage = useMemo(() => {
     const by = new Map();
     for (const d of drivers) {
@@ -135,9 +135,8 @@ export default function TypesPage({ state, dispatch, zone }) {
             <div className="text-secondary small">
               {banned.flatMap((b) => b.nodes.map((n) => `${n.from} → ${n.to}`)).join(' · ')}
               {'. '}
-              The colon is spoken for elsewhere in Parameters syntax. Correcting it is a
-              rename, so nothing moves off its node. The patch sweeps LinksMap too,
-              including hubs not open here.
+              Correcting it is a rename, so nothing moves off its node. The patch sweeps
+              LinksMap too, including hubs not open here.
             </div>
           </div>
           <button className="btn btn-sm btn-primary ms-auto"
@@ -154,30 +153,23 @@ export default function TypesPage({ state, dispatch, zone }) {
         </div>
       )}
 
-      {onboarding && (
-        <div className="dp-suggest sw-offer">
+      {(onboarding || unset > 0) && (
+        <div className={`dp-suggest sw-offer ${onboarding ? '' : 'is-part'}`}>
           <div>
-            <b>None of this project’s {inUse.length} driver types in use have their attributes filled in</b>
+            <b>
+              {onboarding
+                ? `None of this hub’s ${inUse.length} driver types have their attributes filled in`
+                : `${unset} of ${inUse.length} driver types still have nothing filled in`}
+            </b>
             <div className="text-secondary small">
-              Watts, current, outputs and forward voltage all live on ElementTypes.
-              Without them nothing can be sized or checked. The datasheet fills in
-              most of it; the patch adds the columns if the workbook predates them.
+              {onboarding
+                ? 'Most fill in from their datasheet in one press. The patch adds the columns if the workbook predates them.'
+                : 'Patch what you have, or carry on through the rest.'}
             </div>
           </div>
-          <button className="btn btn-sm btn-primary ms-auto" onClick={() => setSetup(true)}>
-            Fill them in
-          </button>
-        </div>
-      )}
-      {/* part way through: the offer becomes a count */}
-      {!onboarding && unset > 0 && Object.keys(presets).length > 0 && (
-        <div className="dp-suggest sw-offer is-part">
-          <div>
-            <b>{unset} of {inUse.length} driver types in use still have nothing filled in</b>
-            <div className="text-secondary small">Patch what you have, or carry on through the rest.</div>
-          </div>
-          <button className="btn btn-sm btn-outline-primary ms-auto" onClick={() => setSetup(true)}>
-            Carry on
+          <button className={`btn btn-sm ${onboarding ? 'btn-primary' : 'btn-outline-primary'} ms-auto`}
+            onClick={() => setSetup(true)}>
+            {onboarding ? 'Fill them in' : 'Carry on'}
           </button>
         </div>
       )}

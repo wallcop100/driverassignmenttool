@@ -765,3 +765,4 @@ body { background: #f6f8fb; }
   display: flex; align-items: center; gap: 12px; padding: 10px 14px;
   background: #eef5ff; border-bottom: 1px solid #bcd3f7;
 }
+.zone-notice { margin: 10px 14px 0; }
