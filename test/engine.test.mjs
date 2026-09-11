@@ -1242,3 +1242,30 @@ test('a project-wide library is filled in from its names and refs alone', () => 
   assert.equal(byRef['ET-CVR-D-24-2CH-01'].maxPowerW, 185);
   assert.equal(byRef['ET-CVR-D-24-2CH-01'].outputVoltageV, 24);
 });
+
+test('a ref and a name that disagree about the current are asked about, not guessed', () => {
+  // branch 10568 has ET-CCR-D-350-1CH-01 named "SOLODrive 360/A, set to 500mA"
+  const types = 'ElementTypeRef,ElementTypeName,Channels\n'
+    + 'ET-CCR-D-350-1CH-01,"EldoLED - SOLODrive 360/A, set to 500mA",1\n'
+    + 'ET-CCR-D-500-1CH-01,"EldoLED - SOLODrive 360/A, set to 500mA",1\n';
+  const m = engine.buildModel(null, GF_HEAD + gfLinks(1) + '\n', types);
+  const { ready, asks } = tf.autoFillable(engine.driverTypes(m), engine.resolveSpec);
+  assert.deepEqual(ready.map((r) => r.t.typeRef), ['ET-CCR-D-500-1CH-01']);
+  assert.equal(asks.length, 1);
+  assert.match(asks[0].why, /Ref says 0.35A, Name says 0.5A/);
+});
+
+test('a driver type with no Parameters at all is still a driver to fill in', () => {
+  // branch 10568: every driver type has an empty Parameters column, which is
+  // exactly what onboarding exists to fix — so they must not be filtered out
+  const types = 'ElementTypeRef,ElementTypeName,Channels\n'
+    + 'ET-CVR-D-24-2CH-01,"EldoLED - LinDrive 220D & Meanwell - HLG-185-24",1\n';
+  const m = engine.buildModel(null, GF_HEAD + gfLinks(1) + '\n', types);
+  assert.equal(engine.driverTypes(m).length, 1, 'a synthesised OP.1 node still reads as a driver');
+  assert.equal(engine.needsSetup(m), true);
+  const { ready } = tf.autoFillable(engine.driverTypes(m), engine.resolveSpec);
+  const p = tf.fillFromSpec(ready[0]);
+  assert.equal(p.maxPowerW, 185);
+  assert.equal(p.outputVoltageV, 24);
+  assert.equal(p.outputs, 2, 'the datasheet supplies the node count the sheet lacks');
+});

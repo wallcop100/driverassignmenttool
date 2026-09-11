@@ -142,6 +142,14 @@ export function autoFillable(inventory, resolveSpec) {
     if (spec.powerType === 'CC') {
       const opts = currentOptions(t, spec);
       if (!opts.length) { asks.push({ t, spec, why: 'which current?' }); continue; }
+      // The Ref and the Name each name a current, and they do not always agree:
+      // ET-CCR-D-350-1CH-01 is called "SOLODrive 360/A, set to 500mA" on branch
+      // 10568. Taking the Ref silently would write one of them into the DesignDB
+      // and bury the disagreement, so it is asked about instead.
+      if (opts.length > 1) {
+        asks.push({ t, spec, why: `Ref says ${opts[0].a}A, Name says ${opts[1].a}A` });
+        continue;
+      }
       currentA = opts[0].a;
     }
     ready.push({ t, spec, currentA });
