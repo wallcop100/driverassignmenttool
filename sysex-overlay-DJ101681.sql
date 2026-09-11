@@ -1,5 +1,5 @@
 -- SysEx Overlay - Lighting Interactive Driver Assignment --
--- V1.5 -- (live in DJ 101681 as revision 61)
+-- V1.6 -- (live in DJ 101681 as revision 64)
 
 --SQL HEADER--
 DECLARE @Container_TypeRef AS varchar(max) = 'PSU.HUB';   -- comma separated list of PSU-HUB Types
@@ -116,15 +116,33 @@ SELECT @TypesCsv = '"ElementTypeRef","ElementTypeName","MaxPower(W)","CurrentRan
 FROM (SELECT Ref, Name, [MaxPower(W)], CurrentRange, [OutputVoltage(V)],
              [NodeMaxPower(W)], [NodeMaxForwardVoltage(fV)], NodeCurrent,
              ControlType, BallastCountPerUoM,
-             CASE WHEN Parameters LIKE '%<%'
-                  THEN LEN(Parameters) - LEN(REPLACE(Parameters,'<',''))
+             CASE WHEN ISNULL(Parameters,'') LIKE '%<%'
+                    THEN LEN(Parameters) - LEN(REPLACE(Parameters,'<',''))
                   -- no direction markers: every comma separated entry is a node
-                  ELSE LEN(REPLACE(REPLACE(Parameters,'{',''),'}',''))
-                     - LEN(REPLACE(REPLACE(REPLACE(Parameters,'{',''),'}',''),',','')) + 1
+                  WHEN ISNULL(Parameters,'') LIKE '%OP.%'
+                    THEN LEN(REPLACE(REPLACE(Parameters,'{',''),'}',''))
+                       - LEN(REPLACE(REPLACE(REPLACE(Parameters,'{',''),'}',''),',','')) + 1
+                  -- No nodes stated. One is assumed rather than none: a 0CH type
+                  -- cannot be sized against at all, and the tool replaces the
+                  -- count from the datasheet when it fills the type in. NULL
+                  -- would be worse than wrong - it makes the whole concatenated
+                  -- row NULL, STRING_AGG drops it, and the type vanishes.
+                  ELSE 1
              END AS Channels
       FROM #ElementTypes
       WHERE ISNULL(Parameters,'') LIKE '%<%'
-         OR ISNULL(Parameters,'') LIKE '%OP.%') t;
+         OR ISNULL(Parameters,'') LIKE '%OP.%'
+      -- Placed as an Element on one of the hub Positions, whatever its
+      -- Parameters say. A driver with no Parameters is not a non-driver, it is
+      -- an unfinished one, and finishing it is what the tool is for: on branch
+      -- 10568 all 16 driver types in use have the column empty, so the two rules
+      -- above sent nothing at all and the panel had nothing to size against.
+      -- Being used as a driver is the evidence; the empty column is the defect.
+         OR Ref IN (SELECT DISTINCT E.TypeRef
+                    FROM #Elements E
+                    JOIN #CalculatedPositions CP ON CP.PositionRef = E.PositionRef
+                    WHERE CP.PositionTypeRef IN
+                          (SELECT TRIM(value) FROM STRING_SPLIT(@Container_TypeRef,',')))) t;
 
 /* ---- 0b. requirement rows, for hubs that have fittings but no cables ----------------
    At tender stage there are Positions and no Links, so there is nothing to
