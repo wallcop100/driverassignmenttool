@@ -115,28 +115,29 @@ const dialogHtml = `<div class="nt-dialog" style="box-shadow:none;border:1px sol
   </div>
 </div>`;
 
-const editor = `<div class="preset-editor px-3 py-3">
-  <div class="spec-pick"><div class="spec-head"><b>ET-CCR-D-1050-1CH-01</b>
-    <span class="text-secondary"> · EldoLED SoloDrive 360/A</span></div></div>
-  <div class="spec-ref"><span>ET-CCR-D-1050-1CH-01</span></div>
-  <div class="spec-row"><span class="spec-group">Driver</span>
-    <div class="spec-cell"><select><option>CC</option></select><span class="col">Type</span></div>
-    <div class="spec-cell"><input value="185" class="is-off"><span class="col">MaxPower(W)</span><span class="ds">datasheet 30</span></div>
-    <div class="spec-cell"><input value="1.05"><span class="col">CurrentRange</span></div>
-    <div class="spec-cell"><input value="1"><span class="col">BallastCountPerUoM</span></div>
-    <div class="spec-cell"><input value="DALI"><span class="col">ControlType</span></div>
+const editor = `<div class="preset-editor" style="padding:0">
+  <div class="fld-sec">Driver</div>
+  <div class="fld-grid">
+    <label class="fld"><span class="fld-col">Type</span><select><option>CC</option></select></label>
+    <label class="fld is-off"><span class="fld-col">MaxPower(W)</span><input value="185">
+      <button class="fld-ds">spec page: 30</button></label>
+    <label class="fld"><span class="fld-col">CurrentRange</span><input value="1.05"></label>
+    <label class="fld"><span class="fld-col">BallastCountPerUoM</span><input value="1"></label>
+    <label class="fld"><span class="fld-col">ControlType</span><input value="DALI"></label>
   </div>
-  <div class="spec-row"><span class="spec-group">Per output</span>
-    <div class="spec-cell"><input value="1"><span class="col">Parameters</span></div>
-    <div class="spec-cell"><input placeholder="—"><span class="col">NodeMaxForwardVoltage(fV)</span><span class="ds">datasheet 55</span></div>
-    <div class="spec-cell"><input placeholder="—"><span class="col">NodeMaxPower(W)</span></div>
-    <div class="spec-cell"><input placeholder="—"><span class="col">NodeCurrent</span></div>
+  <div class="fld-sec">Per output
+    <span class="fld-sec-note">EldoLED SoloDrive 360/A runs 0.15–1.4A</span></div>
+  <div class="fld-grid">
+    <label class="fld"><span class="fld-col">Parameters</span><input value="1"></label>
+    <label class="fld"><span class="fld-col">NodeMaxForwardVoltage(fV)</span><input placeholder="—">
+      <button class="fld-ds">use 55</button></label>
+    <label class="fld"><span class="fld-col">NodeMaxPower(W)</span><input placeholder="—"></label>
+    <label class="fld"><span class="fld-col">NodeCurrent</span><input placeholder="—"></label>
   </div>
-  <div class="preset-note">EldoLED SoloDrive 360/A · 0.15–1.4A</div>
-  <div class="d-flex gap-2 mt-3 align-items-center">
+  <div class="fld-foot">
     <button class="btn btn-sm btn-primary">Save</button>
-    <button class="btn btn-sm btn-outline-secondary">Cancel</button>
-    <span class="badge text-bg-warning ms-auto">provisional</span>
+    <button class="btn btn-sm btn-link">Cancel</button>
+    <span class="fld-foot-note">Saved here, patched to the workbook as IsPropertiesTBC</span>
   </div>
 </div>`;
 
@@ -183,8 +184,17 @@ body{padding:24px;background:#f6f8fb}
 <div class="mockhead">The remedies, behind ⋮</div>
 <div class="frame">${menuHtml}</div>
 
-<div class="mockhead">✎ — every ElementTypes field, in the card</div>
-<div class="frame">${editor}</div>
+<div class="mockhead">✎ — the card opens to every ElementTypes field</div>
+<div class="frame"><div class="types-page"><div class="tp-grid"><div class="tp-card is-editing">
+  <div class="tp-card-top"><span class="tp-ref">ET-CCR-D-1050-1CH-01</span></div>
+  <div class="tp-line"><span class="type-power is-cc">CC</span>
+    <span class="tp-name">EldoLED SOLODrive 360/A at 1050mA</span></div>
+  <div class="tp-spec">185W · 1.05A</div>
+  <div class="tp-foot"><span class="tp-use">1 × HUB-E</span>
+    <button class="tp-icon"><span class="material-icons">close</span></button>
+    <button class="tp-icon"><span class="material-icons">more_vert</span></button></div>
+  ${editor}
+</div></div></div></div>
 
 <div class="mockhead">New type — filters, then the shortlist they leave</div>
 ${dialogHtml}

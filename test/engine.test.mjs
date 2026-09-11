@@ -460,7 +460,31 @@ test('two added drivers export and patch under the one literal placeholder ref',
   assert.equal(csv.split('"E5000X",,"T100"').length - 1, 4); // 2 drivers × 2 nodes
   const script = engine.generatePatchScript(m, a, added);
   assert.ok(!script.includes('~'));
-  assert.equal(script.split('setValue("E5000X")').length - 1, 2); // one per placed cable
+  // two LinksMap rows repointed, and two Elements rows for the drivers they
+  // now point at — all four naming the same literal placeholder
+  assert.equal(script.split('setValue("E5000X")').length - 1, 4);
+  assert.equal(script.split('EL_row++').length - 1, 2);
+});
+
+test('an added driver is appended to Elements, not only pointed at', () => {
+  const m = gfModel(gfLinks(1));
+  const added = [{ ref: 'E5000X', typeRef: 'T100', zone: 'HUB-G' }];
+  const script = engine.generatePatchScript(m, { 'E5000X|OP.1': { toEntityType: 'Link', refs: ['L1'] } }, added);
+  // without this the patch repoints a cable at an Element the workbook has not got
+  assert.match(script, /getWorksheet\("Elements"\)/);
+  assert.match(script, /EL_TypeRef\).setValue\("T100"\)/);
+  assert.match(script, /EL_ContextType\).setValue\("Position"\)/);
+  assert.match(script, /EL_ContextRef\).setValue\("HUB-G"\)/);
+  assert.match(script, /EL_Quantity\).setValue\(1\)/);
+  assert.match(script, /EL_IsPropertiesTBC\).setValue\("Y"\)/);
+  // and the ElementTypes/Elements sections come before the links that use them
+  assert.ok(script.indexOf('getWorksheet("Elements")') < script.indexOf('LM_FromLinkEndContextRef).setValue'));
+});
+
+test('a session that added nothing patches exactly what it did before', () => {
+  const model = { ...patchModel, baseline: { 'D1|OP.1': { toEntityType: 'Link', refs: [] } } };
+  const script = engine.generatePatchScript(model, { 'D1|OP.1': { toEntityType: 'Link', refs: ['X1'] } }, []);
+  assert.ok(!script.includes('Elements'), 'no Elements preamble to throw on a workbook without those columns');
 });
 
 test('reordering a row back to its baseline set is not a change', () => {

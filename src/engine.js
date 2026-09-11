@@ -1327,17 +1327,39 @@ export function generateEstimatePatch(estimates) {
   return PATCH_HEADER + elementHeader() + body + PATCH_FOOTER;
 }
 
+// A driver added in the tool does not exist in the workbook yet, so the links
+// repointed at it would otherwise name an Element that is not there. One row per
+// driver — not one per type with a Quantity, as the estimate does: these are
+// individual drivers with cables assigned to them one at a time, and the person
+// resolving the placeholder Refs needs a row per physical driver to resolve.
+function addedElements(sessions) {
+  const out = [];
+  for (const sn of sessions || []) {
+    const byType = new Map((sn.model?.inventory ?? []).map((t) => [t.typeRef, t]));
+    for (const d of sn.addedDrivers ?? []) {
+      out.push({ zone: d.zone, line: { typeRef: d.typeRef, count: 1, name: byType.get(d.typeRef)?.name || '' } });
+    }
+  }
+  return out;
+}
+
 export function generatePatchScriptMulti(sessions) {
   const body = (sessions || [])
     .flatMap((s) => changedRows(s.model, s.assignments, s.addedDrivers))
     .flatMap((row) => row.refs.map((ref) => patchBlock(ref, row.elementRef, row.node)))
     .join('');
-  // The ElementTypes preamble is emitted only when something needs it: those
-  // column lookups throw on a workbook that hasn't got them, and a session with
-  // no presets must keep producing exactly the script it produced before.
+  // Each preamble is emitted only when something needs it: those column lookups
+  // throw on a workbook that hasn't got them, and a session that added nothing
+  // must keep producing exactly the script it produced before.
   const presets = patchablePresets(sessions);
   const types = presets.length ? typeHeader() + presets.map(typeBlock).join('') : '';
-  return PATCH_HEADER + body + types + PATCH_FOOTER;
+  const added = addedElements(sessions);
+  const elements = added.length
+    ? elementHeader() + added.map(({ zone, line }) => elementBlock(zone, line)).join('')
+    : '';
+  // ElementTypes, then the Elements that use them, then the links that point at
+  // those Elements — the order a person would apply them by hand.
+  return PATCH_HEADER + types + elements + body + PATCH_FOOTER;
 }
 
 export function generatePatchScript(model, assignments, addedDrivers, presets) {

@@ -35,6 +35,12 @@ export default function DriverPicker({ state, dispatch, zone }) {
     return () => { stale = true; };
   }, [canSuggest, zone, assignments, addedDrivers, prefs.restrictControlGroup, prefs.margin, model]);
 
+  // types this hub already has drivers of, as against the whole library
+  const inHub = useMemo(
+    () => new Set(drivers.filter((d) => d.zone === zone).map((d) => d.typeRef)),
+    [drivers, zone],
+  );
+
   const needle = q.trim().toLowerCase();
   const types = model.inventory
     .map((t) => ({ t, spec: resolveSpec(t.name || t.typeRef) }))
@@ -60,6 +66,15 @@ export default function DriverPicker({ state, dispatch, zone }) {
           <span className="material-icons small-icon">arrow_back</span> {zone}
         </button>
         <h5 className="mb-0">Add a driver to {zone}</h5>
+        {/* Where the list came from. Embedded, the host posts the whole project's
+            type library alongside this hub's drivers — so if this says the hub's
+            own count, the library did not arrive and that is the thing to chase. */}
+        <span className="text-secondary small" title={inHub.size
+          ? `${[...inHub].sort().join(', ')} are used by drivers in ${zone}. The rest come from the project's type library.`
+          : 'None of these are in this hub yet'}>
+          {model.inventory.length} type{model.inventory.length === 1 ? '' : 's'} available
+          {` · ${inHub.size} already in ${zone}`}
+        </span>
         <input className="form-control form-control-sm ms-auto" style={{ maxWidth: 240 }}
           placeholder="Filter…" value={q} onChange={(e) => setQ(e.target.value)} />
       </div>

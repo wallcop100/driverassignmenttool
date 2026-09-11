@@ -366,13 +366,6 @@ body { background: #f6f8fb; }
 }
 .define-type-link:hover { color: #2563eb; background: #f6f9fd; }
 .preset-editor { background: #fffdf5; border-top: 1px solid #f1e6c8; }
-.stock-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 12px; }
-.stock-chip {
-  padding: 3px 8px; border: 1px solid #e2d7b4; border-radius: 999px;
-  background: #fffdf5; color: #6b5a22; font-size: 11.5px; cursor: pointer;
-}
-.stock-chip:hover { border-color: #c9a227; }
-.stock-chip.is-on { background: #f6e7b8; border-color: #c9a227; font-weight: 600; }
 .drivers-page { overflow-y: auto; }
 .drivers-table td { vertical-align: top; }
 .drivers-table .type-power { display: inline-block; }
@@ -382,46 +375,52 @@ body { background: #f6f8fb; }
   white-space: nowrap; max-width: 140px;
 }
 /* ---- driver type editor ----
-   Values first, column names as small print under them. A grid of labelled
-   boxes read as a spreadsheet row; this reads as a specification. */
+   Neutral, not cream: the amber palette on this page means "something looks
+   wrong", and an editor is not a warning. Every field is a labelled box that
+   looks editable, the column name sits above the value where it can only belong
+   to one field, and the datasheet is offered as something to take rather than
+   printed in red beside what you typed. */
+.preset-editor { background: none; padding: 4px 0 0; }
 .spec-pick { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 10px; }
-.spec-pick label { display: flex; flex-direction: column; gap: 2px; font-size: 11px; color: #8a7a43; min-width: 220px; }
+.spec-pick label { display: flex; flex-direction: column; gap: 3px; font-size: 11px; color: #64748b; min-width: 220px; }
 .spec-pick .form-select { font-size: 13px; }
-.spec-head { font-size: 14px; }
-.spec-ref {
-  font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 14px;
-  font-weight: 600; color: #1f4e79; display: flex; align-items: center; margin-bottom: 4px;
-}
-.spec-ref input {
-  font: inherit; color: inherit; border: 1px solid transparent; background: transparent;
-  border-radius: 3px; padding: 2px 5px; width: 24ch;
-}
-.spec-ref input:hover { border-color: #e2d7b4; background: #fff; }
-.spec-ref input:focus { border-color: #c9a227; background: #fff; outline: none; }
 
-.spec-row { display: flex; align-items: flex-start; gap: 6px 20px; flex-wrap: wrap; padding: 9px 0; }
-.spec-row + .spec-row { border-top: 1px solid #f1e6c8; }
-.spec-group {
-  flex: 0 0 68px; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase;
-  color: #a89968; padding-top: 7px;
+.fld-sec {
+  display: flex; align-items: baseline; gap: 10px;
+  font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: #94a3b8;
+  margin: 12px 0 5px; padding-bottom: 3px; border-bottom: 1px solid #eef1f6;
 }
-.spec-cell { display: flex; flex-direction: column; min-width: 76px; }
-.spec-cell input, .spec-cell select {
-  border: 1px solid transparent; background: transparent; border-radius: 3px;
-  font-size: 15px; font-weight: 600; color: #16212e; padding: 2px 5px; width: 100%;
+.fld-sec-note { letter-spacing: 0; text-transform: none; font-size: 11.5px; color: #94a3b8; }
+.fld-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(148px, 1fr)); gap: 8px 10px; }
+.fld { display: flex; flex-direction: column; gap: 2px; min-width: 0; margin: 0; }
+.fld-col {
+  font-size: 10px; letter-spacing: .02em; color: #94a3b8; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis;
+}
+.fld input, .fld select {
+  border: 1px solid #dbe3ee; border-radius: 5px; background: #fff;
+  font-size: 13.5px; font-weight: 600; color: #16212e; padding: 4px 7px; width: 100%;
   font-variant-numeric: tabular-nums;
 }
-.spec-cell input:hover, .spec-cell select:hover { border-color: #e2d7b4; background: #fff; }
-.spec-cell input:focus, .spec-cell select:focus { border-color: #c9a227; background: #fff; outline: none; }
-.spec-cell input::placeholder { color: #cbd5e1; font-weight: 400; }
-.spec-cell .col { font-size: 10px; color: #a0aec0; padding-left: 6px; white-space: nowrap; }
-.spec-cell .ds, .spec-ref .ds { font-size: 10px; color: #b3261e; padding-left: 6px; }
-.spec-cell input.is-off, .spec-ref input.is-off { border-color: #b3261e; }
+.fld input:hover, .fld select:hover { border-color: #bcd3f7; }
+.fld input:focus, .fld select:focus { border-color: #2563eb; outline: 2px solid #dbeafe; outline-offset: -1px; }
+.fld input::placeholder { color: #cbd5e1; font-weight: 400; }
+.fld.is-off input { border-color: #e0b93c; background: #fffdf6; }
+/* the datasheet as one press, not a note in red */
+.fld-ds {
+  align-self: flex-start; border: 0; background: none; padding: 1px 0 0;
+  font-size: 10.5px; color: #1d4ed8; text-decoration: underline; text-underline-offset: 2px;
+}
+.fld-ds:hover { color: #16212e; }
+.fld-note { font-size: 10.5px; color: #8a6d1f; }
+.fld-ref { max-width: 280px; margin-bottom: 4px; }
+.fld-ref input { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+.fld-foot { display: flex; align-items: center; gap: 8px; margin-top: 14px; }
+.fld-foot-note { font-size: 11px; color: #94a3b8; }
 
-.preset-note { font-size: 12px; color: #64748b; margin-top: 10px; }
 .preset-warn {
   font-size: 12px; color: #8a6d1f; background: #fdf6e3; border: 1px solid #e2d7b4;
-  border-radius: 4px; padding: 5px 8px; margin-top: 8px;
+  border-radius: 5px; padding: 5px 8px; margin-top: 8px;
 }
 .type-row.is-selected { background: #e8f1ff; box-shadow: inset 3px 0 0 #2563eb; }
 .type-power {
@@ -563,7 +562,7 @@ body { background: #f6f8fb; }
 .tp-menu button.is-warn { color: #8a6d1f; }
 .tp-menu button em { font-style: normal; color: #94a3b8; }
 .tp-menu-none { padding: 6px 9px; font-size: 12.5px; color: #94a3b8; }
-.tp-card .preset-editor { background: none; border-top: 1px solid #e2d7b4; padding: 8px 0 0 !important; }
+.tp-card .preset-editor { border-top: 1px solid #eef1f6; margin-top: 4px; padding-top: 8px; }
 
 /* ---- Picker: add a driver to this hub ----
    Three things carry the row — the Ref you are looking for, the Name that says

@@ -114,20 +114,28 @@ export default function PresetEditor({ draft, setDraft, inventory, onSave, onCan
     controlType: part?.controlType,
   };
 
-  // A value with its column name underneath, rather than a labelled box: the
-  // number is what you read, the schema name is what you check.
-  const Val = ({ col, k, tip, step }) => {
+  // One field: the schema's own column name above a box that looks like a box,
+  // and — where the datasheet says otherwise — an offer you can take rather than
+  // a red note that only nags.
+  const Field = ({ col, k, tip, step, children }) => {
     const want = spec[k];
     const has = numOrNull(draft[k]);
     const off = want != null && has != null && Math.abs(has - want) > 1e-9;
+    const blank = want != null && draft[k] === '';
     return (
-      <div className="spec-cell" title={tip}>
-        <input type="number" min="0" step={step ?? 'any'} value={draft[k]}
-          className={off ? 'is-off' : ''} placeholder="—"
-          onChange={(e) => set({ [k]: e.target.value })} />
-        <span className="col">{col}</span>
-        {off && <span className="ds">datasheet {g(want)}</span>}
-      </div>
+      <label className={`fld ${off ? 'is-off' : ''}`}>
+        <span className="fld-col" title={tip}>{col}</span>
+        {children ?? (
+          <input type="number" min="0" step={step ?? 'any'} value={draft[k]}
+            placeholder="—" onChange={(e) => set({ [k]: e.target.value })} />
+        )}
+        {(off || blank) && (
+          <button type="button" className="fld-ds" onClick={() => set({ [k]: want })}
+            title={`Take ${g(want)} from the ${part.name} spec page`}>
+            {off ? `spec page: ${g(want)}` : `use ${g(want)}`}
+          </button>
+        )}
+      </label>
     );
   };
 
@@ -149,7 +157,7 @@ export default function PresetEditor({ draft, setDraft, inventory, onSave, onCan
   const reach = reachableW(part, numOrNull(draft.currentA));
 
   return (
-    <div className="preset-editor px-3 py-3">
+    <div className="preset-editor">
       {draft.invented ? (
         <div className="spec-pick">
           <label>
@@ -183,65 +191,63 @@ export default function PresetEditor({ draft, setDraft, inventory, onSave, onCan
             </label>
           )}
         </div>
-      ) : (
-        <div className="spec-pick">
-          <div className="spec-head">
-            <b>{draft.typeRef}</b>
-            {part && <span className="text-secondary"> · {part.name}</span>}
-          </div>
-        </div>
-      )}
+      ) : null}
 
-      <div className="spec-ref">
-        {draft.invented ? (
+      {/* The Ref is generated for a new type and fixed for an existing one — it
+          is the key Elements point at, so it is never quietly rewritten. */}
+      {draft.invented && (
+        <label className="fld fld-ref">
+          <span className="fld-col" title="Generated from the values below">Ref</span>
           <input value={draft.typeRef} placeholder="Ref"
             className={refOff ? 'is-off' : ''}
             onChange={(e) => { setOwnRef(true); set({ typeRef: e.target.value }); }} />
-        ) : <span>{draft.typeRef}</span>}
-        {draft.invented && ownRef && (
-          <button className="btn btn-sm btn-link p-0 ms-2" onClick={() => setOwnRef(false)}>
-            use suggested
-          </button>
-        )}
-        {refOff && <span className="ds ms-2">{addr} addresses</span>}
-      </div>
+          {ownRef && (
+            <button type="button" className="fld-ds" onClick={() => setOwnRef(false)}>
+              use suggested
+            </button>
+          )}
+          {refOff && <span className="fld-note">the Ref says {refCh}CH, the fields say {addr}</span>}
+        </label>
+      )}
 
-      <div className="spec-row">
-        <span className="spec-group">Driver</span>
-        <div className="spec-cell" title="Constant current or constant voltage">
+      <div className="fld-sec">Driver</div>
+      <div className="fld-grid">
+        <label className="fld">
+          <span className="fld-col" title="Constant current or constant voltage">Type</span>
           <select value={draft.powerType} onChange={(e) => set({ powerType: e.target.value })}>
             <option value="CC">CC</option>
             <option value="CV">CV</option>
           </select>
-          <span className="col">Type</span>
-        </div>
-        <Val col="MaxPower(W)" k="maxPowerW" tip="Total power, shared across all outputs" />
+        </label>
+        <Field col="MaxPower(W)" k="maxPowerW" tip="Total power, shared across all outputs" />
         {draft.powerType === 'CC'
-          ? <Val col="CurrentRange" k="currentA" tip="Amps — one current for the whole driver" />
-          : <Val col="OutputVoltage(V)" k="outputVoltageV" tip="Volts the driver puts out" />}
-        <Val col="BallastCountPerUoM" k="addresses" tip="DALI addresses — the nCH in the Ref" step="1" />
-        <div className="spec-cell" title="DALI, PHASE or Local">
+          ? <Field col="CurrentRange" k="currentA" tip="Amps — one current for the whole driver" />
+          : <Field col="OutputVoltage(V)" k="outputVoltageV" tip="Volts the driver puts out" />}
+        <Field col="BallastCountPerUoM" k="addresses" tip="DALI addresses — the nCH in the Ref" step="1" />
+        <label className="fld">
+          <span className="fld-col" title="DALI, PHASE or Local">ControlType</span>
           <input value={draft.controlType} placeholder="—"
             onChange={(e) => set({ controlType: e.target.value })} />
-          <span className="col">ControlType</span>
-        </div>
+        </label>
       </div>
 
-      <div className="spec-row">
-        <span className="spec-group">Per output</span>
-        <Val col="Parameters" k="outputs" tip="LED outputs — written as {<OP.1,<OP.2}" step="1" />
-        <Val col="NodeMaxForwardVoltage(fV)" k="nodeMaxFvV" tip="Per output. Usually the limit that binds" />
-        <Val col="NodeMaxPower(W)" k="nodeMaxLoadW" tip="Only if an output has its own cap" />
-        <Val col="NodeCurrent" k="nodeCurrentA" tip="Amps. Only if current is settable per output" />
+      <div className="fld-sec">
+        Per output
+        {part && (
+          <span className="fld-sec-note">
+            {[part.powerType === 'CC' && part.minA != null && `${part.name} runs ${part.minA}–${part.maxA}A`,
+              part.supply && `${part.maxPowerW}W at ${part.outputV}V`,
+              reach != null && numOrNull(draft.maxPowerW) > reach && `reaches ${g(reach)}W at this current`,
+            ].filter(Boolean).join(' · ')}
+          </span>
+        )}
       </div>
-
-      {part && (
-        <div className="preset-note">
-          {part.powerType === 'CC' && part.minA != null && `${part.minA}–${part.maxA}A`}
-          {part.supply && `${part.maxPowerW}W at ${part.outputV}V`}
-          {reach != null && numOrNull(draft.maxPowerW) > reach && ` · reaches ${g(reach)}W here`}
-        </div>
-      )}
+      <div className="fld-grid">
+        <Field col="Parameters" k="outputs" tip="LED outputs — written as {<OP.1,<OP.2}" step="1" />
+        <Field col="NodeMaxForwardVoltage(fV)" k="nodeMaxFvV" tip="Per output. Usually the limit that binds" />
+        <Field col="NodeMaxPower(W)" k="nodeMaxLoadW" tip="Only if an output has its own cap" />
+        <Field col="NodeCurrent" k="nodeCurrentA" tip="Amps. Only if current is settable per output" />
+      </div>
       {outOfRange && (
         <div className="preset-warn">CurrentRange outside {part.minA}–{part.maxA}A for this part</div>
       )}
@@ -260,12 +266,14 @@ export default function PresetEditor({ draft, setDraft, inventory, onSave, onCan
         </div>
       )}
 
-      <div className="d-flex gap-2 mt-3 align-items-center">
+      <div className="fld-foot">
         <button className="btn btn-sm btn-primary" disabled={!isComplete(draft)} onClick={onSave}>Save</button>
-        <button className="btn btn-sm btn-outline-secondary" onClick={onCancel}>Cancel</button>
-        <span className="badge text-bg-warning ms-auto" title="Patched as IsPropertiesTBC">provisional</span>
+        <button className="btn btn-sm btn-link" onClick={onCancel}>Cancel</button>
+        <span className="fld-foot-note">
+          Saved here, patched to the workbook as IsPropertiesTBC
+        </span>
         {onDelete && (
-          <button className="btn btn-sm btn-link text-danger" onClick={onDelete}>Remove</button>
+          <button className="btn btn-sm btn-link text-danger ms-auto" onClick={onDelete}>Remove</button>
         )}
       </div>
     </div>
