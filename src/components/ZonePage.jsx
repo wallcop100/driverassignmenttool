@@ -88,12 +88,17 @@ export default function ZonePage({ state, dispatch, zone, onResetToCurrentSet })
     setDistNote(unplaced.length ? `${unplaced.length} cable${unplaced.length > 1 ? 's' : ''} didn't fit — still in the tray.` : null);
   };
 
-  const pendingCount = zoneDrivers.reduce((n, d) => n + d.nodes.reduce((m, node) => {
+  const cablesPending = zoneDrivers.reduce((n, d) => n + d.nodes.reduce((m, node) => {
     const key = keyOf(d.ref, node.name);
     return m + (d.added
       ? (assignments[key]?.refs.length ? 1 : 0)
       : (isPending(key, assignments, model.baseline) ? 1 : 0));
   }, 0), 0);
+  // A corrected driver type is a change to the workbook too. Counting only
+  // cables left the badge at zero on a session whose whole work was fixing a
+  // type's ratings, which reads as nothing to patch.
+  const typesPending = Object.keys(state.presets ?? {}).length;
+  const pendingCount = cablesPending + typesPending;
 
   return (
     <div className={`zone-page ${state.draggingLink ? 'is-dragging' : ''}`} style={{ '--zone-accent': accent }}>

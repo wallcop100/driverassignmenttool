@@ -110,7 +110,7 @@ const all = e.PARTS.filter((p) => p.kind !== 'supply' && !p.discontinued);
 const matches = all.filter((p) => p.common);   // nothing asked yet, so the usual parts
 const dialogHtml = `<div class="nt-dialog" style="box-shadow:none;border:1px solid #dbe3ee">
   <div class="nt-head"><b>New driver type</b>
-    <span class="text-secondary small">${matches.length} of ${e.PARTS.length} parts</span>
+    <span class="text-secondary small">Common driver types</span>
     <button class="btn btn-sm btn-link ms-auto p-0">close</button></div>
   <div class="nt-filters">
     <div class="nt-filter"><span>Type</span>${seg(['CC', 'CV', 'any'], 'any')}</div>
@@ -124,7 +124,7 @@ const dialogHtml = `<div class="nt-dialog" style="box-shadow:none;border:1px sol
     <span class="nt-part-name">${esc(p.name)}</span>
     <span class="nt-part-spec">${p.maxPowerW != null ? fmt(p.maxPowerW) + 'W' : 'W set by the supply'}${p.minA != null ? ` · ${p.minA}–${p.maxA}A` : ''}${p.maxFvV != null ? ` · ${p.maxFvV}fV/out` : ''}</span>
     <span class="nt-part-ch">${p.outputs ?? 1} out</span></div>`).join('')}
-    <button class="nt-more">Show the other ${all.length - matches.length} parts in the catalogue</button></div>
+    <button class="nt-more">See other driver types (${all.length - matches.length})</button></div>
   <div class="nt-pick">
     <label class="nt-filter"><span>CurrentRange</span><input type="number" value="700"><em>mA</em></label>
     <span class="nt-ref">ET-CCR-D-700-1CH-01</span>
@@ -159,7 +159,7 @@ const editor = `<div class="preset-editor" style="padding:0">
   <div class="fld-foot">
     <button class="btn btn-sm btn-primary">Save</button>
     <button class="btn btn-sm btn-link">Cancel</button>
-    <span class="fld-foot-note">Saved here, patched to the workbook as IsPropertiesTBC</span>
+    <span class="fld-foot-note">Saved here, and written to the workbook when you copy the patch</span>
   </div>
 </div>`;
 

@@ -270,7 +270,7 @@ export default function PresetEditor({ draft, setDraft, inventory, onSave, onCan
         <button className="btn btn-sm btn-primary" disabled={!isComplete(draft)} onClick={onSave}>Save</button>
         <button className="btn btn-sm btn-link" onClick={onCancel}>Cancel</button>
         <span className="fld-foot-note">
-          Saved here, patched to the workbook as IsPropertiesTBC
+          Saved here, and written to the workbook when you copy the patch
         </span>
         {onDelete && (
           <button className="btn btn-sm btn-link text-danger ms-auto" onClick={onDelete}>Remove</button>

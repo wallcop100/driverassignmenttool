@@ -93,12 +93,12 @@ export const PARTS = [
   // white fitting from ONE address across both outputs, which is what separates it
   // from the D2Z2D and why its ref is 1CH, not 2CH.
   { name: 'EldoLED LinearDrive 200D-D2Z2C', re: /200d?d2z2c/, powerType: 'CV', kind: 'dcdc',
-    maxPowerW: 192, outputs: 2, addresses: 1, controlType: 'DALI', page: 106074, common: true,
+    maxPowerW: 192, outputs: 2, addresses: 1, controlType: 'DALI', page: 106074,
     note: 'DALI-2 DT8, dynamic white — must be on a DT8 control system, and the LightShape profile set' },
   // 144W per output is 6A at 24V — derived from the rail, not fixed.
   { name: 'EldoLED LinearDrive 720D', re: /lin[a-z]*720/, powerType: 'CV', kind: 'dcdc',
     maxPowerW: 720, nodeCurrentA: 6, outputs: 4, addresses: 4,
-    controlType: 'DALI', page: 105811 },
+    controlType: 'DALI', page: 105811, common: true },
 
   // ---- constant voltage supplies ----
   // No LED outputs of their own: they feed a DC/DC driver. Given an outputs

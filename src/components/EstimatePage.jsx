@@ -144,6 +144,20 @@ export default function EstimatePage({ state, dispatch, zone }) {
 
       {error && <div className="alert alert-danger py-2 mt-2">{error}</div>}
 
+      {/* the same thing the assignment side says in Review: the patch appends
+          rows it cannot name, and naming them is the next job */}
+      {totals.drivers > 0 && (
+        <div className="rv-todo mt-2">
+          <span className="material-icons">edit_note</span>
+          <div>
+            <b>The patch appends these as Elements rows under one placeholder Ref.</b>
+            {' '}<code>Elements.Ref</code> has to be unique, so each row needs a real
+            Ref writing in before the workbook is committed. Quantity carries the
+            count, so six identical drivers are one row and not six.
+          </div>
+        </div>
+      )}
+
       <div className="dp-list mt-3">
         {zones.map((z) => (
           <div key={z.zone} className="dp-part">

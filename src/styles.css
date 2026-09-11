@@ -666,3 +666,53 @@ body { background: #f6f8fb; }
 .nt-dialog .preset-editor { overflow-y: auto; }
 
 .est-c .margin-input { width: 58px; height: 26px; padding: 0 .35rem; }
+
+/* A driver whose ElementType you have corrected. Same language as a moved
+   cable — a dot, and the dashed edge that says "yours, not theirs". */
+.type-edited {
+  display: inline-flex; align-items: center; gap: 4px; font-size: 10.5px;
+  color: #6b5a22; border: 1px dashed #d9a441; border-radius: 999px; padding: 0 7px 0 5px;
+  white-space: nowrap;
+}
+.type-edited::before {
+  content: ''; width: 5px; height: 5px; border-radius: 50%; background: #d9a441;
+}
+.rv-sec {
+  display: flex; align-items: baseline; gap: 10px; margin: 14px 0 6px;
+  font-size: 11px; letter-spacing: .07em; text-transform: uppercase; color: #64748b;
+}
+.rv-sec:first-child { margin-top: 0; }
+.rv-sec span { letter-spacing: 0; text-transform: none; font-size: 11.5px; color: #94a3b8; }
+.rv-ref { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 12.5px; }
+.rv-note { margin: -4px 0 0; line-height: 1.5; }
+
+/* The driver's failed checks, as a control rather than a coloured glyph: the
+   colour said "something", the count says how much, and it opens the whole
+   thing instead of a tooltip that vanishes on the way to it. */
+.bin-flag {
+  display: inline-flex; align-items: center; gap: 2px; border: 1px solid currentColor;
+  background: #fff; border-radius: 999px; padding: 0 6px 0 3px; font-size: 11px;
+  font-weight: 600; line-height: 1.5; flex: 0 0 auto;
+}
+.bin-flag .material-icons { font-size: 14px; }
+.bin-flag:hover { filter: brightness(0.92); }
+.bin-flag.is-fail { color: var(--status-fail); }
+.bin-flag.is-mismatch { color: var(--status-mismatch); }
+.bin-flag.is-warn { color: #8a6d1f; }
+.fd-list li b { display: flex; align-items: center; gap: 5px; }
+.fd-list li b .material-icons { font-size: 16px; }
+.fd-list .fl-fail b { color: var(--status-fail); }
+.fd-list .fl-mismatch b { color: var(--status-mismatch); }
+.fl-where {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 11.5px !important; color: #94a3b8 !important; margin-top: 2px;
+}
+
+/* Something the patch cannot do for you, said once where you will act on it. */
+.rv-todo {
+  display: flex; gap: 9px; align-items: flex-start;
+  background: #f8fafd; border: 1px solid #dbe3ee; border-left: 3px solid #2563eb;
+  border-radius: 6px; padding: 9px 12px; font-size: 12.5px; color: #475569; line-height: 1.5;
+}
+.rv-todo .material-icons { font-size: 18px; color: #2563eb; flex: 0 0 auto; }
+.rv-todo b { color: #16212e; }

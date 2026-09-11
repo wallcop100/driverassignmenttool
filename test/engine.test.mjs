@@ -476,7 +476,9 @@ test('an added driver is appended to Elements, not only pointed at', () => {
   assert.match(script, /EL_ContextType\).setValue\("Position"\)/);
   assert.match(script, /EL_ContextRef\).setValue\("HUB-G"\)/);
   assert.match(script, /EL_Quantity\).setValue\(1\)/);
-  assert.match(script, /EL_IsPropertiesTBC\).setValue\("Y"\)/);
+  // no IsPropertiesTBC: what the row actually needs is a real Ref, and Review
+  // is where that is said
+  assert.ok(!script.includes('EL_IsPropertiesTBC'));
   // and the ElementTypes/Elements sections come before the links that use them
   assert.ok(script.indexOf('getWorksheet("Elements")') < script.indexOf('LM_FromLinkEndContextRef).setValue'));
 });
@@ -583,7 +585,7 @@ test('nextTypeRef composes from the ratings, and reuses a sibling stem', () => {
   assert.equal(engine.nextTypeRef(inv, { powerType: 'CC', channels: 2 }), '');
 });
 
-test('the patch writes ElementTypes columns, current in AMPS, IsPropertiesTBC on both', () => {
+test('the patch writes ElementTypes columns, with the current in AMPS', () => {
   const m = gfModel(gfLinks(2));
   const added = [{ ref: 'E5000X', typeRef: 'T-NEW', zone: 'HUB-G' }];
   const script = engine.generatePatchScript(m, {}, added, [
@@ -599,7 +601,12 @@ test('the patch writes ElementTypes columns, current in AMPS, IsPropertiesTBC on
   assert.ok(!script.includes('setValue(350)'));
   // the node list IS the channel count
   assert.equal(script.split('ET_Parameters).setValue("{<OP.1,<OP.2}")').length - 1, 2);
-  assert.equal(script.split('ET_IsPropertiesTBC).setValue("Y")').length - 1, 2);
+  // Neither TBC flag is touched on ElementTypes — marking every row the tool
+  // writes to makes the flag mean nothing, and on an existing row it is the
+  // designer's to set. (An appended Elements row is different: it did not exist
+  // before, and it carries a placeholder Ref somebody has to resolve.)
+  assert.ok(!script.includes('ET_IsPropertiesTBC'));
+  assert.ok(!script.includes('ET_IsTBC'));
   // append path for a type that isn't there, patch path for one that is
   assert.match(script, /let r=f\?f\.getRowIndex\(\):ElementTypes\.getUsedRange\(\)\.getRowCount\(\)/);
   // the note is stamped on the new type only (the header declaration doesn't count)
@@ -1023,3 +1030,4 @@ test('Elements.ContextRef takes the hub Position Ref, not its label', () => {
   assert.match(without, /EL_ContextRef\).setValue\("CSB"\)/);
   assert.match(without, /CHECK ContextRef: CSB is the hub label, not its Position Ref/);
 });
+

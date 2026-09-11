@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { cgColor, driverLoad, driverStatus, isPending, keyOf, outRef, severityOf } from '../state.js';
 import Block from './Block.jsx';
+import FlagDialog from './FlagDialog.jsx';
 import KebabMenu from './KebabMenu.jsx';
 import Tooltip from './Tooltip.jsx';
 
@@ -109,6 +110,7 @@ export default function DriverBin({ driver, state, dispatch, links, accent, flag
   // ALL flags for this driver — must not filter out node/link-scoped ones, since
   // TypeMatch/CVVoltage/CurrentMatch (CC/CV + mA checks) always carry those.
   const driverFlags = flagIndex.byDriver.get(driver.ref) ?? [];
+  const [showFlags, setShowFlags] = useState(false);
   const severity = severityOf(driverFlags);
   const fail = severity === 'FAIL';
   const mismatch = severity === 'MISMATCH';
@@ -137,15 +139,24 @@ export default function DriverBin({ driver, state, dispatch, links, accent, flag
           {driver.powerType ?? '?'}{driver.powerType === 'CC' && driver.currentA ? ` ${driver.currentA}A`
             : driver.powerType === 'CV' && driver.outputVoltageV ? ` ${driver.outputVoltageV}V` : ''}
         </span>
+        {/* the same mark a moved cable carries: a dot means you changed this and
+            it is not in the DesignDB yet */}
+        {state.presets?.[driver.typeRef] && (
+          <Tooltip content={`You have edited ${driver.typeRef}. The change applies to every hub in this set and is patched with the rest.`}>
+            <span className="type-edited">edited</span>
+          </Tooltip>
+        )}
         <span className="text-secondary small text-truncate flex-grow-1">{driver.typeRef}</span>
         {status === 'impossible' && <span className="status-tag tag-impossible">✕ type</span>}
         {status === 'full' && <span className="status-tag tag-full">no room</span>}
         {severity && (
-          <Tooltip content={driverFlags.map((f) => f.message)}>
-            <span className={`material-icons small-icon ${fail ? 'text-fail' : mismatch ? 'text-mismatch' : 'text-warn'}`}>
-              {fail ? 'error' : mismatch ? 'report' : 'warning'}
-            </span>
-          </Tooltip>
+          <button type="button"
+            className={`bin-flag ${fail ? 'is-fail' : mismatch ? 'is-mismatch' : 'is-warn'}`}
+            onClick={() => setShowFlags(true)}
+            title="What failed, in full">
+            <span className="material-icons">{fail ? 'error' : mismatch ? 'report' : 'warning'}</span>
+            {driverFlags.length}
+          </button>
         )}
         <KebabMenu title="Driver actions" items={[{
           label: 'Return all to tray', icon: 'undo', disabled: !driverRefs.length,
@@ -175,6 +186,10 @@ export default function DriverBin({ driver, state, dispatch, links, accent, flag
         <Slot key={node.name} driver={driver} node={node} state={state} dispatch={dispatch}
           links={links} flagIndex={flagIndex} onNodeClick={onNodeClick} groups={groups} />
       ))}
+      {showFlags && (
+        <FlagDialog driver={driver} flags={driverFlags} links={links}
+          onClose={() => setShowFlags(false)} />
+      )}
     </div>
   );
 }

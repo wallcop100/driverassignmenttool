@@ -88,8 +88,9 @@ export default function NewTypeDialog({ zone, inventory, dispatch, onClose, onCr
         <div className="nt-head">
           <b>New driver type</b>
           <span className="text-secondary small">
-            {shown.length} of {PARTS.length} parts
-            {filtering && matches.length !== shown.length && ` · ${matches.length} match`}
+            {filtering
+              ? `${shown.length} driver type${shown.length === 1 ? '' : 's'} match`
+              : 'Common driver types'}
           </span>
           <button className="btn btn-sm btn-link ms-auto p-0" onClick={onClose}>close</button>
         </div>
@@ -152,12 +153,12 @@ export default function NewTypeDialog({ zone, inventory, dispatch, onClose, onCr
           )}
           {folded > 0 && (
             <button type="button" className="nt-more" onClick={() => setShowAll(true)}>
-              Show the other {folded} part{folded === 1 ? '' : 's'} in the catalogue
+              See other driver types ({folded})
             </button>
           )}
           {showAll && !filtering && (
             <button type="button" className="nt-more" onClick={() => setShowAll(false)}>
-              Show only the usual parts
+              Show only the common driver types
             </button>
           )}
         </div>

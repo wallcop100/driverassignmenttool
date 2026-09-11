@@ -2,6 +2,7 @@
 // restore). state.js is pure (no React), so it runs directly under node.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import * as st from '../src/state.js';
 import { cgColor, diffRows, initialState, reducer, severityOf, zoneControlGroups } from '../src/state.js';
 
 const model = {
@@ -163,4 +164,52 @@ test('RESTORE pins the view when told to — an embedded resume must not leave t
   assert.deepEqual(reducer(s, { type: 'RESTORE', saved, view: here }).view, here);
   // standalone (no pin) still follows the saved view
   assert.deepEqual(reducer(s, { type: 'RESTORE', saved }).view, elsewhere);
+});
+
+test('the review lists cables, not driver nodes — the shape LinksMap is patched in', () => {
+  const model = {
+    baseline: {
+      'D1|OP.1': { toEntityType: 'Link', refs: ['L1', 'L2'] },
+      'D2|OP.1': { toEntityType: 'Link', refs: [] },
+    },
+    drivers: [], links: [],
+  };
+  const state = {
+    model,
+    assignments: {
+      'D1|OP.1': { toEntityType: 'Link', refs: ['L1'] },
+      'D2|OP.1': { toEntityType: 'Link', refs: ['L2'] },
+    },
+    addedDrivers: [], presets: {},
+  };
+  // one cable moved — one row, naming where it was and where it is
+  assert.deepEqual(st.linkDiffRows(state), [
+    { ref: 'L2', from: 'D1|OP.1', to: 'D2|OP.1', isNew: false },
+  ]);
+  // the node view of the same change is two rows, which is why it read oddly
+  assert.equal(st.diffRows(state).length, 2);
+});
+
+test('a cable returned to the tray reads as a move to nothing', () => {
+  const model = { baseline: { 'D1|OP.1': { toEntityType: 'Link', refs: ['L1'] } }, drivers: [], links: [] };
+  const state = {
+    model,
+    assignments: { 'D1|OP.1': { toEntityType: 'Link', refs: [] } },
+    addedDrivers: [], presets: {},
+  };
+  assert.deepEqual(st.linkDiffRows(state), [{ ref: 'L1', from: 'D1|OP.1', to: null, isNew: false }]);
+});
+
+test('a corrected driver type counts as a change the host should hear about', () => {
+  const model = { baseline: { 'D1|OP.1': { toEntityType: 'Link', refs: ['L1'] } }, drivers: [], links: [] };
+  const clean = {
+    model,
+    assignments: { 'D1|OP.1': { toEntityType: 'Link', refs: ['L1'] } },
+    addedDrivers: [], presets: {},
+  };
+  assert.equal(st.changeCount(clean), 0);
+  // nothing moved, but a type was rewritten — the patch has work to do
+  const edited = { ...clean, presets: { 'ET-X': { typeRef: 'ET-X', maxPowerW: 30 } } };
+  assert.equal(st.linkDiffRows(edited).length, 0);
+  assert.equal(st.changeCount(edited), 1);
 });

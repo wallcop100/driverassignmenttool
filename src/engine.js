@@ -1202,7 +1202,6 @@ const TYPE_FIELDS = [
   ['ET_Ballast', 'BallastCountPerUoM'],
   ['ET_ControlType', 'ControlType'],
   ['ET_NodeMaxFv', 'NodeMaxForwardVoltage(fV)'],
-  ['ET_IsPropertiesTBC', 'IsPropertiesTBC'],
   ['ET_InternalNotes', 'InternalNotesText'],
 ];
 
@@ -1213,8 +1212,7 @@ const typeHeader = () => `\t\t//${TYPE_SHEET}\n`
   + '\n';
 
 // One block does patch-or-append: find the Ref, and when it isn't there write a
-// new row at the end of the used range instead. Both cases mark the row
-// IsPropertiesTBC — a rating typed into this tool is provisional either way.
+// new row at the end of the used range instead.
 function typeBlock(t) {
   const ref = esc(t.typeRef);
   const set = (v, val) => `\t\t${TYPE_SHEET}.getCell(r,${v}).setValue(${val})\n`;
@@ -1234,7 +1232,11 @@ function typeBlock(t) {
   if (t.ballast != null) out += set('ET_Ballast', g(t.ballast));
   if (t.controlType) out += set('ET_ControlType', q(t.controlType));
   if (node.maxFvV != null) out += set('ET_NodeMaxFv', g(node.maxFvV));
-  out += set('ET_IsPropertiesTBC', '"Y"');
+  // IsTBC and IsPropertiesTBC are left alone, columns and all. Every correction
+  // used to arrive marked IsPropertiesTBC, which made the flag meaningless: a
+  // designer who marks a row is saying "I know this is unfinished", and a tool
+  // that marks every row it touches is saying nothing. They are the designer's
+  // to set in the workbook.
   // Only a type that did not exist gets a note: patching an existing row's blanks
   // is a correction, and overwriting someone's notes to say so would lose more
   // than it explains.
@@ -1283,7 +1285,9 @@ function patchBlock(ref, elementRef, node) {
 //
 // Every row carries the same placeholder Ref by design (see PLACEHOLDER_REF).
 // Elements.Ref is meant to be unique, so the sheet holds duplicates until a
-// human resolves them — the same trade already accepted for added drivers.
+// human gives each row a real one. Review says so rather than the patch marking
+// the rows IsPropertiesTBC: the flag is the designer's, and a row that needs a
+// Ref needs a Ref, not a note saying its properties are unconfirmed.
 const ELEMENT_SHEET = 'Elements';
 const ELEMENT_FIELDS = [
   ['EL_Ref', 'Ref'],
@@ -1292,7 +1296,6 @@ const ELEMENT_FIELDS = [
   ['EL_ContextType', 'ContextType'],
   ['EL_ContextRef', 'ContextRef'],
   ['EL_Quantity', 'Quantity'],
-  ['EL_IsPropertiesTBC', 'IsPropertiesTBC'],
 ];
 
 const elementHeader = () => `\t\t//${ELEMENT_SHEET}\n`
@@ -1314,7 +1317,6 @@ function elementBlock(zone, line, note) {
     + set('EL_ContextType', '"Position"')
     + set('EL_ContextRef', q(zone))
     + set('EL_Quantity', g(line.count))
-    + set('EL_IsPropertiesTBC', '"Y"')
     + '\t\tEL_row++\n\n';
 }
 

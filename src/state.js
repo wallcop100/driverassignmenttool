@@ -75,6 +75,9 @@ export function reducer(state, action) {
         assignments: cloneAssignments(action.model.baseline),
         demo: !!action.demo,
         context: action.context ?? null,
+        // Type corrections belong to the set, not the hub — the ones made in
+        // another hub of this set arrive here already applied.
+        presets: action.presets ?? {},
         // an estimate has no cables to assign, so it never lands on a zone
         view: action.view ?? (action.model.mode === 'estimate'
           ? { page: 'estimate' }
@@ -205,7 +208,8 @@ export function reducer(state, action) {
         assignments: action.saved.assignments,
         addedDrivers: action.saved.addedDrivers ?? [],
         prefs: { ...DEFAULT_PREFS, ...(action.saved.prefs ?? {}) },
-        presets: action.saved.presets ?? {},
+        // the hub's own saved presets, plus any made in another hub since
+        presets: { ...(action.saved.presets ?? {}), ...(action.presets ?? {}) },
         context: state.context, // host context outlives a resume
         // action.view pins where to land. Embedded that is the hub the host
         // opened this frame on: a resume must restore the *work*, not navigate
@@ -317,6 +321,40 @@ export function diffRows(state) {
     }
   }
   return rows;
+}
+
+// The same changes, one row per CABLE rather than per driver node. This is the
+// shape the patch is written in — LinksMap is patched a link at a time, its
+// FromLinkEndContext* repointed — and the shape people describe the work in:
+// "L104 moved off D2 onto the new driver", not "D2.OP.1 lost L104".
+export function linkDiffRows(state) {
+  const { assignments, addedDrivers, model } = state;
+  const added = new Set(addedDrivers.map((d) => d.ref));
+  const placed = (map) => {
+    const m = new Map();
+    for (const [key, v] of Object.entries(map ?? {})) {
+      for (const ref of v?.refs ?? []) m.set(ref, key);
+    }
+    return m;
+  };
+  const was = placed(model.baseline);
+  const now = placed(assignments);
+  const rows = [];
+  for (const ref of [...new Set([...was.keys(), ...now.keys()])].sort()) {
+    const from = was.get(ref) ?? null;
+    const to = now.get(ref) ?? null;
+    if (from === to) continue;
+    rows.push({ ref, from, to, isNew: !!to && added.has(to.split('|')[0]) });
+  }
+  return rows;
+}
+
+// What the host's "N unsaved" means, and what the Review badge counts: cables
+// moved plus types corrected. A type correction is a real edit to the workbook —
+// counting only cables reported 0 changes on a session that had rewritten a
+// driver's ratings, which reads as nothing to patch.
+export function changeCount(state) {
+  return linkDiffRows(state).length + provisionalTypes(state).length;
 }
 
 export function zoneStats(zone, model, assignments, addedDrivers, flags) {
@@ -458,8 +496,7 @@ export function orphanClusters(trayLinks, eligibility, inventory) {
 
 // Types whose ratings were supplied here rather than read from DesignDB, with
 // how many drivers now depend on each. Shown in Review so whoever runs the
-// export knows a rating was assumed — the same list the patch writes as
-// IsPropertiesTBC.
+// export knows a rating was supplied here rather than read from the DesignDB.
 export function provisionalTypes(state) {
   const { presets, model, addedDrivers } = state;
   const all = [...model.drivers, ...addedDrivers];

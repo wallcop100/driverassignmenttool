@@ -9,6 +9,7 @@ const PREFIX = 'driverassignmenttool.session.v1';
 //   driverassignmenttool.session.v1:<branchId>:<systemSetId>:<hubRef>
 //
 let key = PREFIX;
+let typesKey = `${PREFIX}.types`;
 let scope = null; // { branchId, systemSetId } — set only when embedded
 
 const parse = (k) => {
@@ -22,12 +23,18 @@ const allKeys = () => {
   } catch { return []; }
 };
 
+const typeKeys = () => {
+  try {
+    return Object.keys(localStorage).filter((k) => k.startsWith(`${PREFIX}.types:`));
+  } catch { return []; }
+};
+
 // systemSetIds are sequential within a branch, so anything below the one the
 // host just sent is superseded and can go. This is the only eviction that runs
 // in normal operation — it keeps storage bounded without guessing.
 function evictSupersededSets(branchId, systemSetId) {
   if (!Number.isFinite(systemSetId)) return; // non-numeric: can't order, don't delete
-  for (const k of allKeys()) {
+  for (const k of [...allKeys(), ...typeKeys()]) {
     const p = parse(k);
     if (p.branchId !== String(branchId)) continue;
     if (Number.isFinite(p.systemSetId) && p.systemSetId < systemSetId) {
@@ -38,8 +45,29 @@ function evictSupersededSets(branchId, systemSetId) {
 
 export function setSessionKey(branchId, systemSetId, hubRef) {
   key = `${PREFIX}:${branchId ?? ''}:${systemSetId ?? ''}:${hubRef ?? ''}`;
+  // An ElementType is the project's, not the hub's. The host opens one hub per
+  // frame, so a correction made in one hub would otherwise have to be made again
+  // in every other hub that uses the type — and the patch would then carry the
+  // same edit several times over. Types get their own slot, per branch+set.
+  typesKey = `${PREFIX}.types:${branchId ?? ''}:${systemSetId ?? ''}`;
   scope = { branchId: String(branchId ?? ''), systemSetId: Number(systemSetId) };
   evictSupersededSets(scope.branchId, scope.systemSetId);
+}
+
+// The type corrections made anywhere in this set. Keyed by typeRef, so the last
+// edit of a type wins — which is what you want when the same type is corrected
+// from two hubs.
+export function loadTypes() {
+  try {
+    return JSON.parse(localStorage.getItem(typesKey) ?? '{}') ?? {};
+  } catch { return {}; }
+}
+
+export function saveTypes(presets) {
+  try {
+    if (!presets || !Object.keys(presets).length) localStorage.removeItem(typesKey);
+    else localStorage.setItem(typesKey, JSON.stringify(presets));
+  } catch { /* quota, or storage disabled — the hub slot still has them */ }
 }
 
 // Every saved hub in the current branch+set, current one first. This is what
@@ -64,6 +92,7 @@ export function listSessions() {
 
 export function saveSession(state) {
   if (!state.model) return;
+  saveTypes(state.presets);   // shared across every hub of this set
   const payload = JSON.stringify({
     model: state.model,
     assignments: state.assignments,
