@@ -5,11 +5,11 @@ import FlagDialog from './FlagDialog.jsx';
 import KebabMenu from './KebabMenu.jsx';
 import Tooltip from './Tooltip.jsx';
 
-function Bar({ used, cap, unit, projected }) {
+function Bar({ used, cap, unit, projected, title }) {
   const pct = cap ? Math.round((100 * used) / cap) : 0;
   const over = pct > 100;
   return (
-    <div className="node-metric">
+    <div className="node-metric" title={title}>
       <div className="slot-fill">
         <div className={over ? 'bg-fail' : 'bg-ok'} style={{ width: `${Math.min(pct, 100)}%` }} />
       </div>
@@ -82,8 +82,16 @@ function Slot({ driver, node, state, dispatch, links, flagIndex, onNodeClick, gr
         </span>
       </div>
 
-      {node.maxLoadW != null && (
-        <Bar used={nodeWatts} cap={node.maxLoadW} unit="W"
+      {/* Watts, measured against whichever cap actually binds this output: its
+          own NodeMaxPower(W) if the type states one, otherwise the driver total,
+          which is the real limit and is shared across the outputs. Most types
+          state only a forward voltage, so without this a node showed an fV bar
+          and nothing at all for watts. */}
+      {(node.maxLoadW ?? driver.maxPowerW) != null && (
+        <Bar used={nodeWatts} cap={node.maxLoadW ?? driver.maxPowerW} unit="W"
+          title={node.maxLoadW != null
+            ? `NodeMaxPower(W) for ${node.name}`
+            : `Watts on the driver total, shared across all ${driver.nodes.length} outputs`}
           projected={ghost ? nodeWatts + (dragLink.loadW ?? 0) : null} />
       )}
       {node.maxFvV != null && (
@@ -111,6 +119,7 @@ export default function DriverBin({ driver, state, dispatch, links, accent, flag
   // TypeMatch/CVVoltage/CurrentMatch (CC/CV + mA checks) always carry those.
   const driverFlags = flagIndex.byDriver.get(driver.ref) ?? [];
   const [showFlags, setShowFlags] = useState(false);
+  const [showUndet, setShowUndet] = useState(false);
   const severity = severityOf(driverFlags);
   const fail = severity === 'FAIL';
   const mismatch = severity === 'MISMATCH';
@@ -134,7 +143,9 @@ export default function DriverBin({ driver, state, dispatch, links, accent, flag
         {(driver.name || driver.typeName) && (
           <span className="bin-name" title={driver.typeName || ''}>{driver.name || driver.typeName}</span>
         )}
-        {driver.added && <span className="badge text-bg-info">NEW</span>}
+        {/* added here, so not in the DesignDB yet — the same dashed-and-dotted
+            language a moved cable and a corrected type use */}
+        {driver.added && <span className="type-added">added</span>}
         <span className={`type-chip type-${driver.powerType ?? 'unknown'}`}>
           {driver.powerType ?? '?'}{driver.powerType === 'CC' && driver.currentA ? ` ${driver.currentA}A`
             : driver.powerType === 'CV' && driver.outputVoltageV ? ` ${driver.outputVoltageV}V` : ''}
@@ -158,30 +169,45 @@ export default function DriverBin({ driver, state, dispatch, links, accent, flag
             {driverFlags.length}
           </button>
         )}
-        <KebabMenu title="Driver actions" items={[{
-          label: 'Return all to tray', icon: 'undo', disabled: !driverRefs.length,
-          onClick: () => dispatch({ type: 'MOVE_MANY', linkRefs: driverRefs, toKey: null }),
-        }]} />
+        <KebabMenu title="Driver actions" items={[
+          {
+            label: 'Return all to tray', icon: 'undo', disabled: !driverRefs.length,
+            onClick: () => dispatch({ type: 'MOVE_MANY', linkRefs: driverRefs, toKey: null }),
+          },
+          {
+            // Added here: it never reached the workbook, so it just goes.
+            // Really in the design: the row is marked IsDeleted and patched.
+            label: driver.added ? 'Remove this driver' : 'Delete this driver',
+            icon: 'delete_outline',
+            onClick: () => {
+              if (driverRefs.length && !window.confirm(
+                `${outRef(driver.ref)} has ${driverRefs.length} cable(s) on it. `
+                + 'They go back to the tray. Continue?')) return;
+              dispatch({ type: 'REMOVE_DRIVER', ref: driver.ref });
+            },
+          },
+        ]} />
       </div>
-      <Tooltip content={driver.driverRestrictions || 'Driver Restrictions undeclared — capacity not enforced for this driver'}>
-        <div className="bin-capacity">
-          {driver.maxPowerW != null ? (
-            <>
-              <span className="cap-title text-secondary">driver total</span>
-              <div className="slot-fill flex-grow-1">
-                <div className={pct > 100 ? 'bg-fail' : 'bg-ok'} style={{ width: `${Math.min(pct, 100)}%` }} />
-              </div>
-              <span className={`small ${pct > 100 ? 'text-danger fw-bold' : 'text-secondary'}`}>
-                {load.toFixed(1)}/{driver.maxPowerW}W{pct > 100 && ' FAIL'}
-              </span>
-            </>
-          ) : (
-            <span className="small text-secondary">
-              <span className="material-icons small-icon align-middle">help_outline</span> undetermined · {load.toFixed(1)}W
+      {driver.maxPowerW != null ? (
+        <Tooltip content={driver.driverRestrictions || 'Driver Restrictions'}>
+          <div className="bin-capacity">
+            <span className="cap-title text-secondary">driver total</span>
+            <div className="slot-fill flex-grow-1">
+              <div className={pct > 100 ? 'bg-fail' : 'bg-ok'} style={{ width: `${Math.min(pct, 100)}%` }} />
+            </div>
+            <span className={`small ${pct > 100 ? 'text-danger fw-bold' : 'text-secondary'}`}>
+              {load.toFixed(1)}/{driver.maxPowerW}W{pct > 100 && ' FAIL'}
             </span>
-          )}
-        </div>
-      </Tooltip>
+          </div>
+        </Tooltip>
+      ) : (
+        /* No MaxPower(W) on the type, so there is no bar to draw and no capacity
+           to check. That is worth a sentence, not a question mark. */
+        <button type="button" className="bin-capacity bin-undet" onClick={() => setShowUndet(true)}>
+          <span className="material-icons">help_outline</span>
+          <span className="small">undetermined · {load.toFixed(1)}W</span>
+        </button>
+      )}
       {driver.nodes.map((node) => (
         <Slot key={node.name} driver={driver} node={node} state={state} dispatch={dispatch}
           links={links} flagIndex={flagIndex} onNodeClick={onNodeClick} groups={groups} />
@@ -190,6 +216,43 @@ export default function DriverBin({ driver, state, dispatch, links, accent, flag
         <FlagDialog driver={driver} flags={driverFlags} links={links}
           onClose={() => setShowFlags(false)} />
       )}
+      {showUndet && (
+        <UndeterminedDialog driver={driver} load={load} onClose={() => setShowUndet(false)} />
+      )}
+    </div>
+  );
+}
+
+// What "undetermined" means, since a question mark on its own is a question.
+function UndeterminedDialog({ driver, load, onClose }) {
+  return (
+    <div className="nt-backdrop" onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="fd-dialog" role="dialog" aria-label="Undetermined capacity">
+        <div className="fd-head">
+          <span className="fd-ref">{outRef(driver.ref)}</span>
+          <span className="fd-name">{driver.name || driver.typeName || driver.typeRef}</span>
+          <button className="btn btn-sm btn-link ms-auto p-0" onClick={onClose}>close</button>
+        </div>
+        <ul className="fd-list">
+          <li>
+            <b>No MaxPower(W) on {driver.typeRef}</b>
+            <span>
+              There is no capacity to fill, so no bar is drawn and nothing is checked
+              against it. Cables can still be assigned; they are just not counted.
+            </span>
+          </li>
+          <li>
+            <b>{load.toFixed(1)}W assigned so far</b>
+            <span>Added up from the cables on it, with nothing to compare it to.</span>
+          </li>
+        </ul>
+        <div className="fd-foot">
+          <span className="text-secondary small">
+            Fill in MaxPower(W) on Driver types to turn the checks on.
+          </span>
+          <button className="btn btn-sm btn-link ms-auto" onClick={onClose}>Close</button>
+        </div>
+      </div>
     </div>
   );
 }

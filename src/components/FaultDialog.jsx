@@ -60,9 +60,7 @@ export default function FaultDialog({ t, spec, faults, onClose, onFix }) {
             </button>
           ))}
           {!onFix && (
-            <span className="text-secondary small">
-              Correcting a type is done on the Driver types page.
-            </span>
+            <span className="text-secondary small">Correct it on the Driver types page.</span>
           )}
           <button className="btn btn-sm btn-link ms-auto" onClick={onClose}>Close</button>
         </div>

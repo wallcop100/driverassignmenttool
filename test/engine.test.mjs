@@ -121,37 +121,37 @@ test('changedRows: only rows differing from baseline, plus added drivers', () =>
   assert.deepEqual(unchanged, []);
 });
 
-test('generatePatchScript: header/footer + one block per ref in changed rows', () => {
-  const a = { 'D1|OP.1': { toEntityType: 'Link', refs: ['X1', 'X2'] } }; // X2 newly added
+test('the patch is one main(), wrapped, with a data row per changed cable', () => {
+  const a = { 'D1|OP.1': { toEntityType: 'Link', refs: ['X1', 'X2'] } };
   const script = engine.generatePatchScript(patchModel, a, []);
-  assert.match(script, /^\/\/--DB Merge--\/\/\nfunction main\(DB:ExcelScript\.Workbook\) \{/);
-  assert.match(script, /\}$/);
-  assert.match(script, /LM_FromLinkEndContextType=LinksMap\.getCell\(0,0\)/);
-  for (const ref of ['X1', 'X2']) {
-    assert.match(script, new RegExp(`getEntireColumn\\(\\)\\.find\\("${ref}"`));
-    assert.match(script, new RegExp(`FromLinkEndContextRef\\).setValue\\("D1"\\)`));
-    assert.match(script, new RegExp(`FromLinkEndContextParameters\\).setValue\\("\\{OP\\.1\\}"\\)`));
-  }
+  assert.match(script, /^\/\/ Lighting DesignDB patch/);
+  assert.match(script, /function main\(DB: ExcelScript\.Workbook\) \{/);
+  assert.match(script, /catch \(e\) \{\n\s*console\.log\("Script error: " \+ e\);/);
+  assert.equal(script.split('function main').length - 1, 1, 'exactly one main()');
+  assert.match(script, /\{"ref":"X1","type":"Element","to":"D1","node":"OP.1"\}/);
+  assert.match(script, /\{"ref":"X2","type":"Element","to":"D1","node":"OP.1"\}/);
 });
 
-test('generatePatchScript: unchanged rows produce no blocks (just header+footer)', () => {
+test('nothing changed means nothing declared: no sheet is even opened', () => {
   const script = engine.generatePatchScript(patchModel, clone(patchModel.baseline), []);
-  assert.ok(!script.includes('X1'));
-  assert.ok(script.trimEnd().endsWith('//Patch\n}'));
+  assert.ok(!script.includes('getWorksheet'), 'a no-op patch must not depend on any sheet');
+  assert.match(script, /function main/);
+  assert.match(script, /Patch complete/);
 });
 
-test('generatePatchScript: added driver rows are patched even with unchanged-looking keys', () => {
-  const a = { 'D1|OP.1': { toEntityType: 'Link', refs: ['X1'] }, 'E90001|OP.1': { toEntityType: 'Link', refs: ['X9'] } };
+test('an added driver’s cables are patched even when the row looks unchanged', () => {
+  const a = { 'E90001|OP.1': { toEntityType: 'Link', refs: ['X9'] } };
   const script = engine.generatePatchScript(patchModel, a, [{ ref: 'E90001', typeRef: 'T', zone: 'Z' }]);
-  assert.ok(!script.includes('"X1"')); // D1|OP.1 unchanged from baseline — not patched
-  assert.match(script, /find\("X9"/);
-  assert.match(script, /FromLinkEndContextRef\).setValue\("E90001"\)/);
+  assert.match(script, /\{"ref":"X9","type":"Element","to":"E90001","node":"OP.1"\}/);
 });
 
-test('generatePatchScript escapes quotes in refs', () => {
+test('a ref carrying a quote survives JSON encoding intact', () => {
   const a = { 'D1|OP.1': { toEntityType: 'Link', refs: ['X"1'] } };
   const script = engine.generatePatchScript(patchModel, a, []);
-  assert.match(script, /find\("X\\"1"/);
+  assert.match(script, /"ref":"X\\"1"/);
+  // and the emitted array is valid JS: it parses
+  const rows = JSON.parse(`[${/const linkPatches = \[([\s\S]*?)\n    \];/.exec(script)[1].replace(/,\s*$/, '')}]`);
+  assert.equal(rows[0].ref, 'X"1');
 });
 
 test('malformed csv rejected', () => {
@@ -245,27 +245,23 @@ test('demo dataset opens with HUB-A fully unassigned', () => {
   assert.ok(m.links.some((l) => l.zone === 'HUB-A'), 'HUB-A links still present (they land in the tray)');
 });
 
-test('generatePatchScriptMulti merges hubs into one script', () => {
-  const mk = (elementRef, linkRef) => ({
-    model: { baseline: { [`${elementRef}|OP.1`]: { refs: [] } } },
-    assignments: { [`${elementRef}|OP.1`]: { refs: [linkRef] } },
+test('several hubs merge into one script with one main()', () => {
+  const a = {
+    model: patchModel,
+    assignments: { 'D1|OP.1': { toEntityType: 'Link', refs: ['X1', 'X2'] } },
     addedDrivers: [],
-  });
-  const a = mk('E1', 'X1');
-  const b = mk('E2', 'X2');
-
-  const one = engine.generatePatchScriptMulti([a]);
+  };
+  const b = {
+    model: patchModel,
+    assignments: { 'D1|OP.1': { toEntityType: 'Link', refs: ['X1', 'X7'] } },
+    addedDrivers: [],
+  };
   const both = engine.generatePatchScriptMulti([a, b]);
-
-  // single-session path is unchanged by the refactor
+  assert.equal(both.split('function main').length - 1, 1);
+  assert.match(both, /"ref":"X2"/);
+  assert.match(both, /"ref":"X7"/);
+  const one = engine.generatePatchScriptMulti([a]);
   assert.equal(one, engine.generatePatchScript(a.model, a.assignments, a.addedDrivers));
-
-  // merged script patches both hubs, with exactly one header/footer
-  for (const ref of ['X1', 'X2']) assert.ok(both.includes(`"${ref}"`), `${ref} missing`);
-  assert.equal(both.split('//--DB Merge--//').length - 1, 1);
-  assert.equal(one.includes('X2'), false);
-
-  assert.equal(engine.generatePatchScriptMulti([]).includes('X1'), false);
 });
 
 test('parseDriverRestrictions tolerates spacing and case around the separator', () => {
@@ -459,11 +455,10 @@ test('two added drivers export and patch under the one literal placeholder ref',
   assert.ok(!csv.includes('~'));
   assert.equal(csv.split('"E5000X",,"T100"').length - 1, 4); // 2 drivers × 2 nodes
   const script = engine.generatePatchScript(m, a, added);
-  assert.ok(!script.includes('~'));
-  // two LinksMap rows repointed, and two Elements rows for the drivers they
-  // now point at — all four naming the same literal placeholder
-  assert.equal(script.split('setValue("E5000X")').length - 1, 4);
-  assert.equal(script.split('EL_row++').length - 1, 2);
+  assert.ok(!script.includes('~'), 'the internal tag never leaves the app');
+  // two cables repointed at E5000X, and two Elements rows appended under it
+  assert.equal(script.split('"to":"E5000X"').length - 1, 2);
+  assert.equal(script.split('"ref":"E5000X"').length - 1, 2);
 });
 
 test('an added driver is appended to Elements, not only pointed at', () => {
@@ -472,15 +467,14 @@ test('an added driver is appended to Elements, not only pointed at', () => {
   const script = engine.generatePatchScript(m, { 'E5000X|OP.1': { toEntityType: 'Link', refs: ['L1'] } }, added);
   // without this the patch repoints a cable at an Element the workbook has not got
   assert.match(script, /getWorksheet\("Elements"\)/);
-  assert.match(script, /EL_TypeRef\).setValue\("T100"\)/);
-  assert.match(script, /EL_ContextType\).setValue\("Position"\)/);
-  assert.match(script, /EL_ContextRef\).setValue\("HUB-G"\)/);
-  assert.match(script, /EL_Quantity\).setValue\(1\)/);
-  // no IsPropertiesTBC: what the row actually needs is a real Ref, and Review
-  // is where that is said
+  assert.match(script, /"typeRef":"T100"/);
+  assert.match(script, /col_E_ContextType\).setValue\("Position"\)/);
+  assert.match(script, /"contextRef":"HUB-G"/);
+  // Quantity 1 is the schema default, so it is left blank rather than written
+  assert.match(script, /if \(el.quantity !== 1\)/);
   assert.ok(!script.includes('EL_IsPropertiesTBC'));
-  // and the ElementTypes/Elements sections come before the links that use them
-  assert.ok(script.indexOf('getWorksheet("Elements")') < script.indexOf('LM_FromLinkEndContextRef).setValue'));
+  // and the sheets are declared before anything uses them
+  assert.ok(script.indexOf('getWorksheet("Elements")') < script.indexOf('// --- ADD'));
 });
 
 test('a session that added nothing patches exactly what it did before', () => {
@@ -592,26 +586,26 @@ test('the patch writes ElementTypes columns, with the current in AMPS', () => {
     preset({ typeRef: 'T100', currentA: 0.35 }),                    // patch: type is in the library
     preset({ typeRef: 'T-NEW', currentA: 0.7, invented: true }),    // invented, and used by E5000X
   ]);
-  assert.match(script, /let ElementTypes=DB\.getWorksheet\("ElementTypes"\)/);
-  assert.match(script, /find\("MaxPower\(W\)",\{completeMatch:true\}\)/);
+  assert.match(script, /getWorksheet\("ElementTypes"\)/);
+  // a pre-V4.6 workbook has no MaxPower(W) column, so the patch adds it
+  assert.match(script, /columnIndex\(WS_ET, "MaxPower\(W\)", true\)/);
   // amps, not mA: page 135910 is explicit, and NodeCurrent 6 on a 144W/24V output
   // could only ever be 6A. mA survives in the type ref alone.
-  assert.match(script, /ET_CurrentRange\)\.setValue\(0\.35\)/);
-  assert.match(script, /ET_CurrentRange\)\.setValue\(0\.7\)/);
-  assert.ok(!script.includes('setValue(350)'));
+  assert.match(script, /"currentA":0.35/);
+  assert.match(script, /"currentA":0.7/);
+  assert.ok(!script.includes('"currentA":350'));
   // the node list IS the channel count
-  assert.equal(script.split('ET_Parameters).setValue("{<OP.1,<OP.2}")').length - 1, 2);
-  // Neither TBC flag is touched on ElementTypes — marking every row the tool
-  // writes to makes the flag mean nothing, and on an existing row it is the
-  // designer's to set. (An appended Elements row is different: it did not exist
-  // before, and it carries a placeholder Ref somebody has to resolve.)
-  assert.ok(!script.includes('ET_IsPropertiesTBC'));
-  assert.ok(!script.includes('ET_IsTBC'));
+  assert.equal(script.split('"parameters":"{<OP.1,<OP.2}"').length - 1, 2);
+  // House rule: writing a data column clears that row's IsPropertiesTBC. Neither
+  // TBC flag is ever SET by the tool.
+  assert.match(script, /col_ET_IsPropertiesTBC\).clear\(ExcelScript.ClearApplyTo.contents\)/);
+  assert.ok(!script.includes('IsPropertiesTBC).setValue'));
+  assert.ok(!script.includes('IsTBC'));
   // append path for a type that isn't there, patch path for one that is
-  assert.match(script, /let r=f\?f\.getRowIndex\(\):ElementTypes\.getUsedRange\(\)\.getRowCount\(\)/);
-  // the note is stamped on the new type only (the header declaration doesn't count)
-  assert.equal(script.split('getCell(r,ET_InternalNotes)').length - 1, 1);
+  assert.match(script, /const isNew = row === -1;/);
+  // the note is stamped on the new type only
   assert.match(script, /Defined in the Driver Assignment Tool\./);
+  assert.match(script, /if \(isNew\) \{/);
 });
 
 test('presets nobody uses are not patched, and no presets means the old script exactly', () => {
@@ -629,7 +623,7 @@ test('a preset keeps the type\'s own node names — Parameters must not rename o
     [preset({ typeRef: 'T-ODD', nodeNames: ['A', 'B'] })]);
   assert.deepEqual(m.inventory.find((t) => t.typeRef === 'T-ODD').nodes.map((n) => n.name), ['A', 'B']);
   const script = engine.generatePatchScript(m, {}, [], [preset({ typeRef: 'T-ODD', nodeNames: ['A', 'B'] })]);
-  assert.match(script, /ET_Parameters\)\.setValue\("\{<A,<B\}"\)/);
+  assert.match(script, /"parameters":"\{<A,<B\}"/);
 });
 
 test('catalogue parts are addable and patch their datasheet columns', () => {
@@ -652,10 +646,10 @@ test('catalogue parts are addable and patch their datasheet columns', () => {
   assert.deepEqual(plan.unplaced, []);
 
   const script = engine.generatePatchScript(m, {}, [{ ref: 'E5000X', typeRef: p.typeRef, zone: 'HUB-G' }], [p]);
-  assert.match(script, /ET_CurrentRange\)\.setValue\(0\.3\)/);
-  assert.match(script, /ET_Ballast\)\.setValue\(1\)/);        // addresses, not outputs
-  assert.match(script, /ET_ControlType\)\.setValue\("DALI"\)/);
-  assert.match(script, /ET_Parameters\)\.setValue\("\{<OP\.1\}"\)/);
+  assert.match(script, /"currentA":0.3/);
+  assert.match(script, /"addresses":1/);        // addresses, not outputs
+  assert.match(script, /"controlType":"DALI"/);
+  assert.match(script, /"parameters":"\{<OP\.1\}"/);
 
   // the 720D's per-output cap is watts only once a supply names the rail
   const four = engine.resolveSpec('EldoLED LinearDrive 720D & Meanwell HLG-600-24');
@@ -664,9 +658,9 @@ test('catalogue parts are addable and patch their datasheet columns', () => {
     outputVoltageV: four.outputV, outputs: four.outputs, addresses: four.addresses,
     nodeMaxLoadW: four.nodeMaxLoadW, nodeCurrentA: four.nodeCurrentA, invented: true };
   const s4 = engine.generatePatchScript(m, {}, [{ ref: 'E5000X', typeRef: 'T4', zone: 'HUB-G' }], [p4]);
-  assert.match(s4, /ET_NodeMaxPower\)\.setValue\(144\)/);
-  assert.match(s4, /ET_NodeCurrent\)\.setValue\(6\)/);
-  assert.match(s4, /ET_Parameters\)\.setValue\("\{<OP\.1,<OP\.2,<OP\.3,<OP\.4\}"\)/);
+  assert.match(s4, /"nodeMaxLoadW":144/);
+  assert.match(s4, /"nodeCurrentA":6/);
+  assert.match(s4, /"parameters":"\{<OP\.1,<OP\.2,<OP\.3,<OP\.4\}"/);
 });
 
 test('a ref counts DALI addresses, not outputs', () => {
@@ -799,16 +793,16 @@ test('fittings no type can take are reported, not silently dropped', () => {
 test('the estimate patch appends Elements rows carrying a Quantity', () => {
   const m = engine.buildEstimate(ASSESS_HEAD + DL40, EST_TYPES);
   const script = engine.generateEstimatePatch(engine.estimate(m, { margin: 0 }));
-  assert.match(script, /let Elements=DB\.getWorksheet\("Elements"\)/);
-  assert.match(script, /find\("Quantity",\{completeMatch:true\}\)/);
-  assert.match(script, /EL_Ref\)\.setValue\("E5000X"\)/);
-  assert.match(script, /EL_TypeRef\)\.setValue\("ET-CCR-D-350-2CH-01"\)/);
-  assert.match(script, /EL_ContextType\)\.setValue\("Position"\)/);
-  assert.match(script, /EL_ContextRef\)\.setValue\("P50447"\)/);
-  assert.match(script, /EL_Quantity\)\.setValue\(5\)/);   // one row, not five
-  assert.equal(script.split('EL_row++').length - 1, 1);
-  // and it never touches LinksMap rows, because there are none
-  assert.ok(!script.includes('FromLinkEndContextRef).setValue'));
+  assert.match(script, /getWorksheet\("Elements"\)/);
+  assert.match(script, /columnIndex\(WS_E, "Quantity", false\)/);
+  assert.match(script, /"ref":"E5000X"/);
+  assert.match(script, /"typeRef":"ET-CCR-D-350-2CH-01"/);
+  assert.match(script, /col_E_ContextType\)\.setValue\("Position"\)/);
+  assert.match(script, /"contextRef":"P50447"/);
+  assert.match(script, /"quantity":5/);   // one row, not five
+  assert.equal(script.split('"ref":"E5000X"').length - 1, 1);
+  // and it never touches LinksMap, because at tender there is nothing to repoint
+  assert.ok(!script.includes('LinksMap'));
 });
 
 test('an assessment without a type library is refused', () => {
@@ -1022,12 +1016,178 @@ test('Elements.ContextRef takes the hub Position Ref, not its label', () => {
   // The host knows the hub is Position P8110 labelled CSB. ContextRef is an FK
   // by Ref, so the label would not resolve.
   const withCtx = engine.generatePatchScript(m, a, added, [], { hubRef: 'P8110', hubLabel: 'CSB' });
-  assert.match(withCtx, /EL_ContextRef\).setValue\("P8110"\)/);
+  assert.match(withCtx, /"contextRef":"P8110"/);
   assert.ok(!withCtx.includes('CHECK ContextRef'));
 
   // Standalone, only the label was ever known — say so rather than pretend.
   const without = engine.generatePatchScript(m, a, added, []);
-  assert.match(without, /EL_ContextRef\).setValue\("CSB"\)/);
+  assert.match(without, /"contextRef":"CSB"/);
   assert.match(without, /CHECK ContextRef: CSB is the hub label, not its Position Ref/);
 });
 
+
+test('a deleted DesignDB driver is marked IsDeleted, not dropped from the sheet', () => {
+  const m = gfModel(gfLinks(1));
+  const script = engine.generatePatchScriptMulti([{
+    model: m, assignments: {}, addedDrivers: [], presets: [], deletedDrivers: ['E50044'],
+  }]);
+  assert.match(script, /"E50044"/);
+  assert.match(script, /col_E_IsDeleted\)\.setValue\("Y"\)/);
+  // guarded: a Ref the workbook has not got is skipped rather than throwing
+  assert.match(script, /not found in Elements - skipped/);
+});
+
+test('a cable taken off a driver is repointed at the hub Position, not left behind', () => {
+  const m = gfModel(gfLinks(2));
+  const model = { ...m, baseline: { 'D1|OP.1': { toEntityType: 'Link', refs: ['L1', 'L2'] } } };
+  const script = engine.generatePatchScriptMulti([{
+    model,
+    assignments: { 'D1|OP.1': { toEntityType: 'Link', refs: ['L1'] } },
+    addedDrivers: [], presets: [],
+    context: { hubRef: 'P3238', hubLabel: 'HUB-A' },
+  }]);
+  // L2 goes back to the hub Position with no node; L1 stays on its driver
+  assert.match(script, /\{"ref":"L2","type":"Position","to":"P3238","node":""\}/);
+  assert.match(script, /\{"ref":"L1","type":"Element","to":"D1","node":"OP\.1"\}/);
+  // a blank node clears the cell rather than writing an empty string
+  assert.match(script, /col_X_FromLinkEndContextParameters\)\.clear\(ExcelScript\.ClearApplyTo\.contents\)/);
+  assert.ok(!script.includes('FromLinkEndContextParameters).setValue("")'));
+});
+
+test('without the hub Position Ref an unassigned cable is left alone, not guessed at', () => {
+  const m = gfModel(gfLinks(2));
+  const model = { ...m, baseline: { 'D1|OP.1': { toEntityType: 'Link', refs: ['L1', 'L2'] } } };
+  const script = engine.generatePatchScriptMulti([{
+    model,
+    assignments: { 'D1|OP.1': { toEntityType: 'Link', refs: ['L1'] } },
+    addedDrivers: [], presets: [],
+  }]);
+  assert.ok(!script.includes('"L2"'));
+});
+
+test('an OMIT cascades into LinksMap, sparing the cables this patch moves', () => {
+  const m = gfModel(gfLinks(2));
+  const model = { ...m, baseline: { 'E1|OP.1': { toEntityType: 'Link', refs: ['L1'] } } };
+  const script = engine.generatePatchScriptMulti([{
+    model,
+    assignments: { 'E1|OP.1': { toEntityType: 'Link', refs: [] } },
+    addedDrivers: [], presets: [], deletedDrivers: ['E1'],
+    context: { hubRef: 'P3238', hubLabel: 'HUB-G' },
+  }]);
+  // the Element goes, and so does anything still pointing at it — which is how a
+  // driver's mains feed and control link get cleaned up, since this tool never
+  // sees them
+  assert.match(script, /col_X_ToLinkEndContextRef\]\) === ref/);
+  assert.match(script, /cascaded to link/);
+  // L1 was moved to the tray by this same patch, so the cascade must leave it
+  assert.match(script, /const repointed = \[\n\s*"L1",/);
+  assert.match(script, /repointed.indexOf\(String\(data_X\[i\]\[col_X_Ref\]\)\) !== -1/);
+  // and child Elements cascade too, recursively
+  assert.match(script, /cascaded to child Element/);
+});
+
+test('every sheet the script opens is one it actually writes to', () => {
+  // a links-only change must not make the script depend on ElementTypes/Elements
+  const a = { 'D1|OP.1': { toEntityType: 'Link', refs: ['X1', 'X2'] } };
+  const links = engine.generatePatchScript(patchModel, a, []);
+  assert.match(links, /getWorksheet\("LinksMap"\)/);
+  assert.ok(!links.includes('getWorksheet("ElementTypes")'));
+  assert.ok(!links.includes('getWorksheet("Elements")'));
+  // and a used range is read once per sheet, never inside a loop (the helper's
+  // own getUsedRange only runs when a column has to be appended)
+  assert.equal(links.split('const data_').length - 1, 1);
+});
+
+test('a project with no driver attributes anywhere is an onboarding, not a fault', () => {
+  const bare = 'ElementTypeRef,ElementTypeName,Channels\n'
+    + 'ET-CCR-D-350-1CH-01,EldoLED - SoloDrive 360/A,1\n'
+    + 'ET-CVR-D-24-2CH-01,EldoLED - LIN200D-D2Z2D & Meanwell HLG-185-24,2\n';
+  const m = engine.buildModel(null, GF_HEAD + gfLinks(1) + '\n', bare);
+  assert.equal(engine.needsSetup(m), true);
+  assert.equal(engine.statedAttributes(m.inventory[0]), 0);
+
+  // one type stating one thing means somebody has started: an ordinary gap now,
+  // for the types page to flag, not a whole-project onboarding
+  const started = 'ElementTypeRef,ElementTypeName,Channels,MaxPower(W)\n'
+    + 'ET-CCR-D-350-1CH-01,EldoLED - SoloDrive 360/A,1,30\n'
+    + 'ET-CVR-D-24-2CH-01,EldoLED - LIN200D-D2Z2D & Meanwell HLG-185-24,2,\n';
+  const m2 = engine.buildModel(null, GF_HEAD + gfLinks(1) + '\n', started);
+  assert.equal(engine.needsSetup(m2), false);
+  assert.ok(engine.statedAttributes(m2.inventory.find((t) => t.typeRef === 'ET-CCR-D-350-1CH-01')) > 0);
+
+  // and the demo, which is a filled-in job, is never offered onboarding
+  assert.equal(engine.needsSetup(gfModel(gfLinks(1))), false);
+});
+
+test('the patch creates the V4.6 columns a pre-4.6 workbook has not got', () => {
+  const m = gfModel(gfLinks(1));
+  const script = engine.generatePatchScript(m, {}, [], [preset({ typeRef: 'T100', currentA: 0.35 })]);
+  // the ten driver attributes are addable; the columns that predate them are not
+  assert.match(script, /columnIndex\(WS_ET, "MaxPower\(W\)", true\)/);
+  assert.match(script, /columnIndex\(WS_ET, "NodeMaxForwardVoltage\(fV\)", true\)/);
+  assert.match(script, /columnIndex\(WS_ET, "Ref", false\)/);
+  assert.match(script, /columnIndex\(WS_ET, "InternalNotesText", false\)/);
+  // it appends to the header rather than throwing, and says so
+  assert.match(script, /ws.getCell\(0, at\).setValue\(name\)/);
+  assert.match(script, /Added column " \+ name \+ " to "/);
+  // and the used range is read after any column was added, so the array has it
+  assert.ok(script.indexOf('columnIndex(WS_ET, "MaxPower(W)", true)') < script.indexOf('const data_ET'));
+});
+
+test('a DT8 tuneable white driver is one node carrying two channels', () => {
+  // {<OP.1-2}, not {<OP.1,<OP.2} — two channels driving one strip, one address.
+  // A hyphen, never a colon: ':' is spoken for elsewhere in Parameters syntax.
+  const spec = engine.resolveSpec('EldoLED LIN-200D-D2Z2C2 & Meanwell HLG-185-24');
+  assert.equal(spec.name, 'EldoLED LinearDrive 200D-D2Z2C + Meanwell HLG-185-24');
+  assert.equal(spec.maxPowerW, 185);
+  assert.equal(spec.outputV, 24);
+  assert.equal(spec.addresses, 1);
+  assert.deepEqual(spec.nodeNames, ['OP.1-2']);
+  assert.equal(spec.outputs, 1);
+});
+
+test('the patch sweeps the banned colon out of LinksMap across the whole sheet', () => {
+  const m = gfModel(gfLinks(1));
+  const script = engine.generatePatchScriptMulti([{
+    model: m, assignments: {}, addedDrivers: [], presets: [], fixNodeSyntax: true,
+  }]);
+  assert.match(script, /p.split\(":"\).join\("-"\)/);
+  // every row of the sheet, not only this hub's cables
+  assert.match(script, /for \(let i = 1; i < data_X.length; i\+\+\)/);
+  assert.match(script, /Replaced ':' with '-' in/);
+  // and it is only emitted when asked for
+  const without = engine.generatePatchScriptMulti([{
+    model: m, assignments: {}, addedDrivers: [], presets: [],
+  }]);
+  assert.ok(!without.includes('split(":")'));
+});
+
+test('a banned node name is spotted wherever the type states it', () => {
+  const types = 'ElementTypeRef,Node,Driver Restrictions,Node Restrictions\n'
+    + 'ET-CVR-D-24-1CH-01,OP.1:2,185W | 24V,\n'
+    + 'ET-CCR-D-350-1CH-01,OP.1,30W | 0.35A,55fV\n';
+  const m = engine.buildModel(null, GF_HEAD + gfLinks(1) + '\n', types);
+  const found = engine.bannedNodes(m);
+  assert.equal(found.length, 1);
+  assert.equal(found[0].t.typeRef, 'ET-CVR-D-24-1CH-01');
+  assert.deepEqual(found[0].nodes, [{ from: 'OP.1:2', to: 'OP.1-2' }]);
+  assert.equal(engine.fixNodeName('OP.1:2'), 'OP.1-2');
+  assert.equal(engine.fixNodeName('OP.1'), 'OP.1', 'a clean name is left alone');
+});
+
+test('a ballast count alone does not mean the project has been filled in', () => {
+  // set 109311's shape: every driver type carries BallastCountPerUoM and a
+  // ControlType, and not one electrical rating. That is an unfilled project.
+  const types = 'ElementTypeRef,ElementTypeName,BallastCountPerUoM,ControlType,Channels\n'
+    + 'ET-CCR-D-1CH-500-01,EldoLED - SoloDrive 360/A,1,DALI,1\n'
+    + 'ET-CVR-D-24-2CH-01,EldoLED - LIN200D-D2Z2D,2,DALI,2\n';
+  const m = engine.buildModel(null, GF_HEAD + gfLinks(1) + '\n', types);
+  assert.equal(engine.statedAttributes(m.inventory[0]), 0);
+  assert.equal(engine.needsSetup(m), true);
+
+  // one real rating anywhere, and it is an ordinary gap instead
+  const started = types.replace('BallastCountPerUoM,ControlType,Channels', 'BallastCountPerUoM,ControlType,Channels,MaxPower(W)')
+    .replace('SoloDrive 360/A,1,DALI,1\n', 'SoloDrive 360/A,1,DALI,1,30\n')
+    .replace('LIN200D-D2Z2D,2,DALI,2\n', 'LIN200D-D2Z2D,2,DALI,2,\n');
+  assert.equal(engine.needsSetup(engine.buildModel(null, GF_HEAD + gfLinks(1) + '\n', started)), false);
+});

@@ -116,9 +116,10 @@ export async function exportCsv(assignments, addedDrivers) {
 
 // `context` carries the host's hubRef — Elements.ContextRef needs the Position
 // Ref, and the CSVs only ever carry the label.
-export async function generatePatch(assignments, addedDrivers, presets, context) {
+export async function generatePatch(assignments, addedDrivers, presets, context, deletedDrivers, fixNodeSyntax) {
   return engine.generatePatchScriptMulti([{
     model, assignments, addedDrivers, presets: Object.values(presets || {}), context,
+    deletedDrivers, fixNodeSyntax,
   }]);
 }
 

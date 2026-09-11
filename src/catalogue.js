@@ -90,10 +90,14 @@ export const PARTS = [
   { name: 'EldoLED LinearDrive 200D-D2Z2D', re: /200d?d2z2d/, powerType: 'CV', kind: 'dcdc',
     maxPowerW: 200, outputs: 2, addresses: 2, controlType: 'DALI', page: 105745, common: true },
   // The tuneable-white one, written D2Z2C2 on the datasheet. DT8 drives a dynamic
-  // white fitting from ONE address across both outputs, which is what separates it
-  // from the D2Z2D and why its ref is 1CH, not 2CH.
+  // white fitting from ONE address across both channels — and, because those two
+  // channels drive a single strip, from ONE node: {<OP.1-2}, not {<OP.1,<OP.2}.
+  // Two separately connectable outputs would be two nodes; these are not.
+  // The separator is a hyphen: ':' is spoken for elsewhere in Parameters syntax
+  // and is banned in a node name (page 140180).
   { name: 'EldoLED LinearDrive 200D-D2Z2C', re: /200d?d2z2c/, powerType: 'CV', kind: 'dcdc',
-    maxPowerW: 192, outputs: 2, addresses: 1, controlType: 'DALI', page: 106074,
+    maxPowerW: 192, outputs: 1, addresses: 1, nodeNames: ['OP.1-2'],
+    controlType: 'DALI', page: 106074,
     note: 'DALI-2 DT8, dynamic white — must be on a DT8 control system, and the LightShape profile set' },
   // 144W per output is 6A at 24V — derived from the rail, not fixed.
   { name: 'EldoLED LinearDrive 720D', re: /lin[a-z]*720/, powerType: 'CV', kind: 'dcdc',

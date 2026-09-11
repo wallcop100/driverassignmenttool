@@ -47,6 +47,8 @@ export const initialState = {
   prefs: DEFAULT_PREFS, // persisted UI prefs (label config)
   presets: {},          // typeRef -> driver type preset patched/invented here
   demo: false,          // demo dataset loaded → show the tutorial
+  deletedDrivers: [],   // refs of DesignDB drivers to mark IsDeleted in the patch
+  fixNodeSyntax: false, // sweep banned ':' nodes out of LinksMap in the patch
   context: null,        // embed mode: { systemSetId, hubRef, hubLabel } from the host
   view: { page: 'landing' },
 };
@@ -56,12 +58,35 @@ const CLEAR_MODES = { selectedLinks: [], suggestions: null, focusNode: null, dis
 const cloneAssignments = (a) =>
   Object.fromEntries(Object.entries(a).map(([k, v]) => [k, { ...v, refs: [...v.refs] }]));
 
+// An existing ElementType in the shape a preset is held in, so a correction that
+// only touches the node names leaves every rating exactly as the DesignDB has it.
+const typeAsPreset = (t) => ({
+  typeRef: t.typeRef,
+  name: t.name ?? '',
+  powerType: t.powerType ?? null,
+  maxPowerW: t.maxPowerW ?? null,
+  currentA: t.currentA ?? null,
+  outputVoltageV: t.outputVoltageV ?? null,
+  outputs: t.nodes?.length ?? 1,
+  addresses: t.ballast ?? null,
+  nodeNames: t.nodes?.map((n) => n.name) ?? null,
+  nodeMaxLoadW: t.nodes?.[0]?.maxLoadW ?? null,
+  nodeMaxFvV: t.nodes?.[0]?.maxFvV ?? null,
+  nodeCurrentA: t.nodeCurrentA ?? null,
+  controlType: t.controlType ?? null,
+  invented: false,
+});
+
 // every mutation pushes the prior state onto undo and drops the redo stack
 function withUndo(state, next) {
   return {
     ...state,
     ...next,
-    undo: [...state.undo, { assignments: state.assignments, addedDrivers: state.addedDrivers }],
+    undo: [...state.undo, {
+      assignments: state.assignments,
+      addedDrivers: state.addedDrivers,
+      deletedDrivers: state.deletedDrivers,
+    }],
     redo: [],
   };
 }
@@ -163,6 +188,79 @@ export function reducer(state, action) {
       });
     }
 
+    // Removing a driver is two different things. One added here has no row in
+    // the workbook yet, so it simply stops existing. One that is really in the
+    // DesignDB cannot be un-added: the row is marked IsDeleted and patched, the
+    // same way the workbook would have it done by hand.
+    case 'REMOVE_DRIVER': {
+      const { ref } = action;
+      const added = state.addedDrivers.some((d) => d.ref === ref);
+      const assignments = cloneAssignments(state.assignments);
+      // its cables go back to the tray either way — a deleted driver cannot keep
+      // them, and the patch has to repoint them somewhere
+      for (const key of Object.keys(assignments)) {
+        if (key.split('|')[0] === ref) delete assignments[key];
+      }
+      return withUndo(state, {
+        assignments,
+        addedDrivers: state.addedDrivers.filter((d) => d.ref !== ref),
+        deletedDrivers: added ? state.deletedDrivers : [...new Set([...state.deletedDrivers, ref])],
+      });
+    }
+
+    case 'RESTORE_DRIVER': {
+      const { ref } = action;
+      const driver = state.model.drivers.find((d) => d.ref === ref);
+      const assignments = cloneAssignments(state.assignments);
+      for (const node of driver?.nodes ?? []) {
+        const key = keyOf(ref, node.name);
+        assignments[key] = assignments[key] ?? { toEntityType: '', refs: [] };
+      }
+      return withUndo(state, {
+        assignments,
+        deletedDrivers: state.deletedDrivers.filter((r) => r !== ref),
+      });
+    }
+
+    // Correct every banned ':' node on the job at once. A rename, not a move:
+    // the node keeps its identity, so the cables on it stay on it — the
+    // assignment keys are just re-spelled. The LinksMap half is swept across the
+    // whole sheet by the patch, because a node written this way is used by hubs
+    // this session has never opened.
+    case 'FIX_NODE_SYNTAX': {
+      const { types } = action;      // [{ typeRef, nodeNames }]
+      if (!types.length) return state;
+      const presets = { ...state.presets };
+      const byType = new Map();
+      for (const t of types) {
+        const cur = state.model.inventory.find((x) => x.typeRef === t.typeRef);
+        if (!cur) continue;
+        byType.set(t.typeRef, t.nodeNames);
+        presets[t.typeRef] = {
+          ...(presets[t.typeRef] ?? typeAsPreset(cur)),
+          typeRef: t.typeRef,
+          nodeNames: t.nodeNames,
+          outputs: t.nodeNames.length,
+        };
+      }
+      // re-spell the assignment keys of every driver of those types
+      const drivers = [...state.model.drivers, ...state.addedDrivers];
+      const rename = new Map();
+      for (const d of drivers) {
+        const names = byType.get(d.typeRef);
+        if (!names) continue;
+        const old = state.model.inventory.find((x) => x.typeRef === d.typeRef)?.nodes ?? [];
+        old.forEach((n, i) => {
+          if (names[i] && names[i] !== n.name) rename.set(keyOf(d.ref, n.name), keyOf(d.ref, names[i]));
+        });
+      }
+      const assignments = {};
+      for (const [k, v] of Object.entries(state.assignments)) {
+        assignments[rename.get(k) ?? k] = { ...v, refs: [...v.refs] };
+      }
+      return withUndo(state, { presets, assignments, fixNodeSyntax: true });
+    }
+
     case 'APPLY_PLAN': {
       // A whole suggestion — drivers plus their cables — is ONE undo step: it was
       // one decision, and undoing it a driver at a time would be unusable.
@@ -190,14 +288,22 @@ export function reducer(state, action) {
     case 'UNDO': {
       if (!state.undo.length) return state;
       const prev = state.undo[state.undo.length - 1];
-      const snap = { assignments: state.assignments, addedDrivers: state.addedDrivers };
+      const snap = {
+        assignments: state.assignments,
+        addedDrivers: state.addedDrivers,
+        deletedDrivers: state.deletedDrivers,
+      };
       return { ...state, ...prev, undo: state.undo.slice(0, -1), redo: [...state.redo, snap], ...CLEAR_MODES };
     }
 
     case 'REDO': {
       if (!state.redo.length) return state;
       const nextS = state.redo[state.redo.length - 1];
-      const snap = { assignments: state.assignments, addedDrivers: state.addedDrivers };
+      const snap = {
+        assignments: state.assignments,
+        addedDrivers: state.addedDrivers,
+        deletedDrivers: state.deletedDrivers,
+      };
       return { ...state, ...nextS, redo: state.redo.slice(0, -1), undo: [...state.undo, snap], ...CLEAR_MODES };
     }
 
@@ -207,6 +313,8 @@ export function reducer(state, action) {
         model: action.saved.model,
         assignments: action.saved.assignments,
         addedDrivers: action.saved.addedDrivers ?? [],
+        deletedDrivers: action.saved.deletedDrivers ?? [],
+        fixNodeSyntax: !!action.saved.fixNodeSyntax,
         prefs: { ...DEFAULT_PREFS, ...(action.saved.prefs ?? {}) },
         // the hub's own saved presets, plus any made in another hub since
         presets: { ...(action.saved.presets ?? {}), ...(action.presets ?? {}) },
@@ -270,11 +378,12 @@ export function reducer(state, action) {
 
 // ---- derived helpers ----
 
-export function effectiveDrivers(model, addedDrivers) {
+export function effectiveDrivers(model, addedDrivers, deletedDrivers) {
   const byType = Object.fromEntries(model.inventory.map((t) => [t.typeRef, t]));
+  const gone = new Set(deletedDrivers ?? []);
   return [
-    ...model.drivers,
-    ...addedDrivers.map((a) => ({ ...byType[a.typeRef], ref: a.ref, zone: a.zone, added: true })),
+    ...model.drivers.filter((d) => !gone.has(d.ref)),
+    ...(addedDrivers ?? []).map((a) => ({ ...byType[a.typeRef], ref: a.ref, zone: a.zone, added: true })),
   ];
 }
 
@@ -354,12 +463,13 @@ export function linkDiffRows(state) {
 // counting only cables reported 0 changes on a session that had rewritten a
 // driver's ratings, which reads as nothing to patch.
 export function changeCount(state) {
-  return linkDiffRows(state).length + provisionalTypes(state).length;
+  return linkDiffRows(state).length + provisionalTypes(state).length
+    + (state.addedDrivers?.length ?? 0) + (state.deletedDrivers?.length ?? 0);
 }
 
-export function zoneStats(zone, model, assignments, addedDrivers, flags) {
+export function zoneStats(zone, model, assignments, addedDrivers, flags, deletedDrivers) {
   const links = linksByRef(model);
-  const drivers = effectiveDrivers(model, addedDrivers).filter((d) => d.zone === zone);
+  const drivers = effectiveDrivers(model, addedDrivers, deletedDrivers).filter((d) => d.zone === zone);
   const refs = new Set(drivers.map((d) => d.ref));
   let load = 0;
   let capacity = 0;

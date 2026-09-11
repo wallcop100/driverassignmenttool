@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import * as api from '../api.js';
-import { resolveSpec } from '../engine.js';
+import { bannedNodes, fixNodeName, needsSetup, resolveSpec, statedAttributes } from '../engine.js';
 import { effectiveDrivers } from '../state.js';
 import { canFill, canReplace, currentOptions, faults, fixPreset, fmt } from '../typeFaults.js';
 import FaultDialog from './FaultDialog.jsx';
 import NewTypeDialog from './NewTypeDialog.jsx';
+import SetupWizard from './SetupWizard.jsx';
 import PresetEditor, { draftFrom, toPreset } from './PresetEditor.jsx';
 import TypeCard from './TypeCard.jsx';
 
@@ -24,8 +25,22 @@ export default function TypesPage({ state, dispatch, zone }) {
   const [adding, setAdding] = useState(false);
   const [warn, setWarn] = useState(null);
   const [plan, setPlan] = useState(null);
+  const [setup, setSetup] = useState(false);
 
-  const drivers = useMemo(() => effectiveDrivers(model, addedDrivers), [model, addedDrivers]);
+  // Nothing in this tool works against a project whose driver types state none
+  // of the V4.6 attributes, and the fix is the same few rows for the whole job.
+  // Judged on what the DesignDB says, so it stays true while you fill them in
+  // here: the offer only goes away once it is patched and re-sent.
+  const unset = model.inventory.filter((t) => statedAttributes(t) === 0).length;
+  const onboarding = needsSetup(model);
+
+  // ':' is banned inside a node name. Correcting it is a rename, so it is safe
+  // to do for the whole job at once — and it has to be, because a node written
+  // that way is referenced from hubs this session never opens.
+  const banned = useMemo(() => bannedNodes(model), [model]);
+
+  const drivers = useMemo(() => effectiveDrivers(model, addedDrivers, state.deletedDrivers),
+    [model, addedDrivers, state.deletedDrivers]);
   const usage = useMemo(() => {
     const by = new Map();
     for (const d of drivers) {
@@ -104,6 +119,62 @@ export default function TypesPage({ state, dispatch, zone }) {
         <button className="btn btn-sm btn-primary" onClick={() => setAdding(true)}>New type</button>
       </div>
 
+      {banned.length > 0 && (
+        <div className="dp-suggest sw-offer is-banned">
+          <div>
+            <b>
+              {banned.length} driver type{banned.length === 1 ? '' : 's'} use a colon in a node name
+            </b>
+            <div className="text-secondary small">
+              {banned.flatMap((b) => b.nodes.map((n) => `${n.from} → ${n.to}`)).join(' · ')}
+              {'. '}
+              The colon is spoken for elsewhere in Parameters syntax. Correcting it is a
+              rename, so nothing moves off its node. The patch sweeps LinksMap too,
+              including hubs not open here.
+            </div>
+          </div>
+          <button className="btn btn-sm btn-primary ms-auto"
+            onClick={() => dispatch({
+              type: 'FIX_NODE_SYNTAX',
+              types: banned.map((b) => ({
+                typeRef: b.t.typeRef,
+                nodeNames: b.t.nodes.map((n) => fixNodeName(n.name)),
+              })),
+            })}>
+            Correct {banned.reduce((n, b) => n + b.nodes.length, 0)} node
+            {banned.reduce((n, b) => n + b.nodes.length, 0) === 1 ? '' : 's'}
+          </button>
+        </div>
+      )}
+
+      {onboarding && (
+        <div className="dp-suggest sw-offer">
+          <div>
+            <b>None of this project’s {model.inventory.length} driver types have their attributes filled in</b>
+            <div className="text-secondary small">
+              Watts, current, outputs and forward voltage all live on ElementTypes.
+              Without them nothing can be sized or checked. The datasheet fills in
+              most of it; the patch adds the columns if the workbook predates them.
+            </div>
+          </div>
+          <button className="btn btn-sm btn-primary ms-auto" onClick={() => setSetup(true)}>
+            Fill them in
+          </button>
+        </div>
+      )}
+      {/* part way through: the offer becomes a count */}
+      {!onboarding && unset > 0 && Object.keys(presets).length > 0 && (
+        <div className="dp-suggest sw-offer is-part">
+          <div>
+            <b>{unset} of {model.inventory.length} driver types still have nothing filled in</b>
+            <div className="text-secondary small">Patch what you have, or carry on through the rest.</div>
+          </div>
+          <button className="btn btn-sm btn-outline-primary ms-auto" onClick={() => setSetup(true)}>
+            Carry on
+          </button>
+        </div>
+      )}
+
       {canSuggest && plan?.drivers.length > 0 && (
         <div className="dp-suggest">
           <div>
@@ -155,6 +226,10 @@ export default function TypesPage({ state, dispatch, zone }) {
       {adding && (
         <NewTypeDialog zone={zone} inventory={model.inventory} dispatch={dispatch}
           onClose={() => setAdding(false)} />
+      )}
+      {setup && (
+        <SetupWizard model={model} presets={presets} dispatch={dispatch}
+          onClose={() => setSetup(false)} />
       )}
     </div>
   );

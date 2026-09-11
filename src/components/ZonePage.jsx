@@ -43,9 +43,10 @@ export default function ZonePage({ state, dispatch, zone, onResetToCurrentSet })
   // #5 actionable = FAIL/MISMATCH; info = WARN (hidden from block styling unless toggled on)
   const shownFlags = showInfo ? flags : flags.filter((f) => f.level !== 'WARN');
   const flagIndex = useMemo(() => buildFlagIndex(shownFlags), [shownFlags]);
-  const stats = zoneStats(zone, model, assignments, addedDrivers, flags);
+  const stats = zoneStats(zone, model, assignments, addedDrivers, flags, state.deletedDrivers);
 
-  const zoneDrivers = effectiveDrivers(model, addedDrivers).filter((d) => d.zone === zone);
+  const zoneDrivers = effectiveDrivers(model, addedDrivers, state.deletedDrivers)
+    .filter((d) => d.zone === zone);
   // "N issues" popup: every actionable (FAIL/MISMATCH) flag belonging to a driver
   // in this zone — always shown regardless of the info-warnings toggle above.
   const zoneDriverRefs = useMemo(() => new Set(zoneDrivers.map((d) => d.ref)), [zoneDrivers]);
@@ -98,7 +99,7 @@ export default function ZonePage({ state, dispatch, zone, onResetToCurrentSet })
   // cables left the badge at zero on a session whose whole work was fixing a
   // type's ratings, which reads as nothing to patch.
   const typesPending = Object.keys(state.presets ?? {}).length;
-  const pendingCount = cablesPending + typesPending;
+  const pendingCount = cablesPending + typesPending + (state.deletedDrivers?.length ?? 0);
 
   return (
     <div className={`zone-page ${state.draggingLink ? 'is-dragging' : ''}`} style={{ '--zone-accent': accent }}>

@@ -14,14 +14,22 @@ export default function ReviewModal({ state, dispatch, onClose }) {
   const [allCopied, setAllCopied] = useState(false);
   const rows = linkDiffRows(state);
   const provisional = provisionalTypes(state);
-  // where a cable sits, written the way the sheet writes it
-  const at = (key) => (key ? outRef(key).replace('|', ' · ') : 'tray');
+  // Where a cable sits, written the way LinksMap writes it. A cable on no driver
+  // is not on nothing: its FromLinkEndContext is the hub Position, with no node.
+  const hubRef = state.context?.hubRef ?? null;
+  const at = (key) => {
+    if (key) return outRef(key).replace('|', ' · ');
+    return hubRef ?? `${state.context?.hubLabel ?? 'the hub'} (tray)`;
+  };
 
   // Drivers this session invented. They are appended to Elements under one
   // literal placeholder Ref, so every one of them needs a real Ref writing in
   // before the workbook is committed — which is a thing to say here, once, not
   // a flag to stamp on each row.
   const added = state.addedDrivers ?? [];
+  const deleted = (state.deletedDrivers ?? [])
+    .map((ref) => state.model.drivers.find((d) => d.ref === ref) ?? { ref })
+    .sort((a, b) => a.ref.localeCompare(b.ref));
 
   // Embedded, other hubs of this branch+set are sitting in storage with their
   // own models, so the workbook can be patched once for all of them.
@@ -47,7 +55,8 @@ export default function ReviewModal({ state, dispatch, onClose }) {
   const doPatch = async () => {
     setError(null);
     try {
-      const script = await api.generatePatch(state.assignments, state.addedDrivers, state.presets, state.context);
+      const script = await api.generatePatch(state.assignments, state.addedDrivers,
+        state.presets, state.context, state.deletedDrivers, state.fixNodeSyntax);
       await api.copyPatch(script);
       setPatchCopied(true);
       setTimeout(() => setPatchCopied(false), 2000);
@@ -73,7 +82,7 @@ export default function ReviewModal({ state, dispatch, onClose }) {
         <div className="modal-content">
           <div className="modal-header">
             <h5 className="modal-title">
-              Review changes ({rows.length + provisional.length + added.length})
+              Review changes ({rows.length + provisional.length + added.length + deleted.length})
             </h5>
             <button className="btn-close" onClick={onClose} />
           </div>
@@ -109,10 +118,8 @@ export default function ReviewModal({ state, dispatch, onClose }) {
                   </tbody>
                 </table>
                 <p className="text-secondary small rv-note">
-                  The patch overwrites the rating columns and nothing else on the row:
-                  <code> IsTBC</code> and <code> IsPropertiesTBC</code> are left as the
-                  workbook has them. Edits apply to every hub in this set, not just
-                  {' '}{state.context?.hubLabel ?? 'this one'}.
+                  Ratings only. Every other column on the row is left alone, and the
+                  edits apply across the set.
                 </p>
               </>
             )}
@@ -137,14 +144,62 @@ export default function ReviewModal({ state, dispatch, onClose }) {
                 <div className="rv-todo">
                   <span className="material-icons">edit_note</span>
                   <div>
-                    <b>Give each of these a Ref before committing.</b> They are appended
-                    under <code>{PLACEHOLDER_REF}</code> — one literal placeholder, the same
-                    on every row, because the tool cannot know what the workbook will
-                    number them. <code>Elements.Ref</code> has to be unique, and the
-                    cables above are pointed at {PLACEHOLDER_REF} too, so renaming a row
-                    means repointing its cables with it.
+                    <b>Give each row a Ref before committing.</b> All are appended as
+                    {' '}<code>{PLACEHOLDER_REF}</code>, and the cables below point at it too.
                   </div>
                 </div>
+              </>
+            )}
+
+            {state.fixNodeSyntax && (
+              <>
+                <h6 className="rv-sec">
+                  Node names corrected
+                  <span>LinksMap, whole sheet</span>
+                </h6>
+                <div className="rv-todo">
+                  <span className="material-icons">find_replace</span>
+                  <div>
+                    <b>Every <code>:</code> in a LinksMap node name becomes <code>-</code>.</b>{' '}
+                    A rename, so no cable changes node. It runs across the sheet, not
+                    just this hub.
+                  </div>
+                </div>
+              </>
+            )}
+
+            {deleted.length > 0 && (
+              <>
+                <h6 className="rv-sec">
+                  Drivers deleted
+                  <span>{deleted.length} Elements row{deleted.length === 1 ? '' : 's'}</span>
+                </h6>
+                <table className="table table-sm align-middle">
+                  <tbody>
+                    {deleted.map((d) => (
+                      <tr key={d.ref}>
+                        <td className="fw-semibold rv-ref">{outRef(d.ref)}</td>
+                        <td className="rv-ref text-secondary">{d.typeRef ?? ''}</td>
+                        <td className="text-secondary">marked <code>IsDeleted</code></td>
+                        <td className="text-end">
+                          <button className="btn btn-sm btn-link p-0" title="Keep this driver after all"
+                            onClick={() => dispatch({ type: 'RESTORE_DRIVER', ref: d.ref })}>
+                            <span className="material-icons small-icon">undo</span>
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {!hubRef && rows.some((r) => !r.to) && (
+                  <div className="rv-todo">
+                    <span className="material-icons">low_priority</span>
+                    <div>
+                      <b>Unassigned cables are not repointed.</b> Their LinksMap row
+                      needs the hub Position Ref, which only the host knows.
+                    </div>
+                  </div>
+                )}
               </>
             )}
 
@@ -182,7 +237,8 @@ export default function ReviewModal({ state, dispatch, onClose }) {
               </>
             )}
 
-            {!rows.length && !provisional.length && !added.length && (
+            {!rows.length && !provisional.length && !added.length && !deleted.length
+              && !state.fixNodeSyntax && (
               <p className="text-secondary">No changes against the imported baseline.</p>
             )}
             {error && <div className="alert alert-danger py-2">{error}</div>}

@@ -213,3 +213,66 @@ test('a corrected driver type counts as a change the host should hear about', ()
   assert.equal(st.linkDiffRows(edited).length, 0);
   assert.equal(st.changeCount(edited), 1);
 });
+
+test('removing an added driver forgets it; removing a real one marks it deleted', () => {
+  const base = {
+    ...initialState,
+    model: {
+      baseline: { 'D1|OP.1': { toEntityType: 'Link', refs: ['L1'] } },
+      drivers: [{ ref: 'D1', typeRef: 'T', zone: 'Z', nodes: [{ name: 'OP.1' }] }],
+      links: [], inventory: [{ typeRef: 'T', nodes: [{ name: 'OP.1' }] }],
+    },
+    assignments: {
+      'D1|OP.1': { toEntityType: 'Link', refs: ['L1'] },
+      'E5000X|OP.1': { toEntityType: 'Link', refs: ['L2'] },
+    },
+    addedDrivers: [{ ref: 'E5000X', typeRef: 'T', zone: 'Z' }],
+  };
+
+  // added here, so it never reached the workbook — nothing to delete
+  const gone = reducer(base, { type: 'REMOVE_DRIVER', ref: 'E5000X' });
+  assert.deepEqual(gone.addedDrivers, []);
+  assert.deepEqual(gone.deletedDrivers, []);
+  assert.ok(!('E5000X|OP.1' in gone.assignments), 'its cables go back to the tray');
+
+  // really in the design: the row gets marked, not removed
+  const del = reducer(base, { type: 'REMOVE_DRIVER', ref: 'D1' });
+  assert.deepEqual(del.deletedDrivers, ['D1']);
+  assert.ok(!('D1|OP.1' in del.assignments));
+  assert.deepEqual(st.effectiveDrivers(del.model, del.addedDrivers, del.deletedDrivers)
+    .map((d) => d.ref), ['E5000X'], 'a deleted driver stops being one of the hub’s');
+
+  // and it can be taken back
+  const back = reducer(del, { type: 'RESTORE_DRIVER', ref: 'D1' });
+  assert.deepEqual(back.deletedDrivers, []);
+  assert.ok('D1|OP.1' in back.assignments);
+});
+
+test('correcting a banned node name renames it and keeps every cable on it', () => {
+  const model = {
+    inventory: [{ typeRef: 'T-DT8', powerType: 'CV', maxPowerW: 185, outputVoltageV: 24,
+      ballast: 1, nodes: [{ name: 'OP.1:2', maxFvV: null, maxLoadW: null }] }],
+    drivers: [{ ref: 'E1', zone: 'Z', typeRef: 'T-DT8', nodes: [{ name: 'OP.1:2' }] }],
+    baseline: { 'E1|OP.1:2': { toEntityType: 'Link', refs: ['X1', 'X2'] } },
+    links: [],
+  };
+  const base = {
+    ...initialState,
+    model,
+    assignments: { 'E1|OP.1:2': { toEntityType: 'Link', refs: ['X1', 'X2'] } },
+  };
+  const fixed = reducer(base, {
+    type: 'FIX_NODE_SYNTAX',
+    types: [{ typeRef: 'T-DT8', nodeNames: ['OP.1-2'] }],
+  });
+  // the key is re-spelled and the cables come with it — a rename, not a move
+  assert.ok(!('E1|OP.1:2' in fixed.assignments));
+  assert.deepEqual(fixed.assignments['E1|OP.1-2'].refs, ['X1', 'X2']);
+  // one node still, and every rating left exactly as the DesignDB has it
+  assert.deepEqual(fixed.presets['T-DT8'].nodeNames, ['OP.1-2']);
+  assert.equal(fixed.presets['T-DT8'].outputs, 1);
+  assert.equal(fixed.presets['T-DT8'].maxPowerW, 185);
+  assert.equal(fixed.presets['T-DT8'].addresses, 1);
+  // and the patch is told to sweep LinksMap
+  assert.equal(fixed.fixNodeSyntax, true);
+});

@@ -65,8 +65,7 @@ export default function FlagDialog({ driver, flags, links, onClose }) {
 
         <div className="fd-foot">
           <span className="text-secondary small">
-            Checks run against what the ElementType states. A driver whose ratings
-            are wrong fails checks it should pass — correct the type on Driver types.
+            Checked against what the ElementType states, so wrong ratings give wrong checks.
           </span>
           <button className="btn btn-sm btn-link ms-auto" onClick={onClose}>Close</button>
         </div>

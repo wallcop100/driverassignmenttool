@@ -457,6 +457,51 @@ export function buildEstimate(assessmentText, typesText, presets) {
   };
 }
 
+// ':' is spoken for elsewhere in Parameters syntax, so it is banned inside a
+// node name (page 140180). A node written OP.1:2 means the same thing as OP.1-2
+// — one node carrying two physical outputs — so correcting it is a rename and
+// nothing moves: the node keeps its identity, and every cable on it stays on it.
+export const BANNED_NODE = /:/;
+export const fixNodeName = (name) => String(name ?? '').replace(/:/g, '-');
+
+// Every type whose Parameters use the banned form, with what each node becomes.
+export function bannedNodes(model) {
+  return (model?.inventory ?? [])
+    .map((t) => ({
+      t,
+      nodes: (t.nodes ?? []).filter((n) => BANNED_NODE.test(n.name))
+        .map((n) => ({ from: n.name, to: fixNodeName(n.name) })),
+    }))
+    .filter((x) => x.nodes.length > 0);
+}
+
+// A project that has not been onboarded to Lighting DesignDB V4.6: driver
+// ElementTypes exist, and not one of them states any of the ten attributes the
+// checks run on (page 140180). Nothing in this tool works against that — every
+// driver reads as undetermined, nothing can be sized, every check is skipped —
+// and the fix is the same nine or ten rows for the whole job, so it is worth
+// saying so once and walking through them rather than flagging each type.
+//
+// ANY type stating ANY of them means someone has started, and then this is not
+// an onboarding, it is an ordinary gap for the types page to flag.
+// Only the electrical ratings count. BallastCountPerUoM and ControlType are
+// commonly already filled in on a project that has never seen V4.6 — on set
+// 109311 every driver carries BallastCountPerUoM 1 and nothing else at all —
+// and neither of them on its own makes a driver sizeable or checkable. Counting
+// them said "somebody has started" about a project where nobody had.
+export function statedAttributes(t) {
+  const d = t.designDB ?? t;
+  const node = d.nodes?.[0] ?? {};
+  return [d.maxPowerW, d.currentA, d.outputVoltageV, node.maxLoadW, node.maxFvV, d.nodeCurrentA]
+    .filter((v) => v != null && v !== '').length;
+}
+
+export function needsSetup(model) {
+  const types = model?.inventory ?? [];
+  if (types.length < 1) return false;
+  return types.every((t) => statedAttributes(t) === 0);
+}
+
 // ---- validation (port of DriverHealthCheck.sql, 7 checks) ----
 function makeCtx(model) {
   return {
@@ -1160,94 +1205,238 @@ export function changedRows(model, assignments, addedDrivers) {
 // row, patch LinksMap's FromLinkEndContext* columns to point at the new
 // ElementRef+Node. Only rows that actually changed from the imported baseline
 // (or belong to a UI-added driver) are patched — same scope as the Review diff.
+const TYPE_SHEET = 'ElementTypes';
+const ELEMENT_SHEET = 'Elements';
+
+// ---- the ExcelScript patch -------------------------------------------------
+// Written to the house rules for DesignDB patch scripts (page 138351):
+//
+//   * one main(), wrapped in try/catch, nothing hard-coded by column number
+//   * used ranges read ONCE, before the loops, never inside them
+//   * every lookup guarded: a Ref the workbook has not got logs a warning and is
+//     skipped, it does not throw
+//   * a flag column is "Y" or cleared; a value is cleared with
+//     .clear(ExcelScript.ClearApplyTo.contents), never setValue("")
+//   * writing any data column on a row clears that row's IsPropertiesTBC
+//   * OMIT first, then CHANGE, then ADD
+//
+// It deviates in one place, deliberately: the rules ask for a single bulk
+// setValues() at the end, and this writes changed cells individually. Writing a
+// whole used range back would rewrite every cell of a live workbook to fix a
+// handful, and the expensive part — rescanning the sheet per row — is gone
+// either way.
 const esc = (v) => String(v).replace(/"/g, '\\"');
 
-const PATCH_HEADER = `//--DB Merge--//
-function main(DB:ExcelScript.Workbook) {
-	//Set Columns
-		//LinksMap
-		let LinksMap=DB.getWorksheet("LinksMap");
-		//Find ColumnIndex of core attributes
-			let LM_Ref=LinksMap.getCell(0,0).getEntireRow().find("Ref",{completeMatch:true}).getColumnIndex();
-			let LM_FromLinkEndContextType=LinksMap.getCell(0,0).getEntireRow().find("FromLinkEndContextType",{completeMatch:true}).getColumnIndex();
-			let LM_FromLinkEndContextRef=LinksMap.getCell(0,0).getEntireRow().find("FromLinkEndContextRef",{completeMatch:true}).getColumnIndex();
-			let LM_FromLinkEndContextParameters=LinksMap.getCell(0,0).getEntireRow().find("FromLinkEndContextParameters",{completeMatch:true}).getColumnIndex();
+// Column lookup that can ADD the column. The ten driver attributes arrived with
+// Lighting DesignDB V4.6, so a workbook made before it simply has no
+// MaxPower(W) column to find — and find() on a missing header throws, taking the
+// whole script with it. `add` columns are appended to the header row instead,
+// which is what makes onboarding an older workbook a single paste.
+const COL_HELPER = `  // Find a column by header. Columns listed as addable are appended to the
+`
+  + `  // header row when the workbook has not got them yet (pre-V4.6 books).
+`
+  + `  function columnIndex(ws: ExcelScript.Worksheet, name: string, add: boolean): number {
+`
+  + `    const found = ws.getCell(0, 0).getEntireRow().find(name, { completeMatch: true });
+`
+  + `    if (found) { return found.getColumnIndex(); }
+`
+  + `    if (!add) { throw new Error("Column not found: " + name); }
+`
+  + `    const at = ws.getUsedRange().getColumnCount();
+`
+  + `    ws.getCell(0, at).setValue(name);
+`
+  + `    console.log("Added column " + name + " to " + ws.getName());
+`
+  + `    return at;
+`
+  + `  }
 
-	//Patch
 `;
-const PATCH_FOOTER = '}';
 
-// ---- type presets -> ElementTypes patch ----
-// Column names are the DesignDB schema's own (schema_reference > ElementTypes),
-// found by header like every other column here, so a reordered sheet still works.
+const header = (sheet, code, cols, addable = []) => `    const WS_${code} = DB.getWorksheet("${sheet}");\n`
+  + cols.map((c) => `    const col_${code}_${c.replace(/[^A-Za-z0-9]/g, '')} = `
+    + `columnIndex(WS_${code}, "${c}", ${addable.includes(c)});\n`).join('')
+  // read AFTER any column was appended, so the array has it
+  + `    const data_${code} = WS_${code}.getUsedRange().getValues();\n`;
+
+const CLEAR = 'clear(ExcelScript.ClearApplyTo.contents)';
+const json = (rows) => rows.map((r) => `      ${JSON.stringify(r)},`).join('\n');
+
+// ---- LinksMap ----
+// A logical link can span several LinksMap rows sharing one Ref (a loop serving
+// many fittings), told apart by LinkRefRowKey — which the hub CSV does not carry.
+// In practice every row of a Ref shares its From end, so patching them all is
+// both right and necessary: patching only the first, as a bare find() does,
+// leaves the rest pointing at the old driver. The exception is a cable fed from
+// two places, whose rows genuinely differ. Those cannot be told apart without
+// the row key, so the script checks at run time and skips them with a warning
+// rather than collapsing both ends onto one driver.
+const LINK_COLS = ['Ref', 'FromLinkEndContextType', 'FromLinkEndContextRef',
+  'FromLinkEndContextParameters', 'ToLinkEndContextRef', 'IsDeleted', 'IsPropertiesTBC'];
+
+const linkSection = (patches) => `    // --- CHANGE: LinksMap From ends ---\n`
+  + `    const linkPatches = [\n${json(patches)}\n    ];\n`
+  + `    for (const p of linkPatches) {\n`
+  + `      const rows = [];\n`
+  + `      for (let i = 1; i < data_X.length; i++) {\n`
+  + `        if (String(data_X[i][col_X_Ref]) === p.ref) { rows.push(i); }\n`
+  + `      }\n`
+  + `      if (rows.length === 0) {\n`
+  + `        console.log("WARNING: " + p.ref + " not found in LinksMap - skipped.");\n`
+  + `        continue;\n`
+  + `      }\n`
+  + `      const ends = [];\n`
+  + `      for (const i of rows) {\n`
+  + `        const end = String(data_X[i][col_X_FromLinkEndContextType]) + "|"\n`
+  + `          + String(data_X[i][col_X_FromLinkEndContextRef]) + "|"\n`
+  + `          + String(data_X[i][col_X_FromLinkEndContextParameters]);\n`
+  + `        if (ends.indexOf(end) === -1) { ends.push(end); }\n`
+  + `      }\n`
+  + `      if (ends.length > 1) {\n`
+  + `        console.log("WARNING: " + p.ref + " has " + rows.length\n`
+  + `          + " rows with different From ends (fed from more than one place)."\n`
+  + `          + " Skipped - patch it by hand against LinkRefRowKey.");\n`
+  + `        continue;\n`
+  + `      }\n`
+  + `      for (const i of rows) {\n`
+  + `        WS_X.getCell(i, col_X_FromLinkEndContextType).setValue(p.type);\n`
+  + `        WS_X.getCell(i, col_X_FromLinkEndContextRef).setValue(p.to);\n`
+  + `        if (p.node) {\n`
+  + `          WS_X.getCell(i, col_X_FromLinkEndContextParameters).setValue("{" + p.node + "}");\n`
+  + `        } else {\n`
+  + `          WS_X.getCell(i, col_X_FromLinkEndContextParameters).${CLEAR};\n`
+  + `        }\n`
+  + `        WS_X.getCell(i, col_X_IsPropertiesTBC).${CLEAR};\n`
+  + `      }\n`
+  + `      console.log("Repointed " + p.ref + " (" + rows.length + " row(s)) at "\n`
+  + `        + p.to + (p.node ? " " + p.node : ""));\n`
+  + `    }\n\n`;
+
+// ---- ElementTypes ----
+// Patch-or-append: an existing Ref has its ratings written, one that is not there
+// is added. Ratings only. IsTBC and IsPropertiesTBC are the designer's, and
+// IsPropertiesTBC is cleared on a changed row per the house rule, not set.
+const TYPE_COLS = ['Ref', 'Name', 'Parameters', 'MaxPower(W)', 'OutputVoltage(V)',
+  'CurrentRange', 'NodeMaxPower(W)', 'NodeCurrent', 'BallastCountPerUoM', 'ControlType',
+  'NodeMaxForwardVoltage(fV)', 'IsPropertiesTBC', 'InternalNotesText'];
+
+// The driver attributes added in Lighting DesignDB V4.6 (page 140180). A book
+// from before it has none of them, so the patch creates the ones it needs rather
+// than failing on the first lookup. Ref/Name/IsPropertiesTBC/InternalNotesText
+// are NOT in here: they predate V4.6, and a workbook missing those is not an
+// ElementTypes sheet at all.
+const V46_COLS = ['Parameters', 'MaxPower(W)', 'OutputVoltage(V)', 'CurrentRange',
+  'NodeMaxPower(W)', 'NodeCurrent', 'BallastCountPerUoM', 'ControlType',
+  'NodeMaxForwardVoltage(fV)'];
+
+const NEW_TYPE_NOTE = 'Defined in the Driver Assignment Tool. Ratings supplied by hand, '
+  + 'not read from a datasheet - confirm against it before commit.';
+
+const typeSection = (types) => `    // --- CHANGE / ADD: ElementTypes ---\n`
+  + `    const typePatches = [\n${json(types)}\n    ];\n`
+  + `    let row_ET = data_ET.length;\n`
+  + `    for (const t of typePatches) {\n`
+  + `      let row = -1;\n`
+  + `      for (let i = 1; i < data_ET.length; i++) {\n`
+  + `        if (String(data_ET[i][col_ET_Ref]) === t.ref) { row = i; break; }\n`
+  + `      }\n`
+  + `      const isNew = row === -1;\n`
+  + `      if (isNew) {\n`
+  + `        row = row_ET;\n`
+  + `        row_ET++;\n`
+  + `        WS_ET.getCell(row, col_ET_Ref).setValue(t.ref);\n`
+  + `        WS_ET.getCell(row, col_ET_Name).setValue(t.name);\n`
+  + `        WS_ET.getCell(row, col_ET_InternalNotesText).setValue(${JSON.stringify(NEW_TYPE_NOTE)});\n`
+  + `      }\n`
+  + `      if (t.maxPowerW !== null) { WS_ET.getCell(row, col_ET_MaxPowerW).setValue(t.maxPowerW); }\n`
+  + `      if (t.outputVoltageV !== null) { WS_ET.getCell(row, col_ET_OutputVoltageV).setValue(t.outputVoltageV); }\n`
+  + `      if (t.currentA !== null) { WS_ET.getCell(row, col_ET_CurrentRange).setValue(t.currentA); }\n`
+  + `      WS_ET.getCell(row, col_ET_Parameters).setValue(t.parameters);\n`
+  + `      if (t.nodeMaxLoadW !== null) { WS_ET.getCell(row, col_ET_NodeMaxPowerW).setValue(t.nodeMaxLoadW); }\n`
+  + `      if (t.nodeCurrentA !== null) { WS_ET.getCell(row, col_ET_NodeCurrent).setValue(t.nodeCurrentA); }\n`
+  + `      if (t.addresses !== null) { WS_ET.getCell(row, col_ET_BallastCountPerUoM).setValue(t.addresses); }\n`
+  + `      if (t.controlType !== null) { WS_ET.getCell(row, col_ET_ControlType).setValue(t.controlType); }\n`
+  + `      if (t.nodeMaxFvV !== null) { WS_ET.getCell(row, col_ET_NodeMaxForwardVoltagefV).setValue(t.nodeMaxFvV); }\n`
+  + `      WS_ET.getCell(row, col_ET_IsPropertiesTBC).${CLEAR};\n`
+  + `      console.log((isNew ? "Added type " : "Updated type ") + t.ref);\n`
+  + `    }\n\n`;
+
+// ---- Elements ----
+// Quantity is left blank where it is 1: the schema assumes 1, and writing it
+// adds noise to every row the tool appends.
+const ELEM_COLS = ['Ref', 'Name', 'TypeRef', 'ContextType', 'ContextRef', 'Quantity',
+  'IsDeleted', 'IsPropertiesTBC'];
+
+// Soft-delete plus the cascade the house rules require. The LinksMap half is the
+// point: this tool only ever sees SECONDARY POWER cables, so a driver's mains
+// feed and its control link are invisible to it and nothing else would catch
+// them. Deleting the Element without them leaves links pointing at a deleted row.
 //
-// CurrentRange is in AMPS here, the same unit this app holds — a 350mA driver is
-// 0.35. schema_reference says milliamps and is wrong: page 135910 states amps
-// outright, and its worked example settles it physically (NodeCurrent 6 on an
-// output capped at 144W/24V is 6A, not 6mA). No conversion. The mA form appears
-// only in the type REF (ET-CCR-D-350-2CH-01), never in a cell.
-//
-// The node list lives in Parameters as {<OP.1,<OP.2} — one <-prefixed node per
-// LED output. That is the channel count, written like any other column.
-const TYPE_SHEET = 'ElementTypes';
-const TYPE_FIELDS = [
-  ['ET_Ref', 'Ref'],
-  ['ET_Name', 'Name'],
-  ['ET_Parameters', 'Parameters'],
-  ['ET_MaxPower', 'MaxPower(W)'],
-  ['ET_OutputVoltage', 'OutputVoltage(V)'],
-  ['ET_CurrentRange', 'CurrentRange'],
-  ['ET_NodeMaxPower', 'NodeMaxPower(W)'],
-  ['ET_NodeCurrent', 'NodeCurrent'],
-  ['ET_Ballast', 'BallastCountPerUoM'],
-  ['ET_ControlType', 'ControlType'],
-  ['ET_NodeMaxFv', 'NodeMaxForwardVoltage(fV)'],
-  ['ET_InternalNotes', 'InternalNotesText'],
-];
+// A cable this same patch repoints is exempt — it is not orphaned, it has been
+// moved, and OMIT runs before CHANGE so the cascade would otherwise delete the
+// row the repoint is about to rewrite.
+const deleteSection = (refs, keepLinks) => `    // --- OMIT: Elements, with cascade ---\n`
+  + `    const deletedRefs = [\n${json(refs)}\n    ];\n`
+  + `    const repointed = [\n${json(keepLinks)}\n    ];\n`
+  + `    for (const ref of deletedRefs) {\n`
+  + `      let row = -1;\n`
+  + `      for (let i = 1; i < data_E.length; i++) {\n`
+  + `        if (String(data_E[i][col_E_Ref]) === ref) { row = i; break; }\n`
+  + `      }\n`
+  + `      if (row === -1) {\n`
+  + `        console.log("WARNING: " + ref + " not found in Elements - skipped.");\n`
+  + `        continue;\n`
+  + `      }\n`
+  + `      WS_E.getCell(row, col_E_IsDeleted).setValue("Y");\n`
+  + `      // child Elements, recursively. A driver's children are normally\n`
+  + `      // generated _EE rows that never reach this sheet, so this usually does\n`
+  + `      // nothing - but it costs one pass and catches a real child if there is one.\n`
+  + `      let frontier = [ref];\n`
+  + `      while (frontier.length > 0) {\n`
+  + `        const parent = frontier.pop();\n`
+  + `        for (let i = 1; i < data_E.length; i++) {\n`
+  + `          if (String(data_E[i][col_E_ContextType]) === "Element"\n`
+  + `            && String(data_E[i][col_E_ContextRef]) === parent\n`
+  + `            && String(data_E[i][col_E_IsDeleted]) !== "Y") {\n`
+  + `            WS_E.getCell(i, col_E_IsDeleted).setValue("Y");\n`
+  + `            frontier.push(String(data_E[i][col_E_Ref]));\n`
+  + `            console.log("  cascaded to child Element " + String(data_E[i][col_E_Ref]));\n`
+  + `          }\n`
+  + `        }\n`
+  + `      }\n`
+  + `      // every link touching it, either end. A cable this patch is moving is\n`
+  + `      // not orphaned, so it is left for the CHANGE section.\n`
+  + `      for (let i = 1; i < data_X.length; i++) {\n`
+  + `        if (String(data_X[i][col_X_IsDeleted]) === "Y") { continue; }\n`
+  + `        if (repointed.indexOf(String(data_X[i][col_X_Ref])) !== -1) { continue; }\n`
+  + `        if (String(data_X[i][col_X_FromLinkEndContextRef]) === ref\n`
+  + `          || String(data_X[i][col_X_ToLinkEndContextRef]) === ref) {\n`
+  + `          WS_X.getCell(i, col_X_IsDeleted).setValue("Y");\n`
+  + `          console.log("  cascaded to link " + String(data_X[i][col_X_Ref]));\n`
+  + `        }\n`
+  + `      }\n`
+  + `      console.log("Soft-deleted " + ref + " with cascade.");\n`
+  + `    }\n\n`;
 
-const typeHeader = () => `\t\t//${TYPE_SHEET}\n`
-  + `\t\tlet ${TYPE_SHEET}=DB.getWorksheet("${TYPE_SHEET}");\n`
-  + TYPE_FIELDS.map(([v, col]) =>
-    `\t\t\tlet ${v}=${TYPE_SHEET}.getCell(0,0).getEntireRow().find("${col}",{completeMatch:true}).getColumnIndex();\n`).join('')
-  + '\n';
-
-// One block does patch-or-append: find the Ref, and when it isn't there write a
-// new row at the end of the used range instead.
-function typeBlock(t) {
-  const ref = esc(t.typeRef);
-  const set = (v, val) => `\t\t${TYPE_SHEET}.getCell(r,${v}).setValue(${val})\n`;
-  const q = (x) => `"${esc(x)}"`;
-  let out = `\t\t//${ref}\n\t\t{\n`
-    + `\t\tlet f=${TYPE_SHEET}.getCell(0,ET_Ref).getEntireColumn().find("${ref}",{completeMatch:true});\n`
-    + `\t\tlet r=f?f.getRowIndex():${TYPE_SHEET}.getUsedRange().getRowCount();\n`
-    + `\t\tif(!f){${TYPE_SHEET}.getCell(r,ET_Ref).setValue("${ref}")}\n`;
-  if (t.invented) out += `\t\tif(!f){${TYPE_SHEET}.getCell(r,ET_Name).setValue(${q(t.name || t.typeRef)})}\n`;
-  if (t.maxPowerW != null) out += set('ET_MaxPower', g(t.maxPowerW));
-  if (t.powerType === 'CV' && t.outputVoltageV != null) out += set('ET_OutputVoltage', g(t.outputVoltageV));
-  if (t.powerType === 'CC' && t.currentA != null) out += set('ET_CurrentRange', g(t.currentA));
-  out += set('ET_Parameters', q(`{${t.nodes.map((n) => `<${n.name}`).join(',')}}`));
-  const node = t.nodes[0] ?? {};
-  if (node.maxLoadW != null) out += set('ET_NodeMaxPower', g(node.maxLoadW));
-  if (t.nodeCurrentA != null) out += set('ET_NodeCurrent', g(t.nodeCurrentA));
-  if (t.ballast != null) out += set('ET_Ballast', g(t.ballast));
-  if (t.controlType) out += set('ET_ControlType', q(t.controlType));
-  if (node.maxFvV != null) out += set('ET_NodeMaxFv', g(node.maxFvV));
-  // IsTBC and IsPropertiesTBC are left alone, columns and all. Every correction
-  // used to arrive marked IsPropertiesTBC, which made the flag meaningless: a
-  // designer who marks a row is saying "I know this is unfinished", and a tool
-  // that marks every row it touches is saying nothing. They are the designer's
-  // to set in the workbook.
-  // Only a type that did not exist gets a note: patching an existing row's blanks
-  // is a correction, and overwriting someone's notes to say so would lose more
-  // than it explains.
-  if (t.invented) {
-    out += `\t\tif(!f){${TYPE_SHEET}.getCell(r,ET_InternalNotes).setValue(`
-      + q('Defined in the Driver Assignment Tool. Ratings supplied by hand, '
-        + 'not read from a datasheet - confirm against it before commit.')
-      + ')}\n';
-  }
-  return `${out}\t\t}\n\n`;
-}
+const addSection = (adds) => `    // --- ADD: Elements ---\n`
+  + `    const newElements = [\n${json(adds)}\n    ];\n`
+  + `    let row_E = data_E.length;\n`
+  + `    for (const el of newElements) {\n`
+  + `      WS_E.getCell(row_E, col_E_Ref).setValue(el.ref);\n`
+  + `      if (el.name) { WS_E.getCell(row_E, col_E_Name).setValue(el.name); }\n`
+  + `      WS_E.getCell(row_E, col_E_TypeRef).setValue(el.typeRef);\n`
+  + `      WS_E.getCell(row_E, col_E_ContextType).setValue("Position");\n`
+  + `      WS_E.getCell(row_E, col_E_ContextRef).setValue(el.contextRef);\n`
+  + `      if (el.quantity !== 1) { WS_E.getCell(row_E, col_E_Quantity).setValue(el.quantity); }\n`
+  + `      if (el.note) { console.log("NOTE: " + el.ref + " - " + el.note); }\n`
+  + `      row_E++;\n`
+  + `      console.log("Appended " + el.ref + " (" + el.typeRef + ") on " + el.contextRef);\n`
+  + `    }\n`
+  + `    console.log("Every appended row carries the placeholder Ref. "\n`
+  + `      + "Elements.Ref must be unique - give each one a real Ref, and repoint its cables.");\n\n`;
 
 // Presets worth patching: a correction to a type that really exists, or an
 // invented type something actually uses. A preset typed and then abandoned is
@@ -1265,83 +1454,29 @@ function patchablePresets(sessions) {
   return [...out.values()].sort((a, b) => a.typeRef.localeCompare(b.typeRef));
 }
 
-function patchBlock(ref, elementRef, node) {
-  const r = esc(ref);
-  return `		//${r}
-		LinksMap.getCell(LinksMap.getCell(0,LM_Ref).getEntireColumn().find("${r}",{completeMatch:true}).getRowIndex(),LM_FromLinkEndContextType).setValue("Element")
-		LinksMap.getCell(LinksMap.getCell(0,LM_Ref).getEntireColumn().find("${r}",{completeMatch:true}).getRowIndex(),LM_FromLinkEndContextRef).setValue("${esc(elementRef)}")
-		LinksMap.getCell(LinksMap.getCell(0,LM_Ref).getEntireColumn().find("${r}",{completeMatch:true}).getRowIndex(),LM_FromLinkEndContextParameters).setValue("{${esc(node)}}")
+const typeRow = (t) => ({
+  ref: t.typeRef,
+  name: t.name || t.typeRef,
+  parameters: `{${t.nodes.map((n) => `<${n.name}`).join(',')}}`,
+  maxPowerW: t.maxPowerW ?? null,
+  outputVoltageV: t.powerType === 'CV' ? t.outputVoltageV ?? null : null,
+  currentA: t.powerType === 'CC' ? t.currentA ?? null : null,
+  nodeMaxLoadW: t.nodes[0]?.maxLoadW ?? null,
+  nodeCurrentA: t.nodeCurrentA ?? null,
+  addresses: t.ballast ?? null,
+  controlType: t.controlType || null,
+  nodeMaxFvV: t.nodes[0]?.maxFvV ?? null,
+});
 
-`;
-}
-
-// One script from several saved sessions — the hubs of a branch/set are worked
-// one frame at a time, but the workbook is patched once. The body is a flat list
-// of per-link blocks, so merging is just concatenation in hub order.
-// ---- estimate -> Elements rows ----
-// The estimate produces drivers that do not exist yet, so this APPENDS to the
-// Elements sheet rather than patching anything. One row per hub + type carrying
-// a Quantity, which is why six identical drivers are one row and not six.
-//
-// Every row carries the same placeholder Ref by design (see PLACEHOLDER_REF).
-// Elements.Ref is meant to be unique, so the sheet holds duplicates until a
-// human gives each row a real one. Review says so rather than the patch marking
-// the rows IsPropertiesTBC: the flag is the designer's, and a row that needs a
-// Ref needs a Ref, not a note saying its properties are unconfirmed.
-const ELEMENT_SHEET = 'Elements';
-const ELEMENT_FIELDS = [
-  ['EL_Ref', 'Ref'],
-  ['EL_Name', 'Name'],
-  ['EL_TypeRef', 'TypeRef'],
-  ['EL_ContextType', 'ContextType'],
-  ['EL_ContextRef', 'ContextRef'],
-  ['EL_Quantity', 'Quantity'],
-];
-
-const elementHeader = () => `\t\t//${ELEMENT_SHEET}\n`
-  + `\t\tlet ${ELEMENT_SHEET}=DB.getWorksheet("${ELEMENT_SHEET}");\n`
-  + ELEMENT_FIELDS.map(([v, col]) =>
-    `\t\t\tlet ${v}=${ELEMENT_SHEET}.getCell(0,0).getEntireRow().find("${col}",{completeMatch:true}).getColumnIndex();\n`).join('')
-  // one running row index: each block appends the next row, so the used range is
-  // read once rather than re-measured after every write
-  + `\t\tlet EL_row=${ELEMENT_SHEET}.getUsedRange().getRowCount();\n\n`;
-
-function elementBlock(zone, line, note) {
-  const q = (x) => `"${esc(x)}"`;
-  const set = (v, val) => `\t\t${ELEMENT_SHEET}.getCell(EL_row,${v}).setValue(${val})\n`;
-  return `\t\t//${esc(zone)} · ${esc(line.typeRef)} × ${line.count}\n`
-    + (note ? `\t\t//${esc(note)}\n` : '')
-    + set('EL_Ref', q(PLACEHOLDER_REF))
-    + (line.name ? set('EL_Name', q(line.name)) : '')
-    + set('EL_TypeRef', q(line.typeRef))
-    + set('EL_ContextType', '"Position"')
-    + set('EL_ContextRef', q(zone))
-    + set('EL_Quantity', g(line.count))
-    + '\t\tEL_row++\n\n';
-}
-
-// The whole estimate as one script. No LinksMap section: at tender stage there
-// are no links to repoint.
-export function generateEstimatePatch(estimates) {
-  const body = (estimates || [])
-    .flatMap((z) => z.lines.map((l) => elementBlock(z.zone, l)))
-    .join('');
-  if (!body) return PATCH_HEADER + PATCH_FOOTER;
-  return PATCH_HEADER + elementHeader() + body + PATCH_FOOTER;
-}
-
-// A driver added in the tool does not exist in the workbook yet, so the links
-// repointed at it would otherwise name an Element that is not there. One row per
-// driver — not one per type with a Quantity, as the estimate does: these are
-// individual drivers with cables assigned to them one at a time, and the person
-// resolving the placeholder Refs needs a row per physical driver to resolve.
+// A driver added here does not exist in the workbook yet, so the cables repointed
+// at it would otherwise name an Element that is not there. One row per driver:
+// each has its own cables, and whoever resolves the placeholder Refs needs a row
+// per physical driver to resolve.
 //
 // Elements.ContextRef is a foreign key BY Ref, and a hub's zone label is
-// COALESCE(ExtRef, Ref) — on a project where the hub Positions carry ExtRefs
-// (P8110 labelled CSB) the label is not a key at all. The host tells us the real
-// Position Ref in dat:init's context, and it is the only place it appears: the
-// CSVs carry the label and nothing else. Without it, say so in the script rather
-// than writing a key that does not resolve.
+// COALESCE(ExtRef, Ref) — on a project whose hub Positions carry ExtRefs (P8110
+// labelled CSB) the label is not a key at all. The host sends the real Position
+// Ref in dat:init's context, the only place it appears.
 function addedElements(sessions) {
   const out = [];
   for (const sn of sessions || []) {
@@ -1349,40 +1484,126 @@ function addedElements(sessions) {
     const hubRef = sn.hubRef ?? sn.context?.hubRef ?? null;
     const hubLabel = sn.context?.hubLabel ?? null;
     for (const d of sn.addedDrivers ?? []) {
-      // one hub per session, so the context's ref is this driver's hub — unless
-      // the session is standalone, where only the label was ever known
       const known = hubRef && (!hubLabel || hubLabel === d.zone || hubRef === d.zone);
       out.push({
-        zone: known ? hubRef : d.zone,
-        label: d.zone,
-        resolved: !!known,
-        line: { typeRef: d.typeRef, count: 1, name: byType.get(d.typeRef)?.name || '' },
+        ref: PLACEHOLDER_REF,
+        name: byType.get(d.typeRef)?.name || '',
+        typeRef: d.typeRef,
+        contextRef: known ? hubRef : d.zone,
+        quantity: 1,
+        note: known ? '' : `CHECK ContextRef: ${d.zone} is the hub label, not its Position Ref`,
       });
     }
   }
   return out;
 }
 
+function deletedElements(sessions) {
+  const out = [];
+  for (const sn of sessions || []) {
+    for (const ref of sn.deletedDrivers ?? []) out.push(outRef(ref));
+  }
+  return [...new Set(out)].sort();
+}
+
+// Where a cable goes when it is on no driver: the hub Position, with no node.
+// That is what LinksMap holds for an unassigned cable, so returning one to the
+// tray is a patch like any other. Without the hub's Position Ref we cannot write
+// a valid one, so those are left alone rather than pointed somewhere wrong.
+function linkPatches(sessions) {
+  const out = [];
+  for (const sn of sessions || []) {
+    const hubRef = sn.hubRef ?? sn.context?.hubRef ?? null;
+    const rows = changedRows(sn.model, sn.assignments, sn.addedDrivers);
+    const onADriver = new Set(rows.flatMap((r) => r.refs));
+    for (const row of rows) {
+      for (const ref of row.refs) {
+        out.push({ ref, type: 'Element', to: row.elementRef, node: row.node });
+      }
+    }
+    if (!hubRef) continue;
+    const trayed = rows.flatMap((r) => (sn.model.baseline[r.key]?.refs ?? [])
+      .filter((ref) => !onADriver.has(ref)));
+    for (const ref of [...new Set(trayed)].sort()) {
+      out.push({ ref, type: 'Position', to: hubRef, node: '' });
+    }
+  }
+  return out;
+}
+
+function script(body) {
+  return '// Lighting DesignDB patch - Driver Assignment Tool\n'
+    + COL_HELPER
+    + 'function main(DB: ExcelScript.Workbook) {\n'
+    + '  try {\n'
+    + body
+    + '    console.log("Patch complete.");\n'
+    + '  } catch (e) {\n'
+    + '    console.log("Script error: " + e);\n'
+    + '    throw e;\n'
+    + '  }\n'
+    + '}\n';
+}
+
+// ':' is banned inside a node name, and a node written that way is referenced
+// from LinksMap rows belonging to hubs this session has never opened. So the
+// sweep runs against the whole sheet rather than this hub's cables: it is a
+// character swap that cannot change which node a cable is on.
+const sweepSection = () => `    // --- CHANGE: banned ':' in node names ---\n`
+  + `    let swept = 0;\n`
+  + `    for (let i = 1; i < data_X.length; i++) {\n`
+  + `      const p = String(data_X[i][col_X_FromLinkEndContextParameters]);\n`
+  + `      if (p.indexOf(":") === -1) { continue; }\n`
+  + `      WS_X.getCell(i, col_X_FromLinkEndContextParameters).setValue(p.split(":").join("-"));\n`
+  + `      swept++;\n`
+  + `    }\n`
+  + `    console.log("Replaced ':' with '-' in " + swept + " LinksMap node reference(s).");\n\n`;
+
 export function generatePatchScriptMulti(sessions) {
-  const body = (sessions || [])
-    .flatMap((s) => changedRows(s.model, s.assignments, s.addedDrivers))
-    .flatMap((row) => row.refs.map((ref) => patchBlock(ref, row.elementRef, row.node)))
-    .join('');
-  // Each preamble is emitted only when something needs it: those column lookups
-  // throw on a workbook that hasn't got them, and a session that added nothing
-  // must keep producing exactly the script it produced before.
-  const presets = patchablePresets(sessions);
-  const types = presets.length ? typeHeader() + presets.map(typeBlock).join('') : '';
-  const added = addedElements(sessions);
-  const elements = added.length
-    ? elementHeader() + added.map(({ zone, line, label, resolved }) => elementBlock(
-      zone, line,
-      resolved ? null : `CHECK ContextRef: ${label} is the hub label, not its Position Ref`,
-    )).join('')
-    : '';
-  // ElementTypes, then the Elements that use them, then the links that point at
-  // those Elements — the order a person would apply them by hand.
-  return PATCH_HEADER + types + elements + body + PATCH_FOOTER;
+  const links = linkPatches(sessions);
+  const sweep = (sessions || []).some((sn) => sn.fixNodeSyntax);
+  const types = patchablePresets(sessions).map(typeRow);
+  const adds = addedElements(sessions);
+  const omits = deletedElements(sessions);
+  if (!links.length && !types.length && !adds.length && !omits.length && !sweep) return script('');
+
+  // Each sheet is declared only if it is used: the column lookups throw on a
+  // workbook without them, and a session that changes nothing on a sheet must
+  // not make the script depend on it.
+  const needElements = adds.length > 0 || omits.length > 0;
+  // an OMIT cascades into LinksMap, so the sheet is needed even if no cable moved
+  const needLinks = links.length > 0 || omits.length > 0 || sweep;
+  const decl = [
+    needLinks ? header('LinksMap', 'X', LINK_COLS) : '',
+    types.length ? header(TYPE_SHEET, 'ET', TYPE_COLS, V46_COLS) : '',
+    needElements ? header(ELEMENT_SHEET, 'E', ELEM_COLS) : '',
+  ].join('');
+
+  // OMIT, then CHANGE, then ADD.
+  return script(decl + '\n'
+    + (omits.length ? deleteSection(omits, [...new Set(links.map((l) => l.ref))].sort()) : '')
+    + (types.length ? typeSection(types) : '')
+    + (sweep ? sweepSection() : '')
+    + (links.length ? linkSection(links) : '')
+    + (adds.length ? addSection(adds) : ''));
+}
+
+// ---- estimate -> Elements rows ----
+// The estimate produces drivers that do not exist yet, so this only APPENDS.
+// One row per hub + type carrying a Quantity, which is why six identical drivers
+// are one row and not six. No LinksMap section: at tender stage there are no
+// links to repoint.
+export function generateEstimatePatch(estimates) {
+  const adds = (estimates || []).flatMap((z) => z.lines.map((l) => ({
+    ref: PLACEHOLDER_REF,
+    name: l.name || '',
+    typeRef: l.typeRef,
+    contextRef: z.zone,
+    quantity: l.count,
+    note: '',
+  })));
+  if (!adds.length) return script('');
+  return script(`${header(ELEMENT_SHEET, 'E', ELEM_COLS)}\n${addSection(adds)}`);
 }
 
 export function generatePatchScript(model, assignments, addedDrivers, presets, context) {

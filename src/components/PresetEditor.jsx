@@ -47,7 +47,9 @@ export const draftFromPart = (driver, supply = null) => {
     outputVoltageV: p.outputV ?? '',
     outputs: p.outputs ?? 1,
     addresses: p.addresses ?? '',
-    nodeNames: null,
+    // a part may name its nodes: {<OP.1:2} is ONE node carrying two channels,
+    // which is how a DT8 tuneable white driver is written
+    nodeNames: p.nodeNames ?? null,
     nodeMaxLoadW: p.nodeMaxLoadW ?? '',
     nodeMaxFvV: p.maxFvV ?? '',
     nodeCurrentA: p.nodeCurrentA ?? '',

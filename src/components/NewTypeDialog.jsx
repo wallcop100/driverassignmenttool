@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { PARTS, combine } from '../engine.js';
+import { PARTS, combine, nextTypeRef } from '../engine.js';
 import PresetEditor, { draftFromPart, toPreset } from './PresetEditor.jsx';
 import { fmt } from '../typeFaults.js';
 
@@ -64,12 +64,25 @@ export default function NewTypeDialog({ zone, inventory, dispatch, onClose, onCr
   const needsCurrent = spec?.powerType === 'CC' && !(spec.minA != null && spec.minA === spec.maxA);
   const ready = !!part && (!needsPsu || supply) && (!needsCurrent || Number(currentA) > 0);
 
+  // draftFromPart leaves the Ref blank: only the full editor used to fill it in,
+  // from its own effect. So the dialog showed "—" where the Ref goes and both
+  // Create buttons returned early on the empty ref, doing nothing at all.
   const draft = useMemo(() => {
     if (!part) return null;
     const d = draftFromPart(part, needsPsu ? supply : null);
     const a = needsCurrent ? Number(currentA) / 1000 : (spec?.minA ?? '');
-    return { ...d, currentA: a === '' || Number.isNaN(a) ? '' : a };
-  }, [part, supply, currentA, needsPsu, needsCurrent]);
+    const withCurrent = { ...d, currentA: a === '' || Number.isNaN(a) ? '' : a };
+    return {
+      ...withCurrent,
+      typeRef: nextTypeRef(inventory, {
+        powerType: withCurrent.powerType,
+        currentA: withCurrent.currentA === '' ? null : Number(withCurrent.currentA),
+        outputVoltageV: withCurrent.outputVoltageV === '' ? null : Number(withCurrent.outputVoltageV),
+        addresses: withCurrent.addresses || withCurrent.outputs,
+        stem: withCurrent.stem,
+      }),
+    };
+  }, [part, supply, currentA, needsPsu, needsCurrent, inventory]);
 
   const create = (alsoAdd) => {
     const preset = toPreset(advanced ?? draft);
@@ -80,7 +93,7 @@ export default function NewTypeDialog({ zone, inventory, dispatch, onClose, onCr
     onClose();
   };
 
-  const proposedRef = draft ? toPreset(draft).typeRef : '';
+  const proposedRef = draft?.typeRef ?? '';
 
   return (
     <div className="nt-backdrop" onClick={(e) => e.target === e.currentTarget && onClose()}>
@@ -201,9 +214,9 @@ export default function NewTypeDialog({ zone, inventory, dispatch, onClose, onCr
 
         {!advanced && (
           <div className="nt-foot">
-            <button className="btn btn-sm btn-link p-0 me-auto" disabled={!ready}
+            <button className="btn btn-sm btn-link nt-all" disabled={!ready}
               onClick={() => setAdvanced(draft)}>
-              edit all fields
+              Edit all fields
             </button>
             <button className="btn btn-sm btn-outline-secondary" onClick={onClose}>Cancel</button>
             <button className="btn btn-sm btn-outline-primary" disabled={!ready}

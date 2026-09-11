@@ -97,6 +97,7 @@ export function saveSession(state) {
     model: state.model,
     assignments: state.assignments,
     addedDrivers: state.addedDrivers,
+    deletedDrivers: state.deletedDrivers,
     prefs: state.prefs,
     presets: state.presets,
     view: state.view,

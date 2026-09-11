@@ -21,7 +21,7 @@ export default function Landing({ state, dispatch }) {
   const zones = useMemo(() => {
     const assigned = assignedRefs(assignments);
     return model.zones.map((zone) => {
-      const s = zoneStats(zone, model, assignments, addedDrivers, flags);
+      const s = zoneStats(zone, model, assignments, addedDrivers, flags, state.deletedDrivers);
       const unassigned = model.links.filter((l) => l.zone === zone && !assigned.has(l.ref)).length;
       const mainTray = model.links.filter((l) => l.zone === zone && !assigned.has(l.ref) && !isProvision(l));
       const elig = computeEligibility(model, zone, assignments, addedDrivers);
@@ -33,7 +33,7 @@ export default function Landing({ state, dispatch }) {
         : 0;
       return { zone, ...s, unassigned, orphans, mode, units };
     }).sort(SORTS[sort]);
-  }, [model, assignments, addedDrivers, flags, sort]);
+  }, [model, assignments, addedDrivers, flags, sort, state.deletedDrivers]);
 
   return (
     <div className="container py-4" style={{ maxWidth: 860 }}>
