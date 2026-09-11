@@ -28,6 +28,11 @@
 // outputs and addresses are NOT the same number: a SoloDrive 560/A is two
 // outputs on one address, which is exactly what separates it from a DualDrive
 // 560/A (two outputs, two addresses). A ref's "1CH" counts addresses.
+//
+// `common` marks the parts actually specified on most jobs. They are the ones
+// offered when you open the new-type dialog; the rest of the catalogue is a
+// press or a search away. Everything here is a real part — the fold is about
+// what you reach for, not what is allowed.
 
 export const PARTS = [
   // ---- EldoLED constant current ----
@@ -36,16 +41,16 @@ export const PARTS = [
     kind: 'driver', controlType: 'DALI', page: 105740 },
   { name: 'EldoLED SoloDrive 360/A', re: /(?:solo|slo|sl0)[a-z]*360/, powerType: 'CC',
     maxPowerW: 30, minA: 0.15, maxA: 1.4, maxFvV: 55, outputs: 1, addresses: 1,
-    kind: 'driver', controlType: 'DALI', page: 105744 },
+    kind: 'driver', controlType: 'DALI', page: 105744 , common: true },
   { name: 'EldoLED SoloDrive 560/A', re: /(?:solo|slo|sl0)[a-z]*560/, powerType: 'CC',
     maxPowerW: 50, minA: 0.15, maxA: 1.4, maxFvV: 55, outputs: 2, addresses: 1,
-    kind: 'driver', controlType: 'DALI', page: 128706 },
+    kind: 'driver', controlType: 'DALI', page: 128706 , common: true },
   { name: 'EldoLED SoloDrive 20CA-E1Z0D', re: /(?:solo|slo)[a-z]*20ca/, powerType: 'CC',
     maxPowerW: 20, minA: 0.15, maxA: 1.05, maxFvV: 40, outputs: 1, addresses: 1,
     kind: 'driver', controlType: 'DALI', page: 105741 },
   { name: 'EldoLED DualDrive 560/A', re: /(?:dual|dl0|dlo)[a-z]*560/, powerType: 'CC',
     maxPowerW: 50, minA: 0.15, maxA: 1.4, maxFvV: 55, outputs: 2, addresses: 2,
-    kind: 'driver', controlType: 'DALI', page: 105742 },
+    kind: 'driver', controlType: 'DALI', page: 105742 , common: true },
   { name: 'EldoLED DualDrive 562/A', re: /(?:dual|dl0|dlo)[a-z]*562/, powerType: 'CC',
     maxPowerW: 50, minA: 0.15, maxA: 1.4, maxFvV: 55, outputs: 2, addresses: 1,
     kind: 'driver', controlType: 'DALI', page: 124310 },
@@ -72,17 +77,24 @@ export const PARTS = [
   { name: 'EldoLED LinearDrive 100/A', re: /lin[a-z]*100/, powerType: 'CV', kind: 'dcdc',
     maxPowerW: 100, outputs: 4, addresses: 4, controlType: 'DALI', page: 105850 },
   // Discontinued: kept so the refs still using it resolve, but not offered when
-  // adding. Set `discontinued` on anything else that stops being specified.
+  // adding — the LinearDrive 200D-D2Z2D replaced it, and the 200D-D2Z2C is the
+  // tuneable-white part. Set `discontinued` on anything else that stops being
+  // specified.
   { name: 'EldoLED LinearDrive 220D', re: /lin[a-z]*220/, powerType: 'CV', kind: 'dcdc',
     maxPowerW: 200, outputs: 2, addresses: 2, controlType: 'DALI', page: 137217,
     discontinued: true },
   { name: 'EldoLED LinearDrive 222D', re: /lin[a-z]*222/, powerType: 'CV', kind: 'dcdc',
     maxPowerW: 192, outputs: 2, addresses: 2, controlType: 'DMX', page: 105847,
     note: 'Spec page says "Outputs: 4" while its description says 2-channel — outputs unconfirmed' },
+  // What the 220D became. DT6, so two outputs on two addresses as before.
   { name: 'EldoLED LinearDrive 200D-D2Z2D', re: /200d?d2z2d/, powerType: 'CV', kind: 'dcdc',
-    maxPowerW: 200, outputs: 2, addresses: 2, controlType: 'DALI', page: 105745 },
+    maxPowerW: 200, outputs: 2, addresses: 2, controlType: 'DALI', page: 105745, common: true },
+  // The tuneable-white one, written D2Z2C2 on the datasheet. DT8 drives a dynamic
+  // white fitting from ONE address across both outputs, which is what separates it
+  // from the D2Z2D and why its ref is 1CH, not 2CH.
   { name: 'EldoLED LinearDrive 200D-D2Z2C', re: /200d?d2z2c/, powerType: 'CV', kind: 'dcdc',
-    maxPowerW: 192, outputs: 2, addresses: 2, controlType: 'DALI', page: 106074 },
+    maxPowerW: 192, outputs: 2, addresses: 1, controlType: 'DALI', page: 106074, common: true,
+    note: 'DALI-2 DT8, dynamic white — must be on a DT8 control system, and the LightShape profile set' },
   // 144W per output is 6A at 24V — derived from the rail, not fixed.
   { name: 'EldoLED LinearDrive 720D', re: /lin[a-z]*720/, powerType: 'CV', kind: 'dcdc',
     maxPowerW: 720, nodeCurrentA: 6, outputs: 4, addresses: 4,

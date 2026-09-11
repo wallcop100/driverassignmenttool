@@ -1,6 +1,5 @@
 import { useEffect, useReducer, useRef, useState } from 'react';
 import * as api from './api.js';
-import DriverPicker from './components/DriverPicker.jsx';
 import TypesPage from './components/TypesPage.jsx';
 import EstimatePage from './components/EstimatePage.jsx';
 import ImportScreen from './components/ImportScreen.jsx';
@@ -182,13 +181,9 @@ export default function App() {
     screen = <ImportScreen dispatch={dispatch} saved={saved} onResume={resume} onDiscard={discard} />;
   } else if (state.view.page === 'estimate') {
     screen = <EstimatePage state={state} dispatch={dispatch} zone={state.view.zone} />;
-  } else if (state.view.page === 'drivers') {
-    // Reached from a hub, so it is a picker. Without one there is nothing to add
-    // a driver to, and the types page is what was meant.
-    screen = state.view.zone
-      ? <DriverPicker state={state} dispatch={dispatch} zone={state.view.zone} />
-      : <TypesPage state={state} dispatch={dispatch} zone={null} />;
-  } else if (state.view.page === 'types') {
+  } else if (state.view.page === 'drivers' || state.view.page === 'types') {
+    // One screen. With a hub it adds a driver to it; without one it is the
+    // catalogue. 'types' is kept as a route because saved views point at it.
     screen = <TypesPage state={state} dispatch={dispatch} zone={state.view.zone ?? null} />;
   } else if (state.view.page === 'zone') {
     screen = <ZonePage state={state} dispatch={dispatch} zone={state.view.zone}

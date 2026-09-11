@@ -36,21 +36,27 @@ const cards = m.inventory
 
 const badge = (t) => `<span class="type-power is-${(t.powerType || 'unknown').toLowerCase()}">${t.powerType ?? '—'}</span>`;
 
-/* ---- the types page: one card per ElementType ---- */
-const cardHtml = cards.map(({ t, spec, f }) => {
+/* ---- the card, shared by both surfaces: only the actions differ ---- */
+const warnChip = (f) => (f.length
+  ? `<button class="tp-warn"><span class="material-icons">warning_amber</span>${f.length > 1 ? f.length + ' to check' : 'check this'}</button>`
+  : '');
+
+const card = ({ t, f }, actions, cls = '') => {
   const u = usage.get(t.typeRef);
-  return `<div class="tp-card${f.length ? ' is-off' : ''}">
+  return `<div class="tp-card${f.length ? ' is-off' : ''}${cls}">
     <div class="tp-card-top"><span class="tp-ref">${esc(t.typeRef)}</span></div>
     <div class="tp-line">${badge(t)}<span class="tp-name">${esc(t.name || '—')}</span></div>
-    <div class="tp-spec">${esc(ratingsOf(t))}</div>
-    ${f.length ? `<div class="tp-fault" title="${esc(f.map((x) => x[1]).join(' '))}">${esc(f.map((x) => x[0]).join(' · '))}</div>` : ''}
+    <div class="tp-spec">${esc(ratingsOf(t))}<span class="tp-ch"> · ${t.nodes?.length ?? 1} out${t.ballast ? ' · ' + t.ballast + 'CH' : ''}</span></div>
     <div class="tp-foot">
       <span class="tp-use">${u ? u.count + ' × ' + zoneList(u.zones) : 'unused'}</span>
-      <button class="tp-icon"><span class="material-icons">edit</span></button>
-      <button class="tp-icon"><span class="material-icons">more_vert</span></button>
+      ${warnChip(f)}${actions}
     </div>
   </div>`;
-}).join('');
+};
+
+const cardHtml = cards.map((c) => card(c,
+  '<button class="tp-icon"><span class="material-icons">edit</span></button>'
+  + '<button class="tp-icon"><span class="material-icons">more_vert</span></button>')).join('');
 
 // the ⋮ menu, opened on the one card that has both fixes to offer
 const flagged = cards.find(({ t, spec }) => canFill(t, spec) && canReplace(t, spec)) ?? cards[0];
@@ -71,29 +77,44 @@ const menuHtml = `<div class="tp-card is-off" style="max-width:320px">
 </div>`;
 
 /* ---- the picker: add a driver to a hub ---- */
-const pickerHtml = m.inventory
-  .map((t) => ({ t, f: faults(t, e.resolveSpec(t.name || t.typeRef)) }))
-  .sort((a, b) => (usage.get(b.t.typeRef)?.count ?? 0) - (usage.get(a.t.typeRef)?.count ?? 0))
-  .map(({ t, f }) => `<div class="pk-row${f.length ? ' is-off' : ''}">
-    <span class="pk-ref">${esc(t.typeRef)}</span>
-    <span class="pk-name">${esc(t.name || '—')}</span>
-    <span class="pk-desc"><span class="pk-pt is-${(t.powerType || 'unknown').toLowerCase()}">${t.powerType ?? '—'}</span>${esc(ratingsOf(t))} · ${t.nodes?.length ?? 1} out${t.ballast ? ` · ${t.ballast}CH` : ''}</span>
-    ${f.length ? '<span class="pk-warn"><span class="material-icons">warning_amber</span></span>' : ''}
-    <span class="pk-use">${usage.get(t.typeRef)?.count ?? 0}</span>
-    <span class="pk-add">add</span>
-  </div>`).join('');
+const inHub = new Set(m.drivers.filter((d) => d.zone === 'HUB-A').map((d) => d.typeRef));
+const pickerHtml = cards
+  .slice()
+  .sort((a, b) => (inHub.has(b.t.typeRef) - inHub.has(a.t.typeRef))
+    || (usage.get(b.t.typeRef)?.count ?? 0) - (usage.get(a.t.typeRef)?.count ?? 0))
+  .map((c) => card(c,
+    '<button class="tp-icon"><span class="material-icons">edit</span></button>'
+    + '<button class="tp-icon"><span class="material-icons">more_vert</span></button>'
+    + '<button class="btn btn-sm btn-primary tp-add">Add</button>',
+    inHub.has(c.t.typeRef) ? ' is-here' : '')).join('');
+
+/* ---- the warning, opened ---- */
+const fdCard = cards.find((c) => c.f.length > 1) ?? cards.find((c) => c.f.length);
+const faultHtml = `<div class="fd-dialog" style="box-shadow:none;border:1px solid #dbe3ee">
+  <div class="fd-head"><span class="fd-ref">${esc(fdCard.t.typeRef)}</span>
+    <span class="fd-name">${esc(fdCard.t.name || '—')}</span>
+    <button class="btn btn-sm btn-link ms-auto p-0">close</button></div>
+  <div class="fd-states"><span><b>${esc(ratingsOf(fdCard.t))}</b> in the DesignDB</span>
+    ${fdCard.spec ? `<span class="text-secondary">${esc(fdCard.spec.name)} spec page: ${fmt(fdCard.spec.maxPowerW)}W${fdCard.spec.minA != null ? ` · ${fdCard.spec.minA}–${fdCard.spec.maxA}A` : ''}${fdCard.spec.maxFvV != null ? ` · ${fdCard.spec.maxFvV}fV/out` : ''}</span>` : ''}</div>
+  <ul class="fd-list">${fdCard.f.map(([short, full]) => `<li><b>${esc(short)}</b><span>${esc(full)}</span></li>`).join('')}</ul>
+  <div class="fd-foot">
+    ${canFill(fdCard.t, fdCard.spec) ? `<button class="btn btn-sm btn-outline-primary">Fill blanks from ${esc(fdCard.spec.name)}</button>` : ''}
+    ${canReplace(fdCard.t, fdCard.spec) ? `<button class="btn btn-sm btn-outline-warning">Use the spec page (${fmt(fdCard.spec.maxPowerW)}W)</button>` : ''}
+    <button class="btn btn-sm btn-link ms-auto">Close</button>
+  </div>
+</div>`;
 
 /* ---- the new-type dialog: filters, then what they leave ---- */
 const seg = (vals, on) => `<div class="nt-seg">${vals.map((v) => `<button class="${v === on ? 'is-on' : ''}">${v}</button>`).join('')}</div>`;
-const matches = e.PARTS.filter((p) => p.kind !== 'supply' && !p.discontinued
-  && p.powerType === 'CC' && p.maxA != null && p.maxA >= 0.5);
+const all = e.PARTS.filter((p) => p.kind !== 'supply' && !p.discontinued);
+const matches = all.filter((p) => p.common);   // nothing asked yet, so the usual parts
 const dialogHtml = `<div class="nt-dialog" style="box-shadow:none;border:1px solid #dbe3ee">
   <div class="nt-head"><b>New driver type</b>
     <span class="text-secondary small">${matches.length} of ${e.PARTS.length} parts</span>
     <button class="btn btn-sm btn-link ms-auto p-0">close</button></div>
   <div class="nt-filters">
-    <div class="nt-filter"><span>Type</span>${seg(['CC', 'CV', 'any'], 'CC')}</div>
-    <label class="nt-filter"><span>Current ≥</span><input type="number" value="500"><em>mA</em></label>
+    <div class="nt-filter"><span>Type</span>${seg(['CC', 'CV', 'any'], 'any')}</div>
+    <label class="nt-filter"><span>Current ≥</span><input type="number" placeholder="mA"><em>mA</em></label>
     <label class="nt-filter"><span>Power ≥</span><input type="number" placeholder="W"><em>W</em></label>
     <div class="nt-filter"><span>Outputs</span>${seg(['1', '2', 'any'], 'any')}</div>
     <input class="form-control form-control-sm nt-q" placeholder="Filter by name…">
@@ -102,7 +123,8 @@ const dialogHtml = `<div class="nt-dialog" style="box-shadow:none;border:1px sol
     <span class="type-power is-${p.powerType.toLowerCase()}">${p.powerType}</span>
     <span class="nt-part-name">${esc(p.name)}</span>
     <span class="nt-part-spec">${p.maxPowerW != null ? fmt(p.maxPowerW) + 'W' : 'W set by the supply'}${p.minA != null ? ` · ${p.minA}–${p.maxA}A` : ''}${p.maxFvV != null ? ` · ${p.maxFvV}fV/out` : ''}</span>
-    <span class="nt-part-ch">${p.outputs ?? 1} out</span></div>`).join('')}</div>
+    <span class="nt-part-ch">${p.outputs ?? 1} out</span></div>`).join('')}
+    <button class="nt-more">Show the other ${all.length - matches.length} parts in the catalogue</button></div>
   <div class="nt-pick">
     <label class="nt-filter"><span>CurrentRange</span><input type="number" value="700"><em>mA</em></label>
     <span class="nt-ref">ET-CCR-D-700-1CH-01</span>
@@ -153,22 +175,19 @@ body{padding:24px;background:#f6f8fb}
 .dp-need{font-size:12px;color:#8a6d1f;background:#fdf6e3;border:1px solid #e2d7b4;border-radius:4px;padding:2px 8px}
 </style>
 </head><body>
-<div class="mockhead">Add a driver to a hub — the picker</div>
-<div class="frame"><div class="picker-page">
+<div class="mockhead">One screen. From a hub, each card gains an Add</div>
+<div class="frame"><div class="types-page">
   <div class="dp-head">
-    <button class="btn btn-sm btn-outline-secondary">← HUB-B1</button>
-    <h5 class="mb-0">Add a driver to HUB-B1</h5>
-    <input class="form-control form-control-sm ms-auto" style="max-width:240px" placeholder="Filter…">
+    <button class="btn btn-sm btn-outline-secondary">← HUB-A</button>
+    <h5 class="mb-0">Add a driver to HUB-A</h5>
+    <span class="text-secondary small">${m.inventory.length} types available · ${inHub.size} already in HUB-A</span>
+    <input class="form-control form-control-sm ms-auto" style="max-width:220px" placeholder="Filter…">
+    <button class="btn btn-sm btn-primary">New type</button>
   </div>
-  <div class="dp-suggest"><div><b>HUB-B1 has 26 cables and no drivers yet</b>
-    <div class="text-secondary small">4 × ET-CVR-D-24-2CH-01 would hold them, one ControlGroup each</div></div>
-    <button class="btn btn-sm btn-primary ms-auto">Add these 4 drivers</button></div>
-  <div class="pk-list">${pickerHtml}</div>
-  <div class="pk-foot"><button class="btn btn-sm btn-outline-primary">New type…</button>
-    <button class="btn btn-sm btn-link ms-auto">Manage types →</button></div>
+  <div class="tp-grid">${pickerHtml}</div>
 </div></div>
 
-<div class="mockhead">Driver types — the design's own ElementTypes, flagged first</div>
+<div class="mockhead">The same screen on its own — no Add, flagged first</div>
 <div class="frame"><div class="types-page">
   <div class="dp-head">
     <button class="btn btn-sm btn-outline-secondary">← Zones</button>
@@ -183,6 +202,9 @@ body{padding:24px;background:#f6f8fb}
 
 <div class="mockhead">The remedies, behind ⋮</div>
 <div class="frame">${menuHtml}</div>
+
+<div class="mockhead">The warning, opened — with the fixes beside the reason</div>
+${faultHtml}
 
 <div class="mockhead">✎ — the card opens to every ElementTypes field</div>
 <div class="frame"><div class="types-page"><div class="tp-grid"><div class="tp-card is-editing">

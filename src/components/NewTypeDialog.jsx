@@ -23,6 +23,14 @@ export default function NewTypeDialog({ zone, inventory, dispatch, onClose, onCr
   const [psu, setPsu] = useState('');
   const [currentA, setCurrentA] = useState('');
   const [advanced, setAdvanced] = useState(null); // a draft, once the editor is opened
+  const [showAll, setShowAll] = useState(false);
+
+  // A filter or a search is a question about the whole catalogue, so it answers
+  // from the whole catalogue. With nothing asked, the list is the parts actually
+  // specified on most jobs — thirty-odd rows is a catalogue to browse, not a
+  // choice to make.
+  const filtering = powerType !== 'any' || minA !== '' || minW !== ''
+    || outputs !== 'any' || q.trim() !== '';
 
   const matches = useMemo(() => {
     const a = minA === '' ? null : Number(minA) / 1000;
@@ -42,6 +50,10 @@ export default function NewTypeDialog({ zone, inventory, dispatch, onClose, onCr
       return true;
     });
   }, [powerType, minA, minW, outputs, q]);
+
+  const common = matches.filter((p) => p.common);
+  const shown = (filtering || showAll || !common.length) ? matches : common;
+  const folded = matches.length - shown.length;
 
   const part = PARTS.find((p) => p.name === chosen) ?? null;
   const supply = PARTS.find((p) => p.name === psu) ?? null;
@@ -75,7 +87,10 @@ export default function NewTypeDialog({ zone, inventory, dispatch, onClose, onCr
       <div className="nt-dialog" role="dialog" aria-label="New driver type">
         <div className="nt-head">
           <b>New driver type</b>
-          <span className="text-secondary small">{matches.length} of {PARTS.length} parts</span>
+          <span className="text-secondary small">
+            {shown.length} of {PARTS.length} parts
+            {filtering && matches.length !== shown.length && ` · ${matches.length} match`}
+          </span>
           <button className="btn btn-sm btn-link ms-auto p-0" onClick={onClose}>close</button>
         </div>
 
@@ -117,7 +132,7 @@ export default function NewTypeDialog({ zone, inventory, dispatch, onClose, onCr
         </div>
 
         <div className="nt-list">
-          {matches.map((p) => (
+          {shown.map((p) => (
             <button key={p.name} className={`nt-part ${chosen === p.name ? 'is-on' : ''}`}
               onClick={() => { setChosen(p.name); setAdvanced(null); }}>
               <span className={`type-power is-${p.powerType.toLowerCase()}`}>{p.powerType}</span>
@@ -134,6 +149,16 @@ export default function NewTypeDialog({ zone, inventory, dispatch, onClose, onCr
           ))}
           {!matches.length && (
             <div className="nt-empty">No datasheet part matches those filters.</div>
+          )}
+          {folded > 0 && (
+            <button type="button" className="nt-more" onClick={() => setShowAll(true)}>
+              Show the other {folded} part{folded === 1 ? '' : 's'} in the catalogue
+            </button>
+          )}
+          {showAll && !filtering && (
+            <button type="button" className="nt-more" onClick={() => setShowAll(false)}>
+              Show only the usual parts
+            </button>
           )}
         </div>
 
