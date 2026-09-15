@@ -244,10 +244,10 @@ test('save/load: an untouched hub', () => {
   const { saved } = roundTrip(HUB());
   // 210x40 takes a row of 90, the two 153.6x76.7 are too wide to share one so
   // they take 126.7 each: 343 tall in a 380 bay
-  assert.equal(saved.container.parameters, '[[380mm,343mm,150mm]]<1[380mm,343mm,150mm,0,0,0]>');
+  assert.equal(saved.container.parameters, '[[380mm,343mm,150mm]]<A.1[380mm,343mm,150mm,0,0,0]>');
   // the coordinate is relative to the hub the Element is contexted into, and the
   // bay is the discrete space it sits in - both, as page 100966 has them
-  assert.equal(saved.elements[0].contextParameters, '[50mm,25mm,0mm]<1>');
+  assert.equal(saved.elements[0].contextParameters, '[50mm,25mm,0mm]<A.1>');
   assert.equal(saved.elements[0].parameters, null, 'upright says nothing its type does not');
 });
 
@@ -257,7 +257,7 @@ test('save/load: moving a part within a bay', () => {
   const { saved } = roundTrip(moved);
   // C is at the bottom now, so it is the one sitting on the floor
   assert.equal(saved.elements[0].ref, 'C');
-  assert.match(saved.elements[0].contextParameters, /^\[50mm,25mm,0mm\]<1>$/);
+  assert.match(saved.elements[0].contextParameters, /^\[50mm,25mm,0mm\]<A\.1>$/);
 });
 
 test('save/load: moving a part to another bay writes a different discrete space', () => {
@@ -265,7 +265,7 @@ test('save/load: moving a part to another bay writes a different discrete space'
   const moved = hl.moveItem(bays, 'B', 1, 0);
   const { saved } = roundTrip(moved);
   const b = saved.elements.find((e) => e.ref === 'B');
-  assert.match(b.contextParameters, /<2>$/, 'bay 2');
+  assert.match(b.contextParameters, /<A\.2>$/, 'bay 2 of piece A');
   // bay 2 starts where bay 1 ends, then its own 50 of trunking
   assert.match(b.contextParameters, /^\[430mm,/);
   assert.deepEqual(bayNames(saved.container.parameters), ['1', '2'], 'the hub declares both bays');
@@ -294,7 +294,7 @@ test('save/load: a turned part is not confused with a genuinely square one', () 
 test('save/load: splitting into a new bay', () => {
   const { saved } = roundTrip(hl.splitToBay(HUB(), ['C']));
   assert.deepEqual(bayNames(saved.container.parameters), ['1', '2']);
-  assert.match(saved.elements.find((e) => e.ref === 'C').contextParameters, /<2>$/);
+  assert.match(saved.elements.find((e) => e.ref === 'C').contextParameters, /<A\.2>$/);
 });
 
 test('save/load: adding and removing a bay', () => {
@@ -477,117 +477,72 @@ test('joined bays keep every driver on the hub Position', () => {
   }
 });
 
-test('separating a bay makes it an enclosure Element named the way set 108908 names it', () => {
-  const bays = hl.addBay(HUB());
-  const moved = hl.moveItem(bays, 'C', 1, 0);
-  const saved = hl.save(moved, { container: POS, separate: [1] });
-
-  assert.equal(saved.slots.length, 1);
-  const enc = saved.slots[0];
-  assert.equal(enc.name, '#72.2', 'hub name, dot, bay number - as #72.2 under #72');
-  assert.equal(enc.contextType, 'Position', 'the enclosure sits on the hub Position');
-  assert.equal(enc.contextRef, 'P90001');
-  assert.equal(enc.isNew, true, 'its Ref is the workbook\'s to allocate');
-  assert.match(enc.parameters, /^\[\[380mm,/, 'and it states its own size');
-
-  assert.equal(enc.typeRef, hl.ENCLOSURE_TYPE, 'one generic wrapper type, not a size catalogue');
-  // the hub now states only the bay it still holds itself - bay 2's size went
-  // with bay 2, so the hub is a single 380 bay again, not the 710 it was
-  assert.deepEqual(bayNames(saved.container.parameters), ['1']);
-  assert.match(saved.container.parameters, /^\[\[380mm,/);
+test('separating a bay records it as a piece of its own, in spaces, with no Element', () => {
+  const bays = hl.moveItem(hl.addBay(HUB()), 'C', 1, 0);
+  const saved = hl.save(bays, { container: POS, separate: [1] });
+  assert.deepEqual(saved.slots, [], 'no enclosure Element unless asked for');
+  const names = hl.parseParams(saved.container.parameters).spaceList.map((sp) => sp.name);
+  assert.deepEqual(names, ['A.1', 'B.1'], 'bay 1 is piece A, bay 2 is piece B');
   assert.equal(saved.container.clear, false);
+  const c = saved.elements.find((e) => e.ref === 'C');
+  assert.equal(c.contextType, 'Position');
+  assert.equal(c.contextRef, 'P90001');
+  assert.match(c.contextParameters, /^\[50mm,.*<B\.1>$/, 'measured from its own piece, in its own group');
 });
 
-test('a driver in a separated bay is contexted into the bay, not the hub', () => {
+test('with enclosure Elements on, a split hub writes one per piece: both, not only the one broken out', () => {
   const bays = hl.moveItem(hl.addBay(HUB()), 'C', 1, 0);
-  const saved = hl.save(bays, { container: POS, separate: [1], wrapperRefs: { 1: 'E90215' } });
-
+  const saved = hl.save(bays, { container: POS, separate: [1], enclosures: true, pieceRefs: { A: 'E90214' } });
+  assert.deepEqual(saved.slots.map((b) => [b.name, b.ref, b.isNew, b.typeRef]),
+    [['#72.1', 'E90214', false, 'ET-PSU-ENC'], ['#72.2', null, true, 'ET-PSU-ENC']]);
+  assert.ok(saved.slots.every((b) => b.contextType === 'Position' && b.contextRef === 'P90001'));
+  assert.equal(saved.container.parameters, '', 'the sizes live on the pieces now');
+  assert.equal(saved.container.clear, true);
   const c = saved.elements.find((e) => e.ref === 'C');
   assert.equal(c.contextType, 'Element');
-  assert.equal(c.contextRef, 'E90215');
-  // and its coordinate is relative to the bay it is now in, not to the hub
-  // local to the bay: the 50 trunking inset still applies inside it, but the
-  // bay's own offset across the hub (a 380 pitch) is gone
-  assert.match(c.contextParameters, /^\[50mm,/);
-  assert.equal(hl.save(bays, { container: POS }).elements.find((e) => e.ref === 'C')
-    .contextParameters.startsWith('[430mm,'), true, 'unseparated it is 430 from the hub');
-  assert.doesNotMatch(c.contextParameters, /<\d/, 'the parent already says which bay');
-
-  // the others are untouched and still on the Position
-  for (const e of saved.elements.filter((x) => x.ref !== 'C')) {
-    assert.equal(e.contextType, 'Position');
-    assert.equal(e.contextRef, 'P90001');
-  }
-});
-
-test('a separated bay round trips back to the same drawing', () => {
-  const bays = hl.moveItem(hl.addBay(HUB()), 'C', 1, 0);
-  const opts = { container: POS, separate: [1], wrapperRefs: { 1: 'E90215' } };
-  const saved = hl.save(bays, opts);
-  const back = hl.load(saved, byRef(bays), opts);
-  assert.deepEqual(drawing(back, opts), drawing(bays, opts));
-  assert.deepEqual(hl.save(back, opts), saved, 'and saving it again is identical');
-});
-
-test('every bay separated: each is its own enclosure, the hub holds none directly', () => {
-  const bays = hl.moveItem(hl.addBay(HUB()), 'C', 1, 0);
-  const opts = { container: POS, separate: [0, 1], wrapperRefs: { 0: 'E90214', 1: 'E90215' } };
-  const saved = hl.save(bays, opts);
-
-  assert.deepEqual(saved.slots.map((b) => b.name), ['#72.1', '#72.2']);
-  // the parameters followed the bays out, so the Position states nothing - and
-  // says so loudly, because whatever is on that row has to be cleared
-  assert.equal(saved.container.parameters, '');
-  assert.equal(saved.container.clear, true);
-  assert.deepEqual([...new Set(saved.elements.map((e) => e.contextType))], ['Element']);
-  assert.deepEqual(drawing(hl.load(saved, byRef(bays), opts), opts), drawing(bays, opts));
-});
-
-test('joining a separated bay back puts its drivers on the Position again', () => {
-  const bays = hl.moveItem(hl.addBay(HUB()), 'C', 1, 0);
-  const split = hl.save(bays, { container: POS, separate: [1], wrapperRefs: { 1: 'E90215' } });
-  const joined = hl.save(bays, { container: POS, separate: [] });
-
-  assert.equal(split.elements.find((e) => e.ref === 'C').contextType, 'Element');
-  assert.equal(joined.elements.find((e) => e.ref === 'C').contextType, 'Position');
-  assert.deepEqual(joined.slots, [], 'the enclosure Element is no longer needed');
-  // the drawing is the same either way - separating is a record, not a move
-  assert.deepEqual(drawing(bays), drawing(bays));
-});
-
-test('two separated bays may come out different sizes, as #71.1 and #71.2 do', () => {
-  // one bay holds the tall stack, the other a single part
-  const bays = [[I('A'), I('B', 153.6, 76.7)], [I('C', 153.6, 76.7)]];
-  const saved = hl.save(bays, { container: POS, separate: [0, 1] });
+  assert.equal(c.contextRef, null, 'the new piece has no Ref yet');
+  assert.match(c.contextParameters, /^\[50mm,.*<1>$/);
+  assert.ok(saved.elements.filter((e) => e.ref !== 'C').every((e) => e.contextRef === 'E90214'));
   const [h1, h2] = saved.slots.map((b) => hl.parseParams(b.parameters).capacity[1]);
   assert.ok(h1 > h2, 'each enclosure states its own height');
-  assert.equal(h2, hl.bayHeight(bays[1]));
 });
 
-test('splitting takes the parameters OFF the Position, it does not copy them', () => {
-  const bays = hl.moveItem(hl.addBay(HUB()), 'C', 1, 0);
+test('an unsplit hub with enclosures on is one enclosure holding every bay', () => {
+  const saved = hl.save(hl.addBay(HUB()), { container: POS, enclosures: true });
+  assert.equal(saved.slots.length, 1);
+  assert.deepEqual(hl.parseParams(saved.slots[0].parameters).spaceList.map((sp) => sp.name), ['1', '2']);
+});
 
-  // before: the Position states the whole hub, both bays
-  const joined = hl.save(bays, { container: POS });
-  assert.match(joined.container.parameters, /^\[\[760mm,/);
-  assert.deepEqual(bayNames(joined.container.parameters), ['1', '2']);
-  assert.equal(joined.container.clear, false);
+test('both forms round trip to the same drawing, and say which form they were', () => {
+  const bays = hl.moveItem(hl.addBay(hl.addBay(HUB())), 'C', 2, 0);
+  const opts = { container: POS, separate: [2] };
+  const draw = (slots, separate) => hl.sheets(slots.length, separate)
+    .map((sh) => hl.placements(sh.slots.map((i) => slots[i])).map((p) => [p.ref, p.x, p.y]));
 
-  // one bay out: the Position keeps only what it still holds
-  const one = hl.save(bays, { container: POS, separate: [1] });
-  assert.deepEqual(bayNames(one.container.parameters), ['1']);
-  assert.deepEqual(bayNames(one.container.parameters), ['1'], 'bay 2 is no longer the hub\'s to state');
-  const encH = hl.parseParams(one.slots[0].parameters).capacity[1];
-  assert.equal(encH, hl.bayHeight(bays[1]), 'bay 2\'s size went with bay 2');
+  const spaces = hl.save(bays, opts);
+  const a = hl.loadLayout(spaces, byRef(bays));
+  assert.equal(a.enclosures, false);
+  assert.deepEqual(a.separate, [2]);
+  assert.deepEqual(draw(a.slots, a.separate), draw(bays, [2]));
 
-  // both out: nothing left, and the row must be cleared rather than left stale
-  const all = hl.save(bays, { container: POS, separate: [0, 1] });
-  assert.equal(all.container.parameters, '');
-  assert.equal(all.container.clear, true);
-  // nobody states a size twice
-  const claimed = [all.container.parameters, ...all.slots.map((b) => b.parameters)]
-    .filter((x) => hl.parseParams(x).capacity);
-  assert.equal(claimed.length, 2, 'one claim per bay, none from the hub');
+  const enc = hl.save(bays, { ...opts, enclosures: true, pieceRefs: { A: 'E1', B: 'E2' } });
+  const b = hl.loadLayout({
+    container: enc.container.parameters,
+    slots: enc.slots.map((sl) => ({ ref: sl.ref, name: sl.name, parameters: sl.parameters })),
+    elements: enc.elements,
+  }, byRef(bays));
+  assert.equal(b.enclosures, true);
+  assert.deepEqual(b.separate, [2]);
+  assert.deepEqual(b.refs, { 0: 'E1', 2: 'E2' });
+  assert.deepEqual(draw(b.slots, b.separate), draw(bays, [2]));
+});
+
+test('a hub written before groups loads as one piece, unchanged', () => {
+  const slots = hl.load({ container: '[[760mm,90mm,150mm]]<1,2>', elements: [
+    { ref: 'A', contextParameters: '[50mm,25mm,]<1>' },
+    { ref: 'B', contextParameters: '[430mm,25mm,]<2>' },
+  ] }, { A: I('A'), B: I('B') });
+  assert.deepEqual(slots.map((bay) => bay.map((i) => i.ref)), [['A'], ['B']]);
 });
 
 test('a hub left at Position level is not wrapped just because it could be', () => {
@@ -603,9 +558,9 @@ test('a hub left at Position level is not wrapped just because it could be', () 
 
 test('the enclosure type is one generic wrapper, overridable', () => {
   const bays = hl.addBay(HUB());
-  assert.equal(hl.save(bays, { container: POS, separate: [1] }).slots[0].typeRef, 'ET-PSU-ENC');
+  assert.equal(hl.save(bays, { container: POS, enclosures: true }).slots[0].typeRef, 'ET-PSU-ENC');
   assert.equal(
-    hl.save(bays, { container: POS, separate: [1], wrapperType: 'ET-ENCLOSURE-INT-01' }).slots[0].typeRef,
+    hl.save(bays, { container: POS, enclosures: true, wrapperType: 'ET-ENCLOSURE-INT-01' }).slots[0].typeRef,
     'ET-ENCLOSURE-INT-01',
   );
 });
@@ -629,7 +584,7 @@ test('every bay width and start comes back from the saved rows alone', () => {
   const widths = [338, 500, 380];
   const heights = [0, 700, 0];
   const saved = hl.save(bays, { container: { ref: 'P1', contextType: 'Position' }, widths, heights, separate: [2], wrapperRefs: { 2: 'E9' } });
-  assert.equal(saved.container.parameters, '[[838mm,700mm,150mm]]<1[338mm,255mm,150mm,0,0,0],2[500mm,700mm,150mm,338mm,0,0]>');
+  assert.equal(saved.container.parameters, '[[1218mm,700mm,150mm]]<A.1[338mm,255mm,150mm,0,0,0],A.2[500mm,700mm,150mm,338mm,0,0],B.1[380mm,100mm,150mm,0,0,0]>');
 
   // nothing from the session: only what the patch writes
   const geo = hl.bayGeometry(saved.container.parameters);
@@ -659,4 +614,29 @@ test('a row with a Quantity is a stack exactly as tall as that many drivers', ()
   assert.equal(hl.stack(unit, 1), unit, 'a quantity of one is just the driver');
   const saved = hl.save([[four]], { container: POS });
   assert.equal(saved.elements.length, 1, 'and it saves as the one row it is');
+});
+
+test('trunking runs to the height of the tallest bay beside it', () => {
+  const up = { ref: 'A', size: [153, 50, 23], alone: true };
+  const rows = hl.packBay([up, { ...up, ref: 'B' }], 253);          // two rows, 100 each
+  const bands = hl.trunkBands(rows, 253, 500);
+  const left = bands.filter((b) => b.x === 0);
+  const right = bands.filter((b) => b.x === 253 - hl.TRUNK);
+  assert.equal(left.reduce((n, b) => n + b.h, 0), 500, 'the left run reaches the sheet top');
+  assert.equal(right.reduce((n, b) => n + b.h, 0), 500, 'and so does the right');
+  const empty = hl.trunkBands([], 380, 400);
+  assert.deepEqual(empty.map((b) => [b.x, b.y, b.w, b.h]), [[0, 0, 50, 400], [330, 0, 50, 400]], 'an empty bay is trunked all the way up');
+  const turned = hl.packBay([{ ...up, rot: 90 }], 380);
+  const tb = hl.trunkBands(turned, 380, 300);
+  assert.equal(tb.filter((b) => b.w === 380).length, 2, 'a turned row keeps its end bands');
+  assert.ok(tb.some((b) => b.y === turned[0].h && b.h === 300 - turned[0].h), 'and the sides carry on above it');
+  assert.equal(hl.trunkBands(rows, 253, 100).length, 4, 'no extension when the bay is the tallest');
+});
+
+test('a known driver is CC, CV or has LED outputs; a feed or an unknown type is not', () => {
+  assert.ok(hl.isKnownDriver({ typeRef: 'ET-CCR-D-300-1CH-01', powerType: 'CC' }));
+  assert.ok(hl.isKnownDriver({ typeRef: 'ET-X', powerType: null, nodes: [{ name: 'OP.1' }] }));
+  assert.ok(!hl.isKnownDriver({ typeRef: 'ET-CCR-FEED-PROV', powerType: 'CC', nodes: [{ name: 'OP.1' }] }), 'Feed Provision');
+  assert.ok(!hl.isKnownDriver({ typeRef: 'ET-PEN-PROV', nodes: [] }), 'a provision');
+  assert.ok(!hl.isKnownDriver({ typeRef: 'ET-UNKNOWN' }), 'a type nobody described');
 });

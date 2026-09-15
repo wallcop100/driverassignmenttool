@@ -339,192 +339,237 @@ export function contextType(container) {
   return found;
 }
 
-// A slot that has been separated is its own piece of joinery, and the DesignDB
-// already has a shape for that. Measured across six live sets:
+// A slot that has been separated is its own piece of joinery. The pieces are the
+// sheets: the joined slots are one, and each slot marked separate is another. They
+// are named A, B, C in that order, and the name is the GROUP of every slot space
+// the piece holds (page 1410108, <Group.Space>): <A.1,A.2,B.1> says A.1 and A.2 stand
+// together and B.1 is a cabinet of its own. That is all it takes to record a
+// separation, so by default nothing else is written.
+//
+// An enclosure Element per piece is the option. Measured on set 108908: where a hub
+// is split, it carries one enclosure per piece, 27 hubs with two named #72.1 and
+// #72.2 under #72, so a split writes BOTH, never only the piece that was broken out.
 //
 //   set 108713   51 drivers on the container Position,   0 on an Element
-//   109311 / 109314    223 / 185 on the Position,         0 on an Element
-//   set 108857    91 on the Position,             67 on an Element
-//   set 108908        95 on the Position,            578 on an Element
-//   109303              104 on the Position,            580 on an Element
+//   set 108857   91 on the Position,                    67 on an Element
+//   set 108908   95 on the Position,                   578 on an Element
 //
-// Where a driver sits on an Element, that Element is an ET-PSU-ENC-* enclosure
-// contexted into the container Position - and on set 108908 218 container Positions carry ONE
-// enclosure while 27 carry TWO, named #72.1 and #72.2 under container #72. That is the
-// H1/H2 split, already modelled. The two can even be different enclosure types
-// (#71.1 is -V5, #71.2 is -V1), which is how B1 and B2 come out different sizes.
-//
-// So: joined slots stay on the Position, and a separated slot becomes an enclosure
-// Element with its drivers contexted into it. Nothing here invents a convention.
+// ponytail: group names run A to Z; a hub split into more than 26 pieces is not one.
+const groupName = (k) => String.fromCharCode(65 + k);
 
-// Bay Elements are named the way the live data names them: the container's name, a
-// dot, and the slot number.
+export function pieces(slotCount, separate = []) {
+  return sheets(slotCount, separate).map((s, k) => ({ group: groupName(k), slots: s.slots }));
+}
+
+// Enclosure Elements are named the way the live data names them: the container's
+// name, a dot, and the piece number.
 export const slotLabel = (container, i) => `${container?.name ?? container?.ref ?? '#hub'}.${i + 1}`;
 
-// A slot split out of its container becomes a wrapper Element of its own. What
-// TYPE that wrapper is, is the calling tool's business - the driver tool has one
-// generic PSU enclosure type; a panel may not split at all. Core never invents
-// one: `opts.wrapperType` or nothing.
+// A piece's own slots: their widths, heights, and where each starts from the
+// piece's origin, which is where every coordinate inside the piece is measured from.
+function pieceGeometry(slots, piece, opts) {
+  const widths = piece.slots.map((i) => widthAt(i, opts));
+  const heights = piece.slots.map((i) => heightAt(i, opts));
+  const sub = { ...opts, widths, heights };
+  const off = offsetsOf(piece.slots.length, sub);
+  const ext = extent(piece.slots.map((i) => slots[i]), sub);
+  const depth = opts.depth ?? DEPTH_MM;
+  const bays = piece.slots.map((i, k) => ({
+    slot: i, bay: k + 1, off: off[k],
+    size: [widths[k], Math.max(slotHeight(slots[i], widths[k]), heights[k]), depth],
+  }));
+  return { ext, depth, bays };
+}
 
-// One Element's fields. `parameters` is null unless the part is turned, because
-// an upright one has nothing to say that its type does not. `contextType` is
-// what the part is contexted INTO - a separated slot's enclosure Element, or the
-// container itself.
-export function saveItem(placed, parent = null, { local = false } = {}) {
+// One Element's fields, given where it sits. `parameters` is null unless the part is
+// turned, because an upright one has nothing to say that its type does not.
+export function saveItem(placed, parent, { space, x }) {
   const size = placed.size ?? null;                 // as placed, already turned
-  const turned = placed.rot === 90;
   return {
     ref: placed.ref,
     contextType: contextType(parent),
     contextRef: parent?.ref ?? null,
-    contextParameters: formatParams({
-      // inside a slot Element there is only one slot, so the discrete space is
-      // what the parent already says. On the container it is the slot number.
-      spaces: local ? null : String(placed.slot + 1),
-      size: [local ? placed.x - placed.bayX : placed.x, placed.y, 0],
-    }),
-    parameters: turned && size ? formatParams({ size }) : null,
+    contextParameters: formatParams({ spaces: space, size: [x, placed.y, 0] }),
+    parameters: placed.rot === 90 && size ? formatParams({ size }) : null,
   };
 }
 
-// What a container row says: how big it came out, and which slots it still holds
-// directly. A slot that has been separated is no longer one of them - it is an
-// enclosure Element of its own, and says its own size.
-// What the container row says, for the slots it still holds ITSELF. A slot split out to
-// an Element takes its parameters with it - two rows both claiming to state the
-// same slot's size is how a drawing and a database stop agreeing. So when every
-// slot has been separated the container states nothing, and the patch must CLEAR what
-// is already on the row rather than leave a stale capacity behind.
+// What the container row says with no enclosure Elements: every slot as a space in
+// its piece's group, with its size and its start from the piece's origin, and the
+// whole hub as the capacity - the pieces' widths added up, the tallest height.
 export const saveContainer = (slots, opts = {}) => {
-  const own = slots.map((_, i) => i).filter((i) => !(opts.separate ?? []).includes(i));
-  if (!own.length) return '';
-  // the sub-list is re-indexed, so its widths and heights travel with it
-  const sub = { ...opts, widths: own.map((i) => widthAt(i, opts)), heights: own.map((i) => heightAt(i, opts)) };
-  const ext = extent(own.map((i) => slots[i]), sub);
-  const depth = opts.depth ?? DEPTH_MM;
-  // Each slot it holds is a space with its own size and where it starts, the
-  // form page 1410108 gives spaces: <1[w,h,d,dx,dy,dz]>. Without it a typed width
-  // is lost on reload, because the total alone cannot say how it was split. The
-  // offset is in the same frame as every Element's [x,y,z], so the two agree.
-  const off = offsetsOf(slots.length, opts);
-  return formatParams({
-    capacity: [ext.w, ext.h, depth],
-    spaceList: own.map((i, k) => ({
-      name: String(i + 1),
-      size: [sub.widths[k], Math.max(slotHeight(slots[i], sub.widths[k]), sub.heights[k]), depth],
-      at: [off[i], 0, 0],
-    })),
-  });
-};
-
-// The slots a container row states, and each one's size and start where it says
-// them. Indexed by slot number - 1; null where the row does not say. A row
-// written before spaces carried sizes (<1,2>) gives names and nothing else.
-export function bayGeometry(params) {
-  const list = parseParams(typeof params === 'string' ? params : params?.parameters ?? '').spaceList ?? [];
-  const out = { held: [], widths: [], heights: [], offsets: [] };
-  for (const sp of list) {
-    const n = Number(sp.name);
-    if (!(n > 0)) continue;
-    out.held.push(n);
-    out.widths[n - 1] = sp.size?.[0] ?? null;
-    out.heights[n - 1] = sp.size?.[1] ?? null;
-    out.offsets[n - 1] = sp.at?.[0] ?? null;
+  if (!slots.length) return '';
+  let w = 0;
+  let h = 0;
+  let depth = opts.depth ?? DEPTH_MM;
+  const spaceList = [];
+  for (const piece of pieces(slots.length, opts.separate ?? [])) {
+    const g = pieceGeometry(slots, piece, opts);
+    w += g.ext.w;
+    h = Math.max(h, g.ext.h);
+    depth = g.depth;
+    for (const b of g.bays) spaceList.push({ name: `${piece.group}.${b.bay}`, size: b.size, at: [b.off, 0, 0] });
   }
-  return out;
-}
+  return formatParams({ capacity: [w, h, depth], spaceList });
+};
 
 export function save(slots, opts = {}) {
   const container = opts.container ?? null;
-  const separate = opts.separate ?? [];
-  const off = offsetsOf(slots.length, opts);
+  const enclosures = !!opts.enclosures;
+  const all = pieces(slots.length, opts.separate ?? []);
+  const globalOff = offsetsOf(slots.length, opts);
 
-  // A separated slot becomes an ET-PSU-ENC-* Element under the container Position, the
-  // way #72.1 and #72.2 sit under #72 on set 108908. Its Ref is the workbook's to
-  // allocate, so an unnamed one is flagged rather than invented.
-  const slotRows = separate.slice().sort((a, b) => a - b).map((i) => ({
-    slot: i,
-    ref: opts.wrapperRefs?.[i] ?? null,
-    name: slotLabel(container, i),
-    typeRef: opts.wrapperType ?? null,
-    contextType: contextType(container),
-    contextRef: container?.ref ?? null,
-    parameters: formatParams({
-      capacity: [
-        extent([slots[i]], { ...opts, widths: [widthAt(i, opts)] }).w,
-        slotHeight(slots[i], widthAt(i, opts)),
-        opts.depth ?? DEPTH_MM,
-      ],
-      spaces: '1',
-    }),
-    isNew: !opts.wrapperRefs?.[i],
-  }));
-  const byBay = new Map(slotRows.map((b) => [b.slot, b]));
-
-  const elements = placements(slots, opts).map((p) => {
-    const owner = byBay.get(p.slot);
-    // contexted into its slot Element when that slot stands alone, into the container
-    // when it does not - and a slot-local coordinate follows its parent
-    return owner
-      ? saveItem({ ...p, bayX: off[p.slot] }, { ref: owner.ref, contextType: 'Element' }, { local: true })
-      : saveItem(p, container);
+  // where each slot sits: its piece, its number within it, and its start in it
+  const where = new Map();
+  const pieceRows = [];
+  all.forEach((piece, k) => {
+    const g = pieceGeometry(slots, piece, opts);
+    for (const b of g.bays) where.set(b.slot, { group: piece.group, bay: b.bay, off: b.off });
+    if (!enclosures) return;
+    // One enclosure per piece, the way #72.1 and #72.2 sit under #72. Its Ref is
+    // the workbook's to allocate, so an unnamed one is flagged rather than invented.
+    const ref = opts.pieceRefs?.[piece.group] ?? null;
+    pieceRows.push({
+      group: piece.group,
+      slot: piece.slots[0],
+      ref,
+      name: slotLabel(container, k),
+      typeRef: opts.wrapperType ?? null,
+      contextType: contextType(container),
+      contextRef: container?.ref ?? null,
+      parameters: formatParams({
+        capacity: [g.ext.w, g.ext.h, g.depth],
+        spaceList: g.bays.map((b) => ({ name: String(b.bay), size: b.size, at: [b.off, 0, 0] })),
+      }),
+      isNew: !ref,
+    });
   });
 
-  const hubParams = saveContainer(slots, opts);
+  const elements = placements(slots, opts).map((p) => {
+    const w = where.get(p.slot);
+    const x = p.x - globalOff[p.slot] + w.off;
+    if (enclosures) {
+      const row = pieceRows.find((r) => r.group === w.group);
+      return saveItem(p, { ref: row.ref, contextType: 'Element' }, { space: String(w.bay), x });
+    }
+    return saveItem(p, container, { space: `${w.group}.${w.bay}`, x });
+  });
+
+  // with enclosures the sizes live on the pieces, so the hub row is cleared rather
+  // than left claiming bays that are now somebody else's to state
+  const hubParams = enclosures ? '' : saveContainer(slots, opts);
   return {
     container: {
       ref: container?.ref ?? null,
       contextType: contextType(container),
       parameters: hubParams,
-      // an empty string is not "write nothing", it is "clear what is there":
-      // the size has moved onto the slot Elements and must not be left behind
       clear: hubParams === '',
     },
-    slots: slotRows,
+    slots: pieceRows,
     elements,
   };
 }
 
-// And back. `byRef` supplies each part as the model holds it - crucially its
-// UNTURNED size, which is what the type states; comparing the saved as-placed
-// size against it is how the rotation is recovered.
+// ---- and back ----------------------------------------------------------------
+
+// The pieces a stored hub describes. The hub row's grouped spaces (<A.1,A.2,B.1>),
+// then any enclosure rows under it, each a piece of its own with its slots in its
+// own Parameters (<1,2>). A row written before groups (<1,2>) is piece A.
+function storedPieces(hubParams, enclosureRows = []) {
+  const groups = new Map();
+  for (const sp of parseParams(hubParams ?? '').spaceList ?? []) {
+    const m = /^(?:(.+)\.)?(\d+)$/.exec(String(sp.name).trim());
+    if (!m) continue;
+    const key = m[1] ?? 'A';
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push({ n: Number(m[2]), size: sp.size, at: sp.at });
+  }
+  const out = [...groups.keys()].sort().map((key) => ({ key, from: 'hub', bays: groups.get(key) }));
+  const byName = (r) => Number(/\.(\d+)$/.exec(r.name ?? '')?.[1] ?? 0);
+  for (const r of [...enclosureRows].sort((a, b) => byName(a) - byName(b))) {
+    const p = parseParams(r.parameters ?? '');
+    const bays = (p.spaceList ?? []).filter((sp) => Number(sp.name) > 0)
+      .map((sp) => ({ n: Number(sp.name), size: sp.size, at: sp.at }));
+    out.push({ key: r.ref, from: 'enclosure', ref: r.ref, bays: bays.length ? bays : [{ n: 1, size: p.capacity, at: [0, 0, 0] }] });
+  }
+  for (const piece of out) piece.bays.sort((a, b) => a.n - b.n);
+  return out;
+}
+
+// The slots a container row states, in drawing order, with each one's size and its
+// start within its piece. Indexed by slot; null where the row does not say.
+export function bayGeometry(params) {
+  const out = { held: [], widths: [], heights: [], offsets: [], groups: [] };
+  let slot = 0;
+  for (const piece of storedPieces(params)) {
+    out.groups.push({ group: piece.key, slots: piece.bays.map((_, k) => slot + k) });
+    for (const b of piece.bays) {
+      out.held.push(slot + 1);
+      out.widths[slot] = b.size?.[0] ?? null;
+      out.heights[slot] = b.size?.[1] ?? null;
+      out.offsets[slot] = b.at?.[0] ?? null;
+      slot += 1;
+    }
+  }
+  return out;
+}
+
+// A stored hub back to slots, and everything the drawing needs to show it the same:
+// which slots are separate pieces, each slot's width and height, each piece's
+// enclosure Ref, and whether the hub was stored with enclosure Elements at all.
 //
-// Order within a slot is taken from the saved coordinates rather than assumed:
-// the row packer is deterministic, so reading y then x back gives the same
-// sequence it produced, and a hand-edited coordinate still lands in the right
-// place.
-export function load({ container, slots: slotRows = [], elements }, byRef, opts = {}) {
-  // a container saved before its kind was carried is a bare string; both are read
-  const params = typeof container === 'string' ? container : container?.parameters ?? '';
-  const geo = bayGeometry(params);
-  // the container's own slots plus the ones that were separated out into Elements
-  const count = Math.max(1, ...geo.held, ...slotRows.map((b) => b.slot + 1), 1);
-  // the widths the row states, then where it says each slot starts
-  const off = offsetsOf(count, { ...opts, widths: opts.widths ?? geo.widths });
-  geo.offsets.forEach((o, i) => { if (o != null && i < count) off[i] = o; });
-  const ownerOf = new Map(slotRows.filter((b) => b.ref).map((b) => [b.ref, b]));
-  const slots = Array.from({ length: count }, () => []);
-  const rows = elements
+// Order within a slot is taken from the saved coordinates rather than assumed: the
+// row packer is deterministic, so reading y then x back gives the same sequence it
+// produced, and a hand-edited coordinate still lands in the right place. Rotation
+// is recovered by comparing the saved as-placed size with the type's, swapped.
+export function loadLayout({ container, slots: enclosureRows = [], elements }, byRef) {
+  const hubParams = typeof container === 'string' ? container : container?.parameters ?? '';
+  const stored = storedPieces(hubParams, enclosureRows.filter((r) => r?.ref));
+  if (!stored.length) stored.push({ key: 'A', from: 'hub', bays: [{ n: 1, size: null, at: null }] });
+
+  const slotOf = new Map();     // `${pieceKey}|${n}` -> slot
+  const refOf = new Map();      // enclosure Ref -> piece key
+  const separate = [];
+  const widths = [];
+  const heights = [];
+  const refs = {};
+  let slot = 0;
+  stored.forEach((piece, k) => {
+    if (piece.ref) refOf.set(piece.ref, piece.key);
+    piece.bays.forEach((b, j) => {
+      slotOf.set(`${piece.key}|${b.n}`, slot);
+      widths[slot] = b.size?.[0] ?? null;
+      heights[slot] = b.size?.[1] ?? null;
+      // the first piece is the joined one; every other piece is drawn apart
+      if (k > 0) separate.push(slot);
+      if (j === 0 && piece.ref) refs[slot] = piece.ref;
+      slot += 1;
+    });
+  });
+  const count = Math.max(1, slot);
+  const first = stored[0].key;
+
+  const out = Array.from({ length: count }, () => []);
+  const rows = (elements ?? [])
     .map((e) => {
       const item = byRef[e.ref];
       if (!item) return null;
       const cp = parseParams(e.contextParameters);
-      // contexted into a slot Element: the slot is the parent, and the coordinate
-      // is relative to it rather than to the container
-      const owner = e.contextRef ? ownerOf.get(e.contextRef) : null;
-      const slot = owner ? owner.slot : Math.max(0, (Number(cp.spaces) || 1) - 1);
-      const [rawX, y] = cp.size ?? [0, 0];
-      const x = (rawX ?? 0) + (owner ? off[owner.slot] : 0);
-      // turned iff the Element states a size and it is its type's, swapped
+      const m = /^(?:(.+)\.)?(\d+)$/.exec(String(cp.spaces ?? '').trim());
+      const inPiece = e.contextRef && refOf.get(e.contextRef);
+      const key = inPiece ?? m?.[1] ?? first;
+      const s = slotOf.get(`${key}|${m ? Number(m[2]) : 1}`) ?? slotOf.get(`${key}|1`) ?? 0;
+      const [x, y] = cp.size ?? [0, 0];
       const own = parseParams(e.parameters ?? '').size;
       const turned = !!own && !!item.size
         && Math.abs(own[0] - item.size[1]) < 0.05 && Math.abs(own[1] - item.size[0]) < 0.05;
-      return { slot: Math.min(slot, count - 1), x: x ?? 0, y: y ?? 0, item, turned };
+      return { slot: Math.min(s, count - 1), x: x ?? 0, y: y ?? 0, item, turned };
     })
     .filter(Boolean)
     .sort((a, b) => a.slot - b.slot || a.y - b.y || a.x - b.x);
-  for (const r of rows) {
-    slots[r.slot].push(r.turned ? { ...r.item, rot: 90 } : { ...r.item, rot: 0 });
-  }
-  return slots;
+  for (const r of rows) out[r.slot].push(r.turned ? { ...r.item, rot: 90 } : { ...r.item, rot: 0 });
+
+  return { slots: out, separate, widths, heights, refs, enclosures: stored.some((p) => p.from === 'enclosure') };
 }
+
+export const load = (stored, byRef) => loadLayout(stored, byRef).slots;

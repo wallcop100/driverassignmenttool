@@ -76,3 +76,29 @@ There is no database. Two localStorage entries do the only persistence this app 
 ## Where validation logic actually lives (and why it matches the SQL)
 
 The authoritative check is still `DriverHealthCheck.sql` running inside DataJoin against live DesignDB tables this app never sees (`#LinksMap`, `#EntityLoads`, `#ElementTypes`). This tool's `engine.validate()` is a **client-side pre-flight**, deliberately kept in lockstep with the same rules (CC/CV type match, CV voltage, total/per-node wattage, series forward-voltage, CC current within a 10% band, ControlGroup uniformity) so a designer catches most problems before ever running DataJoin - but it explicitly skips checks that need data only DataJoin has (e.g. node-name validation against `ElementTypes.Parameters`). The `MISMATCH` vs `FAIL` vs `WARN` severity split is this tool's own visual invention layered on top of the SQL's binary FAIL/WARN - both `FAIL` and `MISMATCH` count as "actionable" everywhere in the UI.
+
+## How a hub layout is stored (for anything that draws one)
+
+The space layout writes only Parameter Syntax (pages 100966 and 1410108), so another
+tool can draw the same hub from the DB alone. What each part of the drawing reads:
+
+| What | Where | Form |
+|---|---|---|
+| Pieces of joinery and their bays | hub row `Parameters` | `<A.1[w,h,d,dx,0,0],A.2[...],B.1[...]>`: the group is the piece, the number the bay, `dx` from the piece's origin |
+| The whole hub | hub row `Parameters` | `[[w,h,d]]` |
+| Where a driver sits | Element `ContextParameters` | `[x,y,z]<A.2>`, `x` from its piece's origin |
+| Turned 90 | Element `Parameters` | the as-placed `[w,h,d]`, its type's size swapped |
+| Enclosure Elements (optional) | `ET-PSU-ENC` Element per piece under the hub | `[[w,h,d]]<1[...],2[...]>`; drivers contexted into it at `<1>`; hub row cleared |
+| A type's size | ElementType `Parameters` | `[w,h,d]` |
+| A driver's parts | wrapper ElementType `Parameters` | `<PSU(ET-...)[w,h,d,dx,dy,0],Driver(ET-...)[...]>` |
+| Junction boxes | driver Element `Parameters` | `<JB.1[w,h,d,dx,dy,0],...>` |
+| Several drivers in one row | Element `Quantity` | drawn as a stack of N until broken into rows |
+
+**In the hub but not placed** is the absence of a space: an Element contexted into
+the hub (or one of its enclosure Elements) whose `ContextParameters` names no
+`<space>`. A renderer should list those beside the drawing, not drop them. The tool
+keeps that true: dragging something back to its tray clears its placement, and a
+driver added to a hub that already has a layout stays unplaced until someone places
+it. Only on a hub with no stored layout at all does the tool place the drivers it
+recognises (CC, CV, or LED output nodes) to start with, and those placements reach
+the DB only when the patch is run.

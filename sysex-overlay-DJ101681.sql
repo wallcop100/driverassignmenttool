@@ -1,5 +1,5 @@
 -- SysEx Overlay - Lighting Interactive Driver Assignment --
--- V1.10 -- (DJ 101681: V1.10 live as revision 79; sends driver parts, hub rows and Quantity)
+-- V1.11 -- (DJ 101681: V1.10 live as revision 79; V1.11 sends every Element in the hub, NOT YET SAVED)
 
 --SQL HEADER--
 DECLARE @Container_TypeRef AS varchar(max) = 'PSU.HUB';   -- comma separated list of PSU-HUB Types
@@ -355,34 +355,47 @@ FROM #Compositions c;
 
 IF OBJECT_ID('tempdb..#ElemCsv') IS NOT NULL DROP TABLE #ElemCsv;
 SELECT x.HubLabel,
-  '"Ref","Kind","ContextRef","Parameters","ContextParameters","Quantity"'
+  '"Ref","Kind","ContextRef","Parameters","ContextParameters","Quantity","TypeRef","Name"'
 + @NL + STRING_AGG(CONVERT(varchar(max),
     '"'+REPLACE(x.Ref,'"','""')+'",'
   + '"'+x.Kind+'",'
   + '"'+REPLACE(ISNULL(x.ContextRef,''),'"','""')+'",'
   + '"'+REPLACE(ISNULL(x.Parameters,''),'"','""')+'",'
   + '"'+REPLACE(ISNULL(x.ContextParameters,''),'"','""')+'",'
-  + '"'+ISNULL(CONVERT(varchar(20),x.Quantity),'')+'"'
+  + '"'+ISNULL(CONVERT(varchar(20),x.Quantity),'')+'",'
+  + '"'+REPLACE(ISNULL(x.TypeRef,''),'"','""')+'",'
+  + '"'+REPLACE(ISNULL(x.Name,''),'"','""')+'"'
   ), @NL) AS Csv
 INTO #ElemCsv
 FROM (
   -- the hub row: which bays it holds and each one's size and start
   SELECT h.HubLabel, h.HubRef AS Ref, CONVERT(varchar(10),'hub') AS Kind,
          CONVERT(nvarchar(200), NULL) AS ContextRef, p.Parameters, CONVERT(nvarchar(max), NULL) AS ContextParameters,
-         CONVERT(decimal(18,4), NULL) AS Quantity
+         CONVERT(decimal(18,4), NULL) AS Quantity, CONVERT(nvarchar(200), NULL) AS TypeRef, CONVERT(nvarchar(400), NULL) AS Name
   FROM #Hubs h JOIN #Positions p ON p.Ref = h.HubRef
   UNION ALL
   -- a bay separated into an enclosure Element of its own
-  SELECT h.HubLabel, e.Ref, 'bay', e.ContextRef, e.Parameters, e.ContextParameters, e.Quantity
+  SELECT h.HubLabel, e.Ref, 'bay', e.ContextRef, e.Parameters, e.ContextParameters, e.Quantity, e.TypeRef, e.Name
   FROM #Hubs h JOIN #Elements e ON e.ContextRef = h.HubRef AND e.TypeRef LIKE 'ET-PSU-ENC%'
   UNION ALL
-  -- every driver: where it sits, its as-placed size, its junction boxes, and a
-  -- Quantity when one row stands for several drivers (early designs, set 106449)
-  SELECT f.Pullzone, e.Ref, 'element', e.ContextRef, e.Parameters, e.ContextParameters, e.Quantity
+  -- Everything in the hub, whatever it is and whatever it states. An early design
+  -- records "4 of this driver in this hub" with no cables, and the driver form is
+  -- built from cables, so set 106449's 18 hub Elements never reached it. A row
+  -- with no placement lands in the tool's tray; one with a placement is drawn.
+  SELECT h.HubLabel, e.Ref, 'element', e.ContextRef, e.Parameters, e.ContextParameters, e.Quantity, e.TypeRef, e.Name
+  FROM #Hubs h JOIN #Elements e ON e.ContextRef = h.HubRef AND e.TypeRef NOT LIKE 'ET-PSU-ENC%'
+  UNION
+  -- inside a bay that was separated into an enclosure Element
+  SELECT h.HubLabel, e.Ref, 'element', e.ContextRef, e.Parameters, e.ContextParameters, e.Quantity, e.TypeRef, e.Name
+  FROM #Hubs h
+  JOIN #Elements b ON b.ContextRef = h.HubRef AND b.TypeRef LIKE 'ET-PSU-ENC%'
+  JOIN #Elements e ON e.ContextRef = b.Ref
+  UNION
+  -- and the form's drivers wherever they sit, as before
+  SELECT f.Pullzone, e.Ref, 'element', e.ContextRef, e.Parameters, e.ContextParameters, e.Quantity, e.TypeRef, e.Name
   FROM (SELECT DISTINCT Pullzone, ElementRef FROM #DriverAssignmentForm WHERE ISNULL(Pullzone,'')<>'') f
   JOIN #Elements e ON e.Ref = f.ElementRef
 ) x
-WHERE ISNULL(x.Parameters,'') <> '' OR ISNULL(x.ContextParameters,'') <> '' OR ISNULL(x.Quantity, 1) > 1
 GROUP BY x.HubLabel;
 
 /* ---- 3. the handler -----------------------------------------------------------------

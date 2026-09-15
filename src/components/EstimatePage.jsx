@@ -89,6 +89,14 @@ export default function EstimatePage({ state, dispatch, zone }) {
     <div className="container-fluid py-3 drivers-page">
       <div className="dp-head">
         <h5 className="mb-0">Driver estimate</h5>
+        {/* An early design has hubs and Elements but no cables: the space layout is
+            still where they are arranged, so the quiet way in is here too. */}
+        {zone && (
+          <button type="button" className="space-link" title="Hub layout" aria-label="Open the hub layout"
+            onClick={() => dispatch({ type: 'SET_VIEW', view: { page: 'layout', zone, from: 'estimate' } })}>
+            <span className="material-icons">straighten</span>
+          </button>
+        )}
         <span className="text-secondary small">
           {rows.length} row{rows.length === 1 ? '' : 's'} · {posTypes.size} PositionType{posTypes.size === 1 ? '' : 's'}
           {' · '}{zone ?? `${zones.length} hub${zones.length === 1 ? '' : 's'}`} · no links yet

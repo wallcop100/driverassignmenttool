@@ -41,3 +41,19 @@ test('a quantity broken apart adds the rest as placeholder drivers, and only onc
   assert.equal(reducer(st, { type: 'SPLIT_QUANTITY', ref: 'E50028', typeRef: 'T', zone: 'HUB-B2', quantity: 4 }), st, 'not twice');
   assert.equal(reducer(st, { type: 'UNDO' }).addedDrivers.length, 0, 'and undo puts the stack back');
 });
+
+test('Elements in the hub that the form never mentioned become drivers, never added ones', async () => {
+  const { hubElements } = await import('../../src/state.js');
+  const model = { inventory: [{ typeRef: 'ET-CCR-D-350-1CH-01', name: 'SOLODrive', powerType: 'CC', nodes: [{ name: 'OP.1' }] }] };
+  const rows = { elements: {
+    E50004: { ref: 'E50004', typeRef: 'ET-CCR-D-350-1CH-01', name: '', quantity: 4 },
+    E50027: { ref: 'E50027', typeRef: 'ET-PEN-PROV', name: 'Pendant provision', quantity: 3 },
+    E1: { ref: 'E1', typeRef: 'ET-CCR-D-350-1CH-01', name: '', quantity: 1 },
+    E2: { ref: 'E2', typeRef: null, name: '', quantity: 1 },
+  } };
+  const out = hubElements(model, [{ ref: 'E1' }], rows, 'P50001');
+  assert.deepEqual(out.map((d) => d.ref), ['E50004', 'E50027'], 'not one the form already has, nor a row with no type');
+  assert.equal(out[0].powerType, 'CC', 'built from the type library');
+  assert.equal(out[1].name, 'Pendant provision');
+  assert.ok(out.every((d) => d.fromDb && !d.added && d.zone === 'P50001'));
+});

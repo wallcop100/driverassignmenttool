@@ -31,7 +31,7 @@ test('a Position hub is patched on the Positions sheet, and drivers on Elements'
   assert.match(s, /DB\.getWorksheet\("Positions"\)/);
   assert.match(s, /columnIndex\(WS_E, "ContextParameters", true\)/, 'added to a book that lacks it');
   assert.match(s, /"xyz":"\[50mm,25mm,0mm\]"/);
-  assert.match(s, /"spaces":"<1>"/);
+  assert.match(s, /"spaces":"<A\.1>"/);
   assert.match(s, /rowOf_P\.get\("P8110"\)/);
   assert.doesNotMatch(s, /setValue\(""\)/);
   assert.equal(s.split('function main(').length - 1, 1);
@@ -52,15 +52,28 @@ test('type sizes are written to ElementTypes, merged', () => {
   assert.match(s, /mergeFlavour\(was, "size", t\.size\)/);
 });
 
-test('a separated bay is added, and its drivers are pointed at it', () => {
+test('with enclosures on, every piece is added and its drivers are pointed at it', () => {
   const bays = hl.moveItem(hl.addBay([[I('A'), I('C')]]), 'C', 1, 0);
-  const placeholder = hubPatch({ saved: hl.save(bays, { container: POS, separate: [1] }), hub: POS });
-  assert.match(placeholder, /"ref":"E5000X","isNew":true/);
+  const placeholder = hubPatch({ saved: hl.save(bays, { container: POS, separate: [1], enclosures: true }), hub: POS });
+  assert.equal((placeholder.match(/"ref":"E5000X","isNew":true/g) ?? []).length, 2, 'both pieces, not only the one split off');
   assert.match(placeholder, /"contextType":"Element","contextRef":"E5000X"/);
   assert.match(placeholder, /give it a real Ref/);
-  const named = hubPatch({ saved: hl.save(bays, { container: POS, separate: [1], wrapperRefs: { 1: 'E90215' } }), hub: POS });
+  const named = hubPatch({ saved: hl.save(bays, { container: POS, separate: [1], enclosures: true, pieceRefs: { A: 'E90214', B: 'E90215' } }), hub: POS });
+  assert.match(named, /"ref":"E90214","isNew":false/);
   assert.match(named, /"ref":"E90215","isNew":false/);
   assert.match(named, /"contextRef":"E90215"/);
+  const spaces = hubPatch({ saved: hl.save(bays, { container: POS, separate: [1] }), hub: POS });
+  assert.doesNotMatch(spaces, /an enclosure Element per piece/, 'off by default: no enclosure rows at all');
+  assert.match(spaces, /"spaces":"<B\.1>"/);
+});
+
+test('enclosures turned off: drivers go back to the hub first, then only the enclosures are marked', () => {
+  const saved = hl.save([[I('A')], [I('C')]], { container: POS, separate: [1] });
+  const s = hubPatch({ saved, hub: POS, dropEnclosures: ['E90214', 'E90215'] });
+  assert.match(s, /"ref":"C","xyz":"\[50mm,25mm,0mm\]","spaces":"<B\.1>","contextType":"Position","contextRef":"P8110"/);
+  assert.ok(s.indexOf('const dropEnclosures') > s.indexOf('const placed'), 'marked after the drivers are moved');
+  assert.match(s, /"E90214",\s*"E90215"|"E90214","E90215"/);
+  assert.doesNotMatch(s, /OMIT: Elements, with cascade/, 'never the cascading delete');
 });
 
 test('without a hub Ref the hub size is reported, not guessed at', () => {
@@ -72,7 +85,7 @@ test('without a hub Ref the hub size is reported, not guessed at', () => {
 test('Feed Provision is a real Element, placed and written like a driver', () => {
   const feed = { ref: 'E50027', kind: 'feed', label: 'Feed Provision', size: [280, 105, 50] };
   const s = hubPatch({ saved: hl.save([[feed, I('A')]], { container: POS }), hub: POS });
-  assert.match(s, /"ref":"E50027","xyz":"\[50mm,25mm,0mm\]","spaces":"<1>"/);
+  assert.match(s, /"ref":"E50027","xyz":"\[50mm,25mm,0mm\]","spaces":"<A\.1>"/);
 });
 
 test('a TBC flag set here is written after every clear, on the sheet it belongs to', () => {
@@ -165,9 +178,17 @@ test('breaking a quantity apart keeps one on the row and appends the rest where 
     newElements: { E5000X: { typeRef: 'ET-CCR-D-300-2CH-01', name: 'SOLODrive' }, 'E5000X~2': { typeRef: 'ET-CCR-D-300-2CH-01', name: 'SOLODrive' } } });
   assert.match(s, /"ref":"E50028","quantity":1/);
   assert.match(s, /col_E_Quantity\)\.setValue\(q\.quantity\)/);
-  const appended = s.match(/"ref":"E5000X","name":"SOLODrive","typeRef":"ET-CCR-D-300-2CH-01","contextType":"Position","contextRef":"P8110","contextParameters":"\[[^"]+\]<2>"/g) ?? [];
+  const appended = s.match(/"ref":"E5000X","name":"SOLODrive","typeRef":"ET-CCR-D-300-2CH-01","contextType":"Position","contextRef":"P8110","contextParameters":"\[[^"]+\]<A\.2>"/g) ?? [];
   assert.equal(appended.length, 2, 'both broken-out drivers appended, placed in bay 2');
   assert.doesNotMatch(s, /"ref":"E5000X~2"/, 'the placeholder is written as the placeholder');
   assert.doesNotMatch(s, /rowOf_E\.get\(it\.ref\)[\s\S]*"ref":"E5000X","xyz"/, 'not looked up as if it already existed');
   assert.match(s, /let nextRow_E = data_E\.length;/);
+});
+
+test('an item dragged back to the tray has its placement cleared, and nothing else', () => {
+  const s = hubPatch({ saved: hl.save([[I('A')]], { container: POS }), hub: POS, unplaced: ['E50004'] });
+  assert.match(s, /"ref":"E50004","xyz":"","spaces":""/);
+  assert.match(s, /if \(next === ""\) \{ WS_E\.getCell\(row, col_E_ContextParameters\)\.clear/);
+  assert.doesNotMatch(s, /setValue\(""\)/);
+  assert.equal(merge(merge('[50mm,25mm,0mm]<1>(note)', 'spaces', ''), 'size', ''), '(note)', 'only the placement comes off');
 });

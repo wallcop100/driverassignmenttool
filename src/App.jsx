@@ -217,7 +217,7 @@ export default function App({ domain = driversDomain }) {
     screen = <Layout state={state} dispatch={dispatch}
       zone={fromHub ? state.view.zone : null}
       onBack={fromHub
-        ? () => dispatch({ type: 'SET_VIEW', view: { page: 'zone', zone: state.view.zone } })
+        ? () => dispatch({ type: 'SET_VIEW', view: { page: state.view.from === 'estimate' ? 'estimate' : 'zone', zone: state.view.zone } })
         : null} />;
   } else if (state.view.page === 'estimate') {
     screen = <EstimatePage state={state} dispatch={dispatch} zone={state.view.zone} />;

@@ -40,7 +40,7 @@ test('the save/load round trip works for a panel as it does for a hub', () => {
   for (const e of saved.elements) {
     assert.equal(e.contextType, 'Element');
     assert.equal(e.contextRef, 'E41592');
-    assert.match(e.contextParameters, /^\[.*\]<\d>$/);
+    assert.match(e.contextParameters, /^\[.*\]<A\.\d>$/, 'in its piece, A');
   }
 
   const byRef = Object.fromEntries(slots.flat().map((i) => [i.ref, { ...i, rot: 0 }]));
@@ -52,9 +52,9 @@ test('the save/load round trip works for a panel as it does for a hub', () => {
 test('no wrapper type is invented when a caller does not name one', () => {
   // the hub has a generic enclosure; a panel may have nothing to split into
   const slots = [[MOD('A')], [MOD('B')]];
-  const bare = L.save(slots, { container: PANEL, separate: [1] });
+  const bare = L.save(slots, { container: PANEL, separate: [1], enclosures: true });
   assert.equal(bare.slots[0].typeRef, null, 'core never picks a type');
-  const named = L.save(slots, { container: PANEL, separate: [1], wrapperType: 'ET-LCP-SUB' });
+  const named = L.save(slots, { container: PANEL, separate: [1], enclosures: true, wrapperType: 'ET-LCP-SUB' });
   assert.equal(named.slots[0].typeRef, 'ET-LCP-SUB');
 });
 
@@ -97,14 +97,21 @@ test('a wider bay takes more across a row than a standard one', () => {
 test('per-bay widths survive the save and load round trip, separated bays included', () => {
   const slots = [[PART('A'), PART('B', 153.6, 76.7)], [PART('C')], [PART('D', 153.6, 76.7)]];
   const byRef = Object.fromEntries(slots.flat().map((i) => [i.ref, { ...i, rot: 0 }]));
-  const opts = { widths: [380, 520, 400], separate: [2], wrapperRefs: { 2: 'E1' },
+  const opts = { widths: [380, 520, 400], separate: [2],
     container: { ref: 'P1', name: '#1', contextType: 'Position' } };
-  const saved = L.save(slots, opts);
-  const back = L.load(saved, byRef, opts);
   const draw = (s) => L.placements(s, opts).map((p) => [p.ref, p.slot, p.x, p.y]);
-  assert.deepEqual(draw(back), draw(slots));
-  assert.match(saved.slots[0].parameters, /^\[\[400mm,/, 'the separated bay states its own width');
-  assert.match(saved.container.parameters, /^\[\[900mm,/, '380 + 520 for the bays still on the hub');
+
+  // spaces: the whole hub on its own row, the separated bay in a group of its own
+  const spaces = L.save(slots, opts);
+  assert.match(spaces.container.parameters, /^\[\[1300mm,/, '380 + 520 + 400');
+  assert.deepEqual(L.parseParams(spaces.container.parameters).spaceList.map((s) => s.name), ['A.1', 'A.2', 'B.1']);
+  assert.deepEqual(draw(L.load(spaces, byRef)), draw(slots));
+
+  // enclosures: one per piece, each stating its own width
+  const enc = L.save(slots, { ...opts, enclosures: true, pieceRefs: { A: 'E0', B: 'E1' } });
+  assert.match(enc.slots[0].parameters, /^\[\[900mm,/, 'piece A is 380 + 520');
+  assert.match(enc.slots[1].parameters, /^\[\[400mm,/, 'piece B states its own width');
+  assert.deepEqual(draw(L.load(enc, byRef)), draw(slots));
 });
 
 test('a slot with no width typed is as wide as what it holds', () => {

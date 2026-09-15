@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { resolveSpec } from '../engine.js';
 import * as api from '../api.js';
-import { effectiveDrivers, outRef } from '../state.js';
+import { effectiveDrivers, hubElements, outRef } from '../state.js';
 import * as hl from '../hubLayout.js';
 import * as draw from '../core/draw.js';
 import { formatParams } from '../core/params.js';
@@ -11,6 +11,7 @@ import { hubPatch } from '../drivers/hubPatch.js';
 import Origin from './Origin.jsx';
 import PartEditor from './PartEditor.jsx';
 import ResizeIcon from './ResizeIcon.jsx';
+import HubTray from './HubTray.jsx';
 
 // Composing one PSU hub, drawn the way 5642600A draws it: equipment as plain
 // labelled blocks with the drivers rounded, cable trunking hatched, Feed
@@ -152,7 +153,7 @@ const partsOf = (m) => (m.recipe?.parts?.length
 
 export default function HubLayoutLab({ state, dispatch, zone = null, onBack = null }) {
   const { model, addedDrivers } = state;
-  const drivers = useMemo(
+  const effective = useMemo(
     () => effectiveDrivers(model, addedDrivers, state.deletedDrivers),
     [model, addedDrivers, state.deletedDrivers],
   );
@@ -162,6 +163,12 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
   const typesLib = useMemo(() => api.typeInfo(), [model]);
   const comps = useMemo(() => api.compositions(), [model]);
   const rows = useMemo(() => api.hubRows(), [model]);
+  // and everything else the hub holds, which the driver form never mentioned
+  const hubLabel = zone ?? state.context?.hubLabel ?? model.zones[0];
+  const drivers = useMemo(
+    () => [...effective, ...hubElements(model, effective, rows, hubLabel)],
+    [effective, model, rows, hubLabel],
+  );
   const elemParams = useMemo(() => Object.fromEntries(Object.values(rows.elements)
     .map((e) => [e.ref, e.parameters])), [rows]);
   const sizes = useMemo(() => ({ edited: state.typeSizes ?? {}, db: stated }), [state.typeSizes, stated]);
@@ -196,6 +203,8 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
   const [nudgeAt, setNudgeAt] = useState(null);   // { b, axis } the arrow keys move
   const [notice, setNotice] = useState(null);
   const svgEls = useRef({});
+  const sheetGeo = useRef({});   // each sheet's bays and offsets, for finding a drop
+  const trayEl = useRef(null);
   const menuEl = useRef(null);
   const resizeRef = useRef(null);
   resizeRef.current = resize;
@@ -203,38 +212,42 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
 
   const cur = st[hub] ?? null;
 
-  // A hub opens as the DB last saved it when there is anything to go on: the
-  // hub row's bays, and where each driver sits. Drivers with no placement yet
-  // join bay 1.
+  // A hub opens as the DB last saved it: the hub row's bays, and each Element
+  // where its ContextParameters put it. Anything with no placement waits in the
+  // tray, so a hub nobody has laid out opens with empty bays and a full tray.
   useEffect(() => {
     if (!hub || st[hub]) return;
     const mine = drivers.filter((d) => d.zone === hub);
     const items = mine.map((d) => stackFor(d));
     const placed = mine.map((d) => rows.elements[d.ref]).filter((e) => /[<[]/.test(e?.contextParameters ?? ''));
-    if (rows.hub?.parameters || placed.length) {
-      const geo = hl.bayGeometry(rows.hub?.parameters ?? '');
-      const first = Math.max(0, ...geo.held);
-      const slotRows = rows.bays.map((b, k) => ({ slot: first + k, ref: b.ref }));
+    if (rows.hub?.parameters || placed.length || rows.bays.length) {
       const byRef = Object.fromEntries(items.map((i) => [i.ref, i]));
-      const loaded = hl.load({ container: rows.hub?.parameters ?? '', slots: slotRows, elements: placed }, byRef);
-      const done = new Set(loaded.flat().map((i) => i.ref));
-      loaded[0] = feedFirst([...loaded[0], ...items.filter((i) => !done.has(i.ref))]);
-      const opts = loaded.map((_, i) => ({
+      const stored = hl.loadLayout({
+        container: rows.hub?.parameters ?? '',
+        slots: rows.bays.map((b) => ({ ref: b.ref, name: b.name, parameters: b.parameters })),
+        elements: placed,
+      }, byRef);
+      const done = new Set(stored.slots.flat().map((i) => i.ref));
+      const tray = feedFirst(items.filter((i) => !done.has(i.ref)));
+      const opts = stored.slots.map((_, i) => ({
         ...bayDefaults(),
-        width: geo.widths[i] ?? null,
-        height: geo.heights[i] ?? null,
-        separate: slotRows.some((s) => s.slot === i),
-        ref: slotRows.find((s) => s.slot === i)?.ref ?? '',
+        width: stored.widths[i] ?? null,
+        height: stored.heights[i] ?? null,
+        separate: stored.separate.includes(i),
+        ref: stored.refs[i] ?? '',
       }));
-      rows.bays.forEach((b, k) => {
-        const cap = hl.parseParams(b.parameters).capacity;
-        const o = opts[slotRows[k].slot];
-        if (cap && o) { o.width = cap[0]; o.height = cap[1]; }
-      });
-      setSt((s) => ({ ...s, [hub]: { bays: loaded, opts, fromDb: true } }));
+      // it opens in whichever form the DB holds it: enclosure Elements, or spaces
+      setSt((s) => ({ ...s, [hub]: { bays: stored.slots, opts, tray, enclosures: stored.enclosures, fromDb: true } }));
       return;
     }
-    setSt((s) => ({ ...s, [hub]: { bays: [feedFirst(items)], opts: [bayDefaults()] } }));
+    // Nothing stored for this hub: the drivers the data recognises are placed
+    // straight away, to save picking them one by one; provisions and anything it
+    // does not recognise wait in the tray. Placed here is not placed in the DB -
+    // the legend counts them until the patch writes them.
+    const known = (i) => hl.isKnownDriver(mine.find((d) => d.ref === i.ref));
+    setSt((s) => ({ ...s, [hub]: {
+      bays: [items.filter(known)], opts: [bayDefaults()], tray: feedFirst(items.filter((i) => !known(i))),
+    } }));
   }, [hub, drivers, st, ctx, rows]);
 
   // A size, a part arrangement or a junction box count belongs to the set, so a
@@ -242,20 +255,20 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
   // undo step: it is the set's, like a preset.
   useEffect(() => {
     setSt((s) => Object.fromEntries(Object.entries(s).map(([h, v]) => {
-      const bays = v.bays.map((b) => b
-        .filter((i) => drivers.some((x) => x.ref === i.ref))   // an undone split
-        .map((i) => ({ ...stackFor(drivers.find((x) => x.ref === i.ref)), rot: i.rot })));
-      // drivers broken out of a quantity stand just after the row they came from
-      const have = new Set(bays.flat().map((i) => i.ref));
+      const alive = (i) => drivers.some((x) => x.ref === i.ref);   // not an undone split
+      const redraw = (i) => ({ ...stackFor(drivers.find((x) => x.ref === i.ref)), rot: i.rot });
+      const bays = v.bays.map((b) => b.filter(alive).map(redraw));
+      const tray = (v.tray ?? []).filter(alive).map(redraw);
+      // Drivers broken out of a quantity stand just after the row they came from,
+      // in a bay or in the tray; anything else new waits in the tray.
+      const have = new Set([...bays.flat(), ...tray].map((i) => i.ref));
       for (const d of drivers.filter((x) => x.zone === h && !have.has(x.ref))) {
-        let bi = bays.findIndex((b) => b.some((i) => i.ref === d.split));
-        if (bi < 0) bi = 0;
-        // after the source and any sibling already placed, so they keep their order
+        const home = (d.split && [...bays, tray].find((b) => b.some((i) => i.ref === d.split))) || tray;
         let at = -1;
-        bays[bi].forEach((i, n) => { if (i.ref === d.split || drivers.find((x) => x.ref === i.ref)?.split === d.split) at = n; });
-        bays[bi].splice(at < 0 ? bays[bi].length : at + 1, 0, stackFor(d));
+        home.forEach((i, n) => { if (d.split && (i.ref === d.split || drivers.find((x) => x.ref === i.ref)?.split === d.split)) at = n; });
+        home.splice(at < 0 ? home.length : at + 1, 0, stackFor(d));
       }
-      return [h, { ...v, bays }];
+      return [h, { ...v, bays, tray }];
     })));
   }, [ctx, drivers, brokenFrom]);
 
@@ -506,12 +519,58 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
     && (m.sizedBy === 'edited' || (m.sizedBy === 'datasheet' && m.kind !== 'feed')));
   const inPatch = notInDb.filter((m) => !skip.includes(m.typeRef));
 
+  // Each piece's enclosure Ref lives on its first bay; enclosures the DB holds that
+  // the patch would no longer use are marked deleted, and said so before copying.
+  const allPieces = hl.pieces(cur.bays.length, separate);
+  const pieceRefs = Object.fromEntries(allPieces
+    .map((pc) => [pc.group, (opt(pc.slots[0]).ref ?? '').trim() || null])
+    .filter(([, r]) => r));
+  const keepRefs = new Set(cur.enclosures ? Object.values(pieceRefs) : []);
+  const dropEnclosures = rows.bays.map((b) => b.ref).filter((r) => !keepRefs.has(r));
+
   const toggle = (ref, add) => setSel((c) => (add
     ? (c.includes(ref) ? c.filter((r) => r !== ref) : [...c, ref])
     : (c.includes(ref) && c.length === 1 ? [] : [ref])));
 
-  const onDrop = () => {
-    if (drag?.overBay != null) edit({ bays: hl.moveItem(cur.bays, drag.ref, drag.overBay, drag.atIndex) });
+  const tray = cur.tray ?? [];
+
+  // Which bay, and where in it, a point on screen falls. Worked out from the point
+  // itself, so a drop lands where it is released whether or not the drawing saw
+  // the pointer move on the way there.
+  const hitBay = (x, y) => {
+    for (const [si, g] of Object.entries(sheetGeo.current)) {
+      const el = svgEls.current[`s${si}`];
+      if (!el || !g) continue;
+      const r = el.getBoundingClientRect();
+      if (x < r.left || x > r.right || y < r.top || y > r.bottom) continue;
+      const mmX = (x - r.left - LEFT) / scale;
+      let local = g.off.findIndex((o0, i) => mmX >= o0 && mmX < o0 + g.widths[i]);
+      if (local < 0) local = mmX < 0 ? 0 : g.bays.length - 1;
+      const mmY = (r.top + 10 + g.H - y) / scale;
+      return { overBay: g.slots[local], atIndex: hl.dropIndex(g.bays[local], mmY, { slotWidth: g.widths[local] }) };
+    }
+    return null;
+  };
+
+  const onDrop = (e) => {
+    const t = trayEl.current?.getBoundingClientRect();
+    const onTray = !!(drag && e && t && e.clientX >= t.left && e.clientX <= t.right && e.clientY >= t.top && e.clientY <= t.bottom);
+    const hit = drag && e && !onTray ? hitBay(e.clientX, e.clientY) : null;
+    const d = drag && { ...drag, overTray: onTray, overBay: hit ? hit.overBay : null, atIndex: hit ? hit.atIndex : 0 };
+    if (d?.fromTray && d.overBay != null) {
+      const item = tray.find((i) => i.ref === d.ref);
+      if (item) {
+        edit({
+          tray: tray.filter((i) => i.ref !== d.ref),
+          bays: cur.bays.map((b, i) => (i === d.overBay ? [...b.slice(0, d.atIndex), item, ...b.slice(d.atIndex)] : b)),
+        });
+      }
+    } else if (d?.overTray && !d.fromTray) {
+      const item = cur.bays.flat().find((i) => i.ref === d.ref);
+      if (item) edit({ bays: cur.bays.map((b) => b.filter((i) => i.ref !== d.ref)), tray: [...tray, item] });
+    } else if (d?.overBay != null && !d.fromTray) {
+      edit({ bays: hl.moveItem(cur.bays, d.ref, d.overBay, d.atIndex) });
+    }
     setDrag(null);
   };
 
@@ -519,7 +578,7 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
   const setJboxes = (refs, n) => refs.forEach((ref) => dispatch({ type: 'SET_JBOXES', ref, count: n }));
 
   const breakApart = (ref) => {
-    const item = cur.bays.flat().find((i) => i.ref === ref);
+    const item = [...cur.bays.flat(), ...(cur.tray ?? [])].find((i) => i.ref === ref);
     const d = drivers.find((x) => x.ref === ref);
     if (!item || !d || !(item.qty > 1)) return;
     dispatch({ type: 'SPLIT_QUANTITY', ref, typeRef: d.typeRef, zone: hub, quantity: item.qty });
@@ -542,10 +601,10 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
     const container = ctxHub?.hubRef
       ? { ref: ctxHub.hubRef, name: hub, contextType: ctxHub.hubContextType ?? 'Position' }
       : { name: hub };
-    const wrapperRefs = Object.fromEntries(cur.opts
-      .map((o, i) => [i, o.separate && o.ref.trim() ? o.ref.trim() : null])
-      .filter(([, r]) => r));
-    const saved = hl.save(laid, { container, separate, widths: allWidths, heights: allHeights, wrapperRefs });
+    const saved = hl.save(laid, {
+      container, separate, widths: allWidths, heights: allHeights,
+      enclosures: !!cur.enclosures, pieceRefs,
+    });
     const fmtSize = (s) => formatParams({ size: [s[0], s[1], s[2] > 0 ? s[2] : null] });
 
     const typeRows = new Map();
@@ -586,8 +645,10 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
     const broken = addedDrivers.filter((a) => a.split && a.zone === hub);
     const quantities = [...new Set(broken.map((a) => a.split))].map((ref) => ({ ref: outRef(ref), quantity: 1 }));
     const newElements = Object.fromEntries(broken.map((a) => [a.ref, { typeRef: a.typeRef, name: typesLib[a.typeRef]?.name ?? '' }]));
+    const unplaced = tray.filter((i) => /[<[]/.test(rows.elements[i.ref]?.contextParameters ?? '')).map((i) => i.ref);
     await api.copyPatch(hubPatch({
-      saved, hub: container.ref ? container : null, typeSizes: [...typeRows.values()], tbc, jb, quantities, newElements,
+      saved, hub: container.ref ? container : null, typeSizes: [...typeRows.values()], tbc, jb, quantities, newElements, unplaced,
+      dropEnclosures,
     }));
     setCopied(true);
     setTimeout(() => setCopied(false), 1800);
@@ -757,7 +818,19 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
             {cur.bays.length}
             <button onClick={addBay}>+</button>
           </span>
-          <button className="btn btn-sm btn-link p-0" onClick={() => edit({ bays: hl.rebalance(cur.bays).map(feedFirst) })}>
+          <label className="hub-check" title="One ET-PSU-ENC Element per piece of joinery, with its drivers inside. Off: pieces are recorded as space groups on the hub row.">
+          <input type="checkbox" checked={!!cur.enclosures} onChange={() => edit({ enclosures: !cur.enclosures })} /> Enclosure Elements
+        </label>
+        {dropEnclosures.length > 0 && (
+          <span className="hub-verdict is-over" title="Their drivers are moved back onto the hub first">
+            patch marks {dropEnclosures.length} enclosure{dropEnclosures.length === 1 ? '' : 's'} IsDeleted
+          </span>
+        )}
+        <button className="btn btn-sm btn-link p-0" onClick={() => {
+            // everything, the tray included
+            const all = cur.bays.map((b, i) => (i === 0 ? [...b, ...tray] : b));
+            edit({ bays: hl.rebalance(all).map(feedFirst), tray: [] });
+          }}>
             Auto-arrange
           </button>
           {sel.length > 0 && (
@@ -822,6 +895,15 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
       {/* what in this hub is the DB's, and what the tool is standing in for */}
       <div className="hub-legend">
         <span>{types.length} type{types.length === 1 ? '' : 's'}:</span>
+        {tray.length > 0 && <span>{tray.reduce((n, i) => n + (i.qty ?? 1), 0)} not placed</span>}
+        {/* placed in this drawing but not yet in the DB, which only knows a
+            placement once the patch writes its <space> */}
+        {(() => {
+          const pending = cur.bays.flat().filter((i) => !/</.test(rows.elements[i.ref]?.contextParameters ?? ''));
+          return pending.length > 0 && (
+            <span><Origin kind="edited" what="These placements" />{pending.length} placed, not in the DB yet</span>
+          );
+        })()}
         {count('db') > 0 && <span>{count('db')} sized in the DB</span>}
         {count('datasheet') > 0 && <span><Origin kind="datasheet" what="These sizes" />{count('datasheet')}</span>}
         {count('edited') > 0 && <span><Origin kind="edited" what="These sizes" />{count('edited')}</span>}
@@ -836,6 +918,11 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
         <span className="text-secondary">Hover a block for its pencil, hover a bay to resize it.</span>
       </div>
 
+      <div className="hub-body">
+      <HubTray items={tray} dragging={drag} trayRef={trayEl}
+        onPick={(ref) => { setSel([]); setDrag({ ref, fromTray: true, overBay: null, atIndex: 0 }); }}
+        onHover={(over) => setDrag((d) => (d && !d.fromTray ? { ...d, overTray: over, overBay: over ? null : d.overBay } : d))}
+        onBreakApart={breakApart} />
       <div className="hub-sheets">
         {hl.sheets(cur.bays.length, separate).map((sheet, si) => {
           // Joined bays are one cabinet with a divider: they share the gap
@@ -849,14 +936,23 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
           const H = px(Math.max(sheetExt.h, 150));
           const W = px(sheetExt.w);
           const placed = hl.placements(bays, lopts);
-          // the trunking is a property of a ROW: down each side of an upright
-          // run, across the ends of a turned one
-          const rows2 = bays.flatMap((items, local) =>
-            hl.packBay(items, widths[local]).map((r) => ({ ...r, x0: off[local], bw: widths[local] })));
+          sheetGeo.current[si] = { slots: sheet.slots, off, widths, H, bays };
+          // the trunking is a property of a ROW, down each side of an upright run
+          // and across the ends of a turned one, and carries on up the sides to
+          // the height of the tallest bay standing beside it
+          const bands = bays.flatMap((items, local) =>
+            hl.trunkBands(hl.packBay(items, widths[local]), widths[local], sheetExt.h)
+              .map((b) => ({ ...b, x: off[local] + b.x })));
           return (
             <div key={si} className="hub-sheet">
               <div className="hub-sheet-head">
-                <b>{hub}{sheet.separate ? `-${sheet.slots[0] + 1}` : ''}</b>
+                <b>{cur.enclosures ? `${hub}.${si + 1}` : `${hub} · ${String.fromCharCode(65 + si)}`}</b>
+                {cur.enclosures && (
+                  <label className="hub-mrow hub-piece-ref" title="This piece's enclosure Element Ref">
+                    <input type="text" placeholder="allocate" value={opt(sheet.slots[0]).ref ?? ''}
+                      onChange={(e) => setOpt(sheet.slots[0], { ref: e.target.value })} />
+                  </label>
+                )}
                 <span>{sheetExt.w} × {Math.max(sheetExt.h, 0)} × {hl.DEPTH_MM}mm</span>
               </div>
 
@@ -910,13 +1006,6 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
                             <input type="checkbox" checked={o.separate}
                               onChange={() => setOpt(b, { separate: !o.separate })} /> Separate
                           </label>
-                          {o.separate && (
-                            <label className="hub-mrow">
-                              <span>Element Ref</span>
-                              <input type="text" placeholder="allocate" value={o.ref}
-                                onChange={(e) => setOpt(b, { ref: e.target.value })} style={{ width: 96 }} />
-                            </label>
-                          )}
                         </div>
                       )}
                     </div>
@@ -939,7 +1028,7 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
                   }
                   if (local < 0) local = mmX < 0 ? 0 : bays.length - 1;
                   const y = (r.top + 10 + H - e.clientY) / scale;
-                  setDrag({ ...drag, overBay: sheet.slots[local],
+                  setDrag({ ...drag, overTray: false, overBay: sheet.slots[local],
                     atIndex: hl.dropIndex(bays[local], y, { slotWidth: widths[local] }) });
                 }}>
                 <defs>
@@ -954,18 +1043,11 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
                 </defs>
                 <g transform={`translate(${LEFT},10)`}>
                   <rect x="0" y="0" width={W} height={H} fill="#fff" stroke="#16212e" strokeWidth="2" />
-                  {rows2.map((r, n) => {
-                    const t = px(hl.TRUNK);
-                    const yTop = H - px(r.y + r.h);
-                    const bands = r.hatched
-                      ? [[px(r.x0), yTop, px(r.bw), t], [px(r.x0), H - px(r.y) - t, px(r.bw), t]]
-                      : [[px(r.x0), yTop, t, px(r.h)], [px(r.x0 + r.bw) - t, yTop, t, px(r.h)]];
-                    return bands.map(([bx, by, bw, bh], k) => (
-                      // no outline, so a run of trunking reads as one band
-                      <rect key={`r${n}-${k}`} x={bx} y={by} width={bw} height={bh}
-                        fill={`url(#hatch-${si})`} stroke="none" />
-                    ));
-                  })}
+                  {bands.map((b, n) => (
+                    // no outline, so a run of trunking reads as one band
+                    <rect key={`t${n}`} className="hub-trunk" x={px(b.x)} y={H - px(b.y + b.h)} width={px(b.w)} height={px(b.h)}
+                      fill={`url(#hatch-${si})`} stroke="none" />
+                  ))}
 
                   {placed.map((p) => {
                     const y = H - px(p.y) - px(p.size[1]);
@@ -1166,7 +1248,7 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
           );
         })}
       </div>
-
+      </div>
     </div>
   );
 }

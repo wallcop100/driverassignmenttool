@@ -447,6 +447,25 @@ export function effectiveDrivers(model, addedDrivers, deletedDrivers) {
   ];
 }
 
+// Everything the hub holds that the driver form never mentioned. The form is built
+// from cables, so an early design - "4 of this driver in this hub", no cables yet,
+// as set 106449 has it - never reaches it. Those Elements exist in the DB, so they
+// are drawn and placed, but never marked added: no patch appends them.
+export function hubElements(model, drivers, rows, zone) {
+  const byType = Object.fromEntries((model?.inventory ?? []).map((t) => [t.typeRef, t]));
+  const known = new Set((drivers ?? []).map((d) => d.ref));
+  return Object.values(rows?.elements ?? {})
+    .filter((e) => e.typeRef && !known.has(e.ref))
+    .map((e) => {
+      const t = byType[e.typeRef];
+      return {
+        ...(t ?? { nodes: [] }),
+        typeRef: e.typeRef, ref: e.ref, zone,
+        name: e.name || '', typeName: t?.name ?? '', fromDb: true,
+      };
+    });
+}
+
 export function linksByRef(model) {
   return Object.fromEntries(model.links.map((l) => [l.ref, l]));
 }

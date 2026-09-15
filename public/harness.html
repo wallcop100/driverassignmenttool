@@ -46,6 +46,7 @@
       <input type="checkbox" id="sendTypes" checked style="width:auto" /> send dat:types first
     </label>
 
+    <label style="display:block"><input type="checkbox" id="estimate" style="width:auto" /> estimate shape: no form, no cables, hub Elements only (HUB-J)</label>
     <button id="send">Send dat:init</button>
     <button id="reload">Reload iframe (simulate flaky frame)</button>
     <div id="log"></div>
@@ -69,11 +70,12 @@ let csvs = null;
 
 const loadCsvs = async () => {
   if (csvs) return csvs;
-  const [form, links] = await Promise.all([
+  const [form, links, assessment] = await Promise.all([
     fetch('/src/demo/form.csv').then((r) => r.text()),
     fetch('/src/demo/links.csv').then((r) => r.text()),
+    fetch('/src/demo/assessment.csv').then((r) => r.text()),
   ]);
-  csvs = { form, links };
+  csvs = { form, links, assessment };
   return csvs;
 };
 
@@ -89,6 +91,12 @@ ET-CVR-PSU-24,Meanwell - HLG-185-24,,,,24,,0,0
 const ELEM_CSV = `Ref,Kind,ContextRef,Parameters,ContextParameters,Quantity
 E50028,element,p50123,,,4
 `;
+// an early design: what HUB-J holds, none of it placed yet
+const ELEM_EST_CSV = `Ref,Kind,ContextRef,Parameters,ContextParameters,Quantity,TypeRef,Name
+E60001,element,p60001,,,4,ET-CCR-D-300-1CH-01,
+E60002,element,p60001,,,2,ET-CVR-D-24-2CH-01,
+E60003,element,p60001,,,1,ET-CCR-FEED-PROV,Feed provision
+`;
 // the wrapper's parts, as DJ 101681's datc_ block sends them
 const COMP_CSV = `ParentTypeRef,ChildTypeRef,Quantity,SortOrder
 ET-CVR-D-24-2CH-01,ET-CVR-PSU-24,1,1
@@ -100,7 +108,8 @@ E50027,1,0
 `;
 
 const sendInit = async () => {
-  const { form, links } = await loadCsvs();
+  const { form, links, assessment } = await loadCsvs();
+  const est = $('estimate')?.checked;
   if ($('sendTypes').checked) {
     frame.contentWindow.postMessage({ type: 'dat:types', version: 1, types: TYPES_CSV }, location.origin);
     log('→ dat:types (' + (TYPES_CSV.trim().split(/\r?\n/).length - 1) + ' type rows)');
@@ -108,11 +117,12 @@ const sendInit = async () => {
   const msg = {
     type: 'dat:init',
     version: Number($('ver').value),
-    form,
-    links,
+    form: est ? '' : form,
+    links: est ? '' : links,
+    assessment: est ? assessment : undefined,
     tbc: TBC_CSV,
     compositions: COMP_CSV,
-    elements: ELEM_CSV,
+    elements: est ? ELEM_EST_CSV : ELEM_CSV,
     focusZone: $('zone').value || undefined,
     context: {
       branchId: Number($('branch').value),

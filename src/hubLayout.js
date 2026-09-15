@@ -26,6 +26,16 @@ export const bayName = L.slotLabel;
 // a feed, which is why the match needs FEED.
 export const isFeed = (typeRef) => /FEED-?PROV/i.test(String(typeRef ?? ''));
 
+// A driver, as far as the data can tell: a constant current or constant voltage
+// type, or one with LED output nodes. Feed Provision has output nodes too but is
+// not a driver; a provision (ET-PEN-PROV) or a type the library does not know says
+// neither, and is left for a person to place.
+export function isKnownDriver(d) {
+  if (!d || isFeed(d.typeRef)) return false;
+  if (d.powerType === 'CC' || d.powerType === 'CV') return true;
+  return (d.nodes ?? []).some((n) => /^OP/i.test(String(n?.name ?? '')));
+}
+
 // A feed provision type with no size of its own is drawn at this, marked as not
 // in the DB, until somebody gives the type one.
 export const FEED_SIZE = [280, 105, 50];
@@ -119,4 +129,25 @@ export function stack(module, qty) {
     }
   }
   return { ...module, qty, unitSize: module.size, size: [w, h * qty + 2 * L.CLEAR_Y * (qty - 1), d], parts };
+}
+
+// The trunking of one bay, as rectangles in millimetres from the bay's bottom left.
+// Each row carries its own: down the sides of an upright run, across the ends of a
+// turned one. Above the last row the side runs keep going to `sheetHeight`, so a
+// short bay standing beside a tall one is trunked the full height of the cabinet,
+// and an empty bay is trunked all the way up.
+export function trunkBands(rows, bayWidth, sheetHeight = 0, trunk = L.TRUNK) {
+  const out = [];
+  for (const r of rows) {
+    if (r.hatched) {
+      out.push({ x: 0, y: r.y, w: bayWidth, h: trunk }, { x: 0, y: r.y + r.h - trunk, w: bayWidth, h: trunk });
+    } else {
+      out.push({ x: 0, y: r.y, w: trunk, h: r.h }, { x: bayWidth - trunk, y: r.y, w: trunk, h: r.h });
+    }
+  }
+  const top = rows.reduce((n, r) => Math.max(n, r.y + r.h), 0);
+  if (sheetHeight > top) {
+    out.push({ x: 0, y: top, w: trunk, h: sheetHeight - top }, { x: bayWidth - trunk, y: top, w: trunk, h: sheetHeight - top });
+  }
+  return out;
 }

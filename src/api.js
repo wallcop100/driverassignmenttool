@@ -245,6 +245,8 @@ export function hubRows() {
       contextRef: String(r.ContextRef ?? '').trim() || null,
       parameters: String(r.Parameters ?? ''),
       contextParameters: String(r.ContextParameters ?? ''),
+      typeRef: String(r.TypeRef ?? '').trim() || null,
+      name: String(r.Name ?? ''),
       // one row standing for several drivers, as early designs record them
       quantity: Number(r.Quantity) > 0 ? Number(r.Quantity) : 1,
     };

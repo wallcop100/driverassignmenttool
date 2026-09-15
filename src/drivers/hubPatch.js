@@ -94,8 +94,9 @@ const elementSection = (rows) => `    // --- CHANGE: where each driver sits ---\
   + `      if (row === undefined) { console.log("WARNING: " + it.ref + " not found in Elements - skipped."); continue; }\n`
   + `      const was = String(data_E[row][col_E_ContextParameters]);\n`
   + `      const next = mergeFlavour(mergeFlavour(was, "spaces", it.spaces), "size", it.xyz);\n`
-  + `      if (next !== was) { WS_E.getCell(row, col_E_ContextParameters).setValue(next); }\n`
-  // moved into a separated bay: its parent is now that bay's Element
+  // back in the tray: the placement comes off, and an emptied cell is cleared
+  + `      if (next !== was) { if (next === "") { WS_E.getCell(row, col_E_ContextParameters).${CLEAR}; } else { WS_E.getCell(row, col_E_ContextParameters).setValue(next); } }\n`
+  // what it sits in: the hub, or its piece's enclosure Element
   + `      if (it.contextRef) {\n`
   + `        WS_E.getCell(row, col_E_ContextType).setValue(it.contextType);\n`
   + `        WS_E.getCell(row, col_E_ContextRef).setValue(it.contextRef);\n`
@@ -127,7 +128,7 @@ const hubSection = (h) => `    // --- CHANGE: the hub's own size ---\n`
 
 // ADD last, as the house rules order it. A bay given a Ref that already exists is
 // updated in place; one without a Ref is appended under the placeholder.
-const baySection = (bays) => `    // --- ADD: separated bays ---\n`
+const baySection = (bays) => `    // --- ADD / CHANGE: an enclosure Element per piece ---\n`
   + `    const bays = [\n${json(bays)}\n    ];\n`
   + `    for (const b of bays) {\n`
   + `      const existing = b.isNew ? undefined : rowOf_E.get(b.ref);\n`
@@ -173,6 +174,20 @@ const brokenOutSection = (rows) => `    // --- ADD: drivers broken out of a quan
   + `    }\n`
   + `    console.log("Drivers broken out of a quantity carry the placeholder Ref. Give each a real Ref.");\n\n`;
 
+// Enclosure Elements no longer used: the hub went back to spaces, or has fewer
+// pieces than it had. Their drivers were pointed back at the hub above, so only the
+// enclosure row is marked. NOT the cascading OMIT: that walks children from the sheet
+// as it stood before this patch, would still find the drivers inside, and delete them.
+// Out of the usual OMIT-first order for exactly that reason.
+const dropEnclosureSection = (refs) => `    // --- OMIT: enclosure Elements no longer used (their drivers moved back first) ---\n`
+  + `    const dropEnclosures = [\n${json(refs)}\n    ];\n`
+  + `    for (const ref of dropEnclosures) {\n`
+  + `      const row = rowOf_E.get(ref);\n`
+  + `      if (row === undefined) { console.log("WARNING: enclosure " + ref + " not found - not marked deleted."); continue; }\n`
+  + `      WS_E.getCell(row, col_E_IsDeleted).setValue("Y");\n`
+  + `      console.log("Enclosure " + ref + " marked IsDeleted; its drivers now sit on the hub.");\n`
+  + `    }\n\n`;
+
 const flavours = (params) => {
   const p = parseParams(params ?? '');
   return {
@@ -188,8 +203,10 @@ const flavours = (params) => {
 // jb: { [elementRef]: '<JB.1[...],...>' | '' }, junction boxes set here ('' clears).
 // quantities: [{ ref, quantity }], rows whose Quantity changes (a quantity broken apart).
 // newElements: { [elementRef]: { typeRef, name } }, drivers broken out of a quantity.
+// unplaced: [elementRef], placed in the DB but back in the tray: their placement is cleared.
+// dropEnclosures: [enclosureRef], enclosure Elements no longer used, marked IsDeleted.
 export function hubPatch({
-  saved, hub = null, typeSizes = [], tbc = [], jb = {}, quantities = [], newElements = {},
+  saved, hub = null, typeSizes = [], tbc = [], jb = {}, quantities = [], newElements = {}, unplaced = [], dropEnclosures = [],
   tool = 'Driver Assignment Tool',
 }) {
   const isNew = (ref) => Object.hasOwn(newElements, ref);
@@ -205,19 +222,25 @@ export function hubPatch({
   const elements = (saved?.elements ?? []).filter((e) => !isNew(e.ref))
     .map((e) => {
       const cp = parseParams(e.contextParameters);
-      const moved = e.contextType === 'Element';
+      const inPiece = e.contextType === 'Element';
       return {
         ref: outRef(e.ref),
         xyz: cp.size ? formatParams({ size: cp.size }) : '',
         spaces: cp.spaces ? `<${cp.spaces}>` : '',
-        contextType: moved ? 'Element' : null,
-        contextRef: moved ? (e.contextRef ?? PLACEHOLDER_REF) : null,
+        // Every placed driver says what it sits in, not only one moving into an
+        // enclosure: that is how a driver comes back out of one onto the hub.
+        contextType: inPiece ? 'Element' : e.contextType ?? hub?.contextType ?? null,
+        contextRef: inPiece ? (e.contextRef ?? PLACEHOLDER_REF) : e.contextRef ?? hub?.ref ?? null,
         size: e.parameters ? formatParams({ size: parseParams(e.parameters).size }) : null,
         // every row carries both keys: Office Scripts types the array from its rows
         setJb: Object.hasOwn(jb, e.ref),
         jb: jb[e.ref] ?? '',
       };
     });
+  // placed in the DB, now in the tray: its [x,y,z] and <bay> come off the cell
+  for (const ref of unplaced) {
+    elements.push({ ref: outRef(ref), xyz: '', spaces: '', contextType: null, contextRef: null, size: null, setJb: false, jb: '' });
+  }
   const bays = (saved?.slots ?? []).map((b) => ({
     ref: b.ref ?? PLACEHOLDER_REF,
     isNew: !b.ref,
@@ -230,7 +253,7 @@ export function hubPatch({
 
   let body = MERGE_TS
     + header('Elements', 'E',
-      ['Ref', 'Name', 'TypeRef', 'ContextType', 'ContextRef', 'Quantity', 'IsTBC', 'IsPropertiesTBC', 'ContextParameters', 'Parameters'],
+      ['Ref', 'Name', 'TypeRef', 'ContextType', 'ContextRef', 'Quantity', 'IsDeleted', 'IsTBC', 'IsPropertiesTBC', 'ContextParameters', 'Parameters'],
       ['ContextParameters', 'Parameters', 'IsTBC'])
     + rowMap('E')
     // every append shares one row counter, so bays and new drivers never collide
@@ -246,6 +269,7 @@ export function hubPatch({
   }));
   if (typeRows.length) body += typeSizeSection(typeRows);
   if (elements.length) body += elementSection(elements);
+  if (dropEnclosures.length) body += dropEnclosureSection(dropEnclosures);
 
   if (hub?.ref) {
     const code = hub.contextType === 'Element' ? 'E' : 'P';
