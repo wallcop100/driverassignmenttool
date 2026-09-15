@@ -26,12 +26,10 @@ export default function ImportScreen({ dispatch, saved, onResume, onDiscard }) {
   const useDemo = () => {
     setBusy(true);
     setError(null);
-    try {
-      dispatch({ type: 'INIT', model: api.loadDemo(), demo: true });
-    } catch (e) {
-      setError(e.message);
-      setBusy(false);
-    }
+    // the demo CSVs are fetched on demand, so this is async now
+    api.loadDemo()
+      .then((model) => dispatch({ type: 'INIT', model, demo: true }))
+      .catch((e) => { setError(e.message); setBusy(false); });
   };
 
   return (

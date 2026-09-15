@@ -1,9 +1,11 @@
 import { useContext } from 'react';
 import { LabelContext } from '../labelContext.js';
+import { useDomain } from '../core/domain.js';
 import { cgColor, labelText, severityOf } from '../state.js';
 import Tooltip from './Tooltip.jsx';
 
 export default function Block({ link, linkRef, flags = [], pending, selected, dispatch, draggable = true, groups }) {
+  const domain = useDomain();
   const labelFields = useContext(LabelContext);
   const ref = link?.ref ?? linkRef;
   const severity = severityOf(flags); // FAIL/MISMATCH (CC/CV + mA) both render as serious
@@ -18,7 +20,7 @@ export default function Block({ link, linkRef, flags = [], pending, selected, di
   // label/fV text is never clipped — the block grows to fit its content.
   const minWidth = link?.loadW ? Math.max(46, Math.min(link.loadW * 5, 220)) : 56;
 
-  const color = link ? cgColor(link.controlGroup, groups) : cgColor(null, groups);
+  const color = cgColor(link ? domain.groupOf(link) : null, groups);
   const style = { minWidth };
   if (!solid) style.background = color.bg;
   const bandStyle = solid ? undefined : { background: color.border };
@@ -29,7 +31,7 @@ export default function Block({ link, linkRef, flags = [], pending, selected, di
        !link.powerType ? 'No SecondaryPowerType declared — check the Links CSV' : null,
        link.fvV != null ? `${link.fvV}fV` : null,
        link.currentA != null ? `${link.currentA}A` : null,
-       `group ${link.controlGroup || '—'}`,
+       `${domain.groupLabel} ${domain.groupOf(link) || '—'}`,
        [link.location, link.positionType].filter(Boolean).join(' · ') || null,
        [link.threadCount && `${link.threadCount} thread`, link.controlType].filter(Boolean).join(' · ') || null,
        ...flags.map((f) => f.message),

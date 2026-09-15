@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>LCP Assignment Tool</title>
+    <!-- The only entry this tool has. It is reached from its overlay (DJ 101698)
+         and nowhere else, so there is no standalone import screen to fall back
+         to: the host pushes the panel, its modules and its cables in lcp:init. -->
+    <script>window.__LCP_EMBED__ = true;</script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/lcp/main.jsx"></script>
+  </body>
+</html>

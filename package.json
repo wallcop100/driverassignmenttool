@@ -9,7 +9,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node --test test/"
+    "test": "node --test"
   },
   "dependencies": {
     "bootstrap": "^5.3.3",

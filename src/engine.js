@@ -2,6 +2,15 @@
 // validation + export). Pure functions — the renderer owns all state. Runs in
 // the browser and under node (see test/engine.test.mjs).
 import Papa from 'papaparse';
+import { readCsv, sameRefs, outRef, PLACEHOLDER_REF } from './core/csv.js';
+import { BANNED_NODE, fixNodeName, bannedNodes } from './core/nodes.js';
+import {
+  script, header, json, linkSection, deleteSection, layoutSection, addSection,
+  sweepSection, LINK_COLS, ELEM_COLS, LAYOUT_COLS, CLEAR,
+} from './core/patch.js';
+
+export { sameRefs, outRef, PLACEHOLDER_REF } from './core/csv.js';
+export { BANNED_NODE, fixNodeName, bannedNodes } from './core/nodes.js';
 
 const CURRENT_TOLERANCE = 0.10;
 
@@ -37,15 +46,6 @@ const g = (n) => (Number.isInteger(n) ? String(n) : String(+n.toFixed(6)));
 const pct = (x) => `${Math.round(x * 100)}%`;
 const s = (v) => (v == null ? '' : String(v).trim());
 
-function readCsv(text, required, label, allowEmpty = false) {
-  const { data, meta, errors } = Papa.parse(text, { header: true, skipEmptyLines: 'greedy' });
-  if (!data.length && !allowEmpty) throw new Error(`${label}: file is empty or has no data rows`);
-  if (!data.length) return { rows: [], fields: meta.fields ?? [] };
-  const missing = required.filter((c) => !meta.fields.includes(c));
-  if (missing.length) throw new Error(`${label}: missing column(s): ${missing.join(', ')}`);
-  if (errors.length) throw new Error(`${label}: ${errors[0].message} (row ${errors[0].row})`);
-  return { rows: data, fields: meta.fields };
-}
 
 // Autodetect which CSV a dropped file is, by its header signature. Order
 // matters: form rows also carry ElementTypeRef, so the type library is only
@@ -65,11 +65,6 @@ export function detectKind(text) {
 // Same refs, any order. Cables come back to a node in whatever order they were
 // dropped, so an order-sensitive compare reports "changed" for a row that is
 // electrically identical to the import — and then exports and patches it.
-export function sameRefs(a, b) {
-  const x = a || [];
-  const y = b || [];
-  return x.length === y.length && [...x].sort().join() === [...y].sort().join();
-}
 
 // ---- parsing ----
 export function parseDriverRestrictions(raw) {
@@ -461,19 +456,6 @@ export function buildEstimate(assessmentText, typesText, presets) {
 // node name (page 140180). A node written OP.1:2 means the same thing as OP.1-2
 // — one node carrying two physical outputs — so correcting it is a rename and
 // nothing moves: the node keeps its identity, and every cable on it stays on it.
-export const BANNED_NODE = /:/;
-export const fixNodeName = (name) => String(name ?? '').replace(/:/g, '-');
-
-// Every type whose Parameters use the banned form, with what each node becomes.
-export function bannedNodes(model) {
-  return (model?.inventory ?? [])
-    .map((t) => ({
-      t,
-      nodes: (t.nodes ?? []).filter((n) => BANNED_NODE.test(n.name))
-        .map((n) => ({ from: n.name, to: fixNodeName(n.name) })),
-    }))
-    .filter((x) => x.nodes.length > 0);
-}
 
 // A project that has not been onboarded to Lighting DesignDB V4.6: driver
 // ElementTypes exist, and not one of them states any of the ten attributes the
@@ -907,19 +889,9 @@ export function nextTypeRef(inventory, draft) {
 }
 
 // ---- driver sizing (greenfield / bulk add) ----
-// Placeholder ref for a driver that doesn't exist in DesignDB yet. Deliberately
-// not a number: it is resolved by a human later, and a made-up ElementRef that
-// looks real is worse than one that obviously isn't. EVERY added driver exports
-// as this same literal ref — they are all "to be allocated", and numbering them
-// would imply an order DesignDB never agreed to.
-export const PLACEHOLDER_REF = 'E5000X';
-
-// Internally they still need to be told apart — assignments, flags and the whole
-// UI are keyed by ref — so a second one carries a `~2` tag that never leaves the
-// app: outRef() strips it on the way out (export, patch, on-screen labels).
-// ponytail: string tag rather than a separate id field; a real id would mean
-// touching every ref-keyed map in the app for zero user-visible gain.
-export const outRef = (ref) => String(ref).split('~')[0];
+// Both live in the core now — the placeholder Ref and the `~2` tag that keeps
+// two added rows apart in memory are not a driver idea. Re-exported so every
+// call site and test keeps working unchanged.
 
 export function nextDriverRef(taken) {
   if (!taken.has(PLACEHOLDER_REF)) return PLACEHOLDER_REF;
@@ -1231,120 +1203,6 @@ export function changedRows(model, assignments, addedDrivers) {
 const TYPE_SHEET = 'ElementTypes';
 const ELEMENT_SHEET = 'Elements';
 
-// ---- the ExcelScript patch -------------------------------------------------
-// Written to the house rules for DesignDB patch scripts (page 138351):
-//
-//   * one main(), wrapped in try/catch, nothing hard-coded by column number
-//   * used ranges read ONCE, before the loops, never inside them
-//   * every lookup guarded: a Ref the workbook has not got logs a warning and is
-//     skipped, it does not throw
-//   * a flag column is "Y" or cleared; a value is cleared with
-//     .clear(ExcelScript.ClearApplyTo.contents), never setValue("")
-//   * writing any data column on a row clears that row's IsPropertiesTBC
-//   * OMIT first, then CHANGE, then ADD
-//
-// It deviates in one place, deliberately: the rules ask for a single bulk
-// setValues() at the end, and this writes changed cells individually. Writing a
-// whole used range back would rewrite every cell of a live workbook to fix a
-// handful, and the expensive part — rescanning the sheet per row — is gone
-// either way.
-const esc = (v) => String(v).replace(/"/g, '\\"');
-
-// Column lookup that can ADD the column. The ten driver attributes arrived with
-// Lighting DesignDB V4.6, so a workbook made before it simply has no
-// MaxPower(W) column to find — and find() on a missing header throws, taking the
-// whole script with it. `add` columns are appended to the header row instead,
-// which is what makes onboarding an older workbook a single paste.
-const COL_HELPER = [
-  '  // Find a column by header. Columns listed as addable are appended to the',
-  '  // header row when the workbook has not got them yet (pre-V4.6 books), and',
-  '  // a header this script created is marked so it reads as new in the sheet.',
-  '  function columnIndex(ws: ExcelScript.Worksheet, name: string, add: boolean): number {',
-  '    const found = ws.getCell(0, 0).getEntireRow().find(name, { completeMatch: true });',
-  '    if (found) { return found.getColumnIndex(); }',
-  '    if (!add) { throw new Error("Column not found: " + name); }',
-  '    const at = ws.getUsedRange().getColumnCount();',
-  '    const cell = ws.getCell(0, at);',
-  '    cell.setValue(name);',
-  '    const f = cell.getFormat().getFont();',
-  '    f.setColor("#C00000");',
-  '    f.setItalic(true);',
-  '    f.setBold(true);',
-  '    console.log("Added column " + name + " to " + ws.getName());',
-  '    return at;',
-  '  }',
-  '',
-  '  // An electrical value supplied by this script, as against one the design',
-  '  // already held. Red italic, not bold: the header carries the bold.',
-  '  function setElectrical(cell: ExcelScript.Range, value: number | string) {',
-  '    cell.setValue(value);',
-  '    const f = cell.getFormat().getFont();',
-  '    f.setColor("#C00000");',
-  '    f.setItalic(true);',
-  '  }',
-  '',
-  '',
-].join('\n');
-
-const header = (sheet, code, cols, addable = []) => `    const WS_${code} = DB.getWorksheet("${sheet}");\n`
-  + cols.map((c) => `    const col_${code}_${c.replace(/[^A-Za-z0-9]/g, '')} = `
-    + `columnIndex(WS_${code}, "${c}", ${addable.includes(c)});\n`).join('')
-  // read AFTER any column was appended, so the array has it
-  + `    const data_${code} = WS_${code}.getUsedRange().getValues();\n`;
-
-const CLEAR = 'clear(ExcelScript.ClearApplyTo.contents)';
-const json = (rows) => rows.map((r) => `      ${JSON.stringify(r)},`).join('\n');
-
-// ---- LinksMap ----
-// A logical link can span several LinksMap rows sharing one Ref (a loop serving
-// many fittings), told apart by LinkRefRowKey — which the hub CSV does not carry.
-// In practice every row of a Ref shares its From end, so patching them all is
-// both right and necessary: patching only the first, as a bare find() does,
-// leaves the rest pointing at the old driver. The exception is a cable fed from
-// two places, whose rows genuinely differ. Those cannot be told apart without
-// the row key, so the script checks at run time and skips them with a warning
-// rather than collapsing both ends onto one driver.
-const LINK_COLS = ['Ref', 'FromLinkEndContextType', 'FromLinkEndContextRef',
-  'FromLinkEndContextParameters', 'ToLinkEndContextRef', 'IsDeleted', 'IsPropertiesTBC'];
-
-const linkSection = (patches) => `    // --- CHANGE: LinksMap From ends ---\n`
-  + `    const linkPatches = [\n${json(patches)}\n    ];\n`
-  + `    for (const p of linkPatches) {\n`
-  + `      const rows = [];\n`
-  + `      for (let i = 1; i < data_X.length; i++) {\n`
-  + `        if (String(data_X[i][col_X_Ref]) === p.ref) { rows.push(i); }\n`
-  + `      }\n`
-  + `      if (rows.length === 0) {\n`
-  + `        console.log("WARNING: " + p.ref + " not found in LinksMap - skipped.");\n`
-  + `        continue;\n`
-  + `      }\n`
-  + `      const ends = [];\n`
-  + `      for (const i of rows) {\n`
-  + `        const end = String(data_X[i][col_X_FromLinkEndContextType]) + "|"\n`
-  + `          + String(data_X[i][col_X_FromLinkEndContextRef]) + "|"\n`
-  + `          + String(data_X[i][col_X_FromLinkEndContextParameters]);\n`
-  + `        if (ends.indexOf(end) === -1) { ends.push(end); }\n`
-  + `      }\n`
-  + `      if (ends.length > 1) {\n`
-  + `        console.log("WARNING: " + p.ref + " has " + rows.length\n`
-  + `          + " rows with different From ends (fed from more than one place)."\n`
-  + `          + " Skipped - patch it by hand against LinkRefRowKey.");\n`
-  + `        continue;\n`
-  + `      }\n`
-  + `      for (const i of rows) {\n`
-  + `        WS_X.getCell(i, col_X_FromLinkEndContextType).setValue(p.type);\n`
-  + `        WS_X.getCell(i, col_X_FromLinkEndContextRef).setValue(p.to);\n`
-  + `        if (p.node) {\n`
-  + `          WS_X.getCell(i, col_X_FromLinkEndContextParameters).setValue("{" + p.node + "}");\n`
-  + `        } else {\n`
-  + `          WS_X.getCell(i, col_X_FromLinkEndContextParameters).${CLEAR};\n`
-  + `        }\n`
-  + `        WS_X.getCell(i, col_X_IsPropertiesTBC).${CLEAR};\n`
-  + `      }\n`
-  + `      console.log("Repointed " + p.ref + " (" + rows.length + " row(s)) at "\n`
-  + `        + p.to + (p.node ? " " + p.node : ""));\n`
-  + `    }\n\n`;
-
 // ---- ElementTypes ----
 // Patch-or-append: an existing Ref has its ratings written, one that is not there
 // is added. Ratings only. IsTBC and IsPropertiesTBC are the designer's, and
@@ -1394,83 +1252,6 @@ const typeSection = (types) => `    // --- CHANGE / ADD: ElementTypes ---\n`
   + `      console.log((isNew ? "Added type " : "Updated type ") + t.ref);\n`
   + `    }\n\n`;
 
-// ---- Elements ----
-// Quantity is left blank where it is 1: the schema assumes 1, and writing it
-// adds noise to every row the tool appends.
-const ELEM_COLS = ['Ref', 'Name', 'TypeRef', 'ContextType', 'ContextRef', 'Quantity',
-  'IsDeleted', 'IsPropertiesTBC'];
-
-// Soft-delete plus the cascade the house rules require. The LinksMap half is the
-// point: this tool only ever sees SECONDARY POWER cables, so a driver's mains
-// feed and its control link are invisible to it and nothing else would catch
-// them. Deleting the Element without them leaves links pointing at a deleted row.
-//
-// A cable this same patch repoints is exempt — it is not orphaned, it has been
-// moved, and OMIT runs before CHANGE so the cascade would otherwise delete the
-// row the repoint is about to rewrite.
-const deleteSection = (refs, keepLinks) => `    // --- OMIT: Elements, with cascade ---\n`
-  + `    const deletedRefs = [\n${json(refs)}\n    ];\n`
-  + `    const repointed = [\n${json(keepLinks)}\n    ];\n`
-  + `    for (const ref of deletedRefs) {\n`
-  + `      let row = -1;\n`
-  + `      for (let i = 1; i < data_E.length; i++) {\n`
-  + `        if (String(data_E[i][col_E_Ref]) === ref) { row = i; break; }\n`
-  + `      }\n`
-  + `      if (row === -1) {\n`
-  + `        console.log("WARNING: " + ref + " not found in Elements - skipped.");\n`
-  + `        continue;\n`
-  + `      }\n`
-  + `      WS_E.getCell(row, col_E_IsDeleted).setValue("Y");\n`
-  + `      // child Elements, recursively. A driver's children are normally\n`
-  + `      // generated _EE rows that never reach this sheet, so this usually does\n`
-  + `      // nothing - but it costs one pass and catches a real child if there is one.\n`
-  + `      let frontier = [ref];\n`
-  + `      while (frontier.length > 0) {\n`
-  + `        const parent = frontier.pop();\n`
-  + `        for (let i = 1; i < data_E.length; i++) {\n`
-  + `          if (String(data_E[i][col_E_ContextType]) === "Element"\n`
-  + `            && String(data_E[i][col_E_ContextRef]) === parent\n`
-  + `            && String(data_E[i][col_E_IsDeleted]) !== "Y") {\n`
-  + `            WS_E.getCell(i, col_E_IsDeleted).setValue("Y");\n`
-  + `            frontier.push(String(data_E[i][col_E_Ref]));\n`
-  + `            console.log("  cascaded to child Element " + String(data_E[i][col_E_Ref]));\n`
-  + `          }\n`
-  + `        }\n`
-  + `      }\n`
-  + `      // every link touching it, either end. A cable this patch is moving is\n`
-  + `      // not orphaned, so it is left for the CHANGE section.\n`
-  + `      for (let i = 1; i < data_X.length; i++) {\n`
-  + `        if (String(data_X[i][col_X_IsDeleted]) === "Y") { continue; }\n`
-  + `        if (repointed.indexOf(String(data_X[i][col_X_Ref])) !== -1) { continue; }\n`
-  + `        if (String(data_X[i][col_X_FromLinkEndContextRef]) === ref\n`
-  + `          || String(data_X[i][col_X_ToLinkEndContextRef]) === ref) {\n`
-  + `          WS_X.getCell(i, col_X_IsDeleted).setValue("Y");\n`
-  + `          console.log("  cascaded to link " + String(data_X[i][col_X_Ref]));\n`
-  + `        }\n`
-  + `      }\n`
-  + `      console.log("Soft-deleted " + ref + " with cascade.");\n`
-  + `    }\n\n`;
-
-const addSection = (adds) => `    // --- ADD: Elements ---\n`
-  + `    const newElements = [\n${json(adds)}\n    ];\n`
-  + `    let row_E = data_E.length;\n`
-  + `    for (const el of newElements) {\n`
-  + `      WS_E.getCell(row_E, col_E_Ref).setValue(el.ref);\n`
-  + `      if (el.name) { WS_E.getCell(row_E, col_E_Name).setValue(el.name); }\n`
-  + `      WS_E.getCell(row_E, col_E_TypeRef).setValue(el.typeRef);\n`
-  + `      WS_E.getCell(row_E, col_E_ContextType).setValue("Position");\n`
-  + `      WS_E.getCell(row_E, col_E_ContextRef).setValue(el.contextRef);\n`
-  + `      if (el.quantity !== 1) { WS_E.getCell(row_E, col_E_Quantity).setValue(el.quantity); }\n`
-  + `      if (el.note) { console.log("NOTE: " + el.ref + " - " + el.note); }\n`
-  + `      row_E++;\n`
-  + `      console.log("Appended " + el.ref + " (" + el.typeRef + ") on " + el.contextRef);\n`
-  + `    }\n`
-  + `    console.log("Every appended row carries the placeholder Ref. "\n`
-  + `      + "Elements.Ref must be unique - give each one a real Ref, and repoint its cables.");\n\n`;
-
-// Presets worth patching: a correction to a type that really exists, or an
-// invented type something actually uses. A preset typed and then abandoned is
-// not a change to the workbook.
 function patchablePresets(sessions) {
   const out = new Map();
   for (const sn of sessions || []) {
@@ -1515,13 +1296,22 @@ function addedElements(sessions) {
     const hubLabel = sn.context?.hubLabel ?? null;
     for (const d of sn.addedDrivers ?? []) {
       const known = hubRef && (!hubLabel || hubLabel === d.zone || hubRef === d.zone);
+      // A hub is usually a Position — DJ 101681 takes it from
+      // Link_SecondaryPowerRef, which is the PSU-HUB Position — but it does not
+      // have to be one. Until the host sends the kind this falls back rather
+      // than knows, and says so instead of writing a silent guess.
+      const hubType = sn.context?.hubContextType ?? null;
+      const notes = [];
+      if (!known) notes.push(`CHECK ContextRef: ${d.zone} is the hub label, not its Position Ref`);
+      if (!hubType) notes.push('CHECK ContextType: assumed Position — the host did not say whether this hub is a Position or an Element');
       out.push({
         ref: PLACEHOLDER_REF,
         name: byType.get(d.typeRef)?.name || '',
         typeRef: d.typeRef,
+        contextType: hubType ?? 'Position',
         contextRef: known ? hubRef : d.zone,
         quantity: 1,
-        note: known ? '' : `CHECK ContextRef: ${d.zone} is the hub label, not its Position Ref`,
+        note: notes.join(' · '),
       });
     }
   }
@@ -1561,52 +1351,28 @@ function linkPatches(sessions) {
   return out;
 }
 
-function script(body) {
-  return '// Lighting DesignDB patch - Driver Assignment Tool\n'
-    + COL_HELPER
-    + 'function main(DB: ExcelScript.Workbook) {\n'
-    + '  try {\n'
-    + body
-    + '    console.log("Patch complete.");\n'
-    + '  } catch (e) {\n'
-    + '    console.log("Script error: " + e);\n'
-    + '    throw e;\n'
-    + '  }\n'
-    + '}\n';
-}
-
-// ':' is banned inside a node name, and a node written that way is referenced
-// from LinksMap rows belonging to hubs this session has never opened. So the
-// sweep runs against the whole sheet rather than this hub's cables: it is a
-// character swap that cannot change which node a cable is on.
-const sweepSection = () => `    // --- CHANGE: banned ':' in node names ---\n`
-  + `    let swept = 0;\n`
-  + `    for (let i = 1; i < data_X.length; i++) {\n`
-  + `      const p = String(data_X[i][col_X_FromLinkEndContextParameters]);\n`
-  + `      if (p.indexOf(":") === -1) { continue; }\n`
-  + `      WS_X.getCell(i, col_X_FromLinkEndContextParameters).setValue(p.split(":").join("-"));\n`
-  + `      swept++;\n`
-  + `    }\n`
-  + `    console.log("Replaced ':' with '-' in " + swept + " LinksMap node reference(s).");\n\n`;
-
 export function generatePatchScriptMulti(sessions) {
   const links = linkPatches(sessions);
+  const layout = (sessions || []).flatMap((sn) => sn.layoutItems ?? []);
+  const hubSizes = (sessions || []).flatMap((sn) => sn.hubSizes ?? []);
   const sweep = (sessions || []).some((sn) => sn.fixNodeSyntax);
   const types = patchablePresets(sessions).map(typeRow);
   const adds = addedElements(sessions);
   const omits = deletedElements(sessions);
-  if (!links.length && !types.length && !adds.length && !omits.length && !sweep) return script('');
+  if (!links.length && !types.length && !adds.length && !omits.length && !sweep
+    && !layout.length && !hubSizes.length) return script('');
 
   // Each sheet is declared only if it is used: the column lookups throw on a
   // workbook without them, and a session that changes nothing on a sheet must
   // not make the script depend on it.
-  const needElements = adds.length > 0 || omits.length > 0;
+  const needElements = adds.length > 0 || omits.length > 0
+    || layout.length > 0 || hubSizes.length > 0;
   // an OMIT cascades into LinksMap, so the sheet is needed even if no cable moved
   const needLinks = links.length > 0 || omits.length > 0 || sweep;
   const decl = [
     needLinks ? header('LinksMap', 'X', LINK_COLS) : '',
     types.length ? header(TYPE_SHEET, 'ET', TYPE_COLS, V46_COLS) : '',
-    needElements ? header(ELEMENT_SHEET, 'E', ELEM_COLS) : '',
+    needElements ? header(ELEMENT_SHEET, 'E', ELEM_COLS, LAYOUT_COLS) : '',
   ].join('');
 
   // OMIT, then CHANGE, then ADD.
@@ -1615,6 +1381,7 @@ export function generatePatchScriptMulti(sessions) {
     + (types.length ? typeSection(types) : '')
     + (sweep ? sweepSection() : '')
     + (links.length ? linkSection(links) : '')
+    + (layout.length || hubSizes.length ? layoutSection(layout, hubSizes) : '')
     + (adds.length ? addSection(adds) : ''));
 }
 
@@ -1624,13 +1391,16 @@ export function generatePatchScriptMulti(sessions) {
 // are one row and not six. No LinksMap section: at tender stage there are no
 // links to repoint.
 export function generateEstimatePatch(estimates) {
+  // Same as the assignment path: the hub is usually a Position but does not have
+  // to be one, and at estimate stage there is no host context at all to ask.
   const adds = (estimates || []).flatMap((z) => z.lines.map((l) => ({
     ref: PLACEHOLDER_REF,
     name: l.name || '',
     typeRef: l.typeRef,
+    contextType: z.hubContextType ?? 'Position',
     contextRef: z.zone,
     quantity: l.count,
-    note: '',
+    note: z.hubContextType ? '' : 'CHECK ContextType: assumed Position',
   })));
   if (!adds.length) return script('');
   return script(`${header(ELEMENT_SHEET, 'E', ELEM_COLS)}\n${addSection(adds)}`);

@@ -6,9 +6,16 @@ export default defineConfig({
   base: './',
   build: {
     rollupOptions: {
-      // two entries, one app: / is the standalone drop-two-CSVs page,
-      // /api/ is the embed target the host iframes.
-      input: { main: 'index.html', embed: 'api/index.html' },
+      // Three entries, one build. `base: './'` keeps every asset path relative,
+      // so all three sit in one Pages artifact with no base-path juggling.
+      //   /          the driver tool, standalone drop-two-CSVs page
+      //   /api/      the driver tool, embed target for DJ 101681
+      //   /lcp/api/  the LCP tool, embed target for DJ 101698 — its ONLY entry
+      input: {
+        main: 'index.html',
+        embed: 'api/index.html',
+        lcp: 'lcp/api/index.html',
+      },
     },
   },
   server: { port: 5173, strictPort: true },

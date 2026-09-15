@@ -1,6 +1,8 @@
 // Full-session autosave to localStorage (#3): model + assignments + prefs, so a
 // reload can restore everything without re-uploading the CSVs.
-const PREFIX = 'driverassignmenttool.session.v1';
+// Per tool, so a driver session and an LCP session on the same machine cannot
+// read each other's saved work.
+let PREFIX = 'driverassignmenttool.session.v1';
 
 // Standalone: one slot. Embedded: one slot per hub, per set, per branch —
 // the host posts hub by hub into the same iframe, so a single constant key
@@ -10,6 +12,12 @@ const PREFIX = 'driverassignmenttool.session.v1';
 //
 let key = PREFIX;
 let typesKey = `${PREFIX}.types`;
+
+export function setStoragePrefix(p) {
+  PREFIX = `${p}.session.v1`;
+  key = PREFIX;
+  typesKey = `${PREFIX}.types`;
+}
 let scope = null; // { branchId, systemSetId } — set only when embedded
 
 const parse = (k) => {

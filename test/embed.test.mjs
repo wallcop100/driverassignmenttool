@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { VERSION, validateInit, validateTypes } from '../src/embed.js';
+import { VERSION, validateInit, validateTypes, topic, setPrefix } from '../src/embed.js';
 
 const HOST = 'https://example.com';
 const good = { type: 'dat:init', version: VERSION, form: 'Pullzone,ElementRef\n', links: 'LinkRef\n' };
@@ -79,3 +79,19 @@ for (const [name, msg, origin, allowed] of [
     assert.equal(typeof r.reason, 'string');
   });
 }
+
+test('the message prefix is per tool, so two embeds cannot swallow each other', () => {
+  const init = (type) => ({ type, version: VERSION, links: 'LinkRef\n' });
+  // default: the driver tool
+  assert.equal(topic('init'), 'dat:init');
+  assert.equal(validateInit(init('dat:init'), HOST, HOST).ok, true);
+  assert.equal(validateInit(init('lcp:init'), HOST, HOST).ok, false);
+
+  setPrefix('lcp');
+  assert.equal(topic('init'), 'lcp:init');
+  assert.equal(topic('export'), 'lcp:export');
+  assert.equal(validateInit(init('lcp:init'), HOST, HOST).ok, true);
+  assert.equal(validateInit(init('dat:init'), HOST, HOST).ok, false,
+    'the LCP build ignores a driver init entirely');
+  setPrefix('dat');
+});

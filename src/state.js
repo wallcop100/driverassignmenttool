@@ -634,8 +634,11 @@ export function zoneAccent(zone, zones) {
 // All distinct ControlGroups present in one zone's links, sorted — lets colour
 // assignment spread hues evenly across however many groups actually exist there,
 // instead of relying on hash luck to keep a handful of groups visually apart.
-export function zoneControlGroups(model, zone) {
-  return [...new Set(model.links.filter((l) => l.zone === zone && l.controlGroup).map((l) => l.controlGroup))].sort();
+export function zoneControlGroups(model, zone, groupOf = (l) => l.controlGroup) {
+  // which field groups a cable is the domain's call — ControlGroup on a driver,
+  // Link_ControlDetails on a panel
+  return [...new Set(model.links.filter((l) => l.zone === zone)
+    .map((l) => groupOf(l)).filter(Boolean))].sort();
 }
 
 function hashHue(str) {

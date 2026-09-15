@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { cgColor, linkMatchesFilter } from '../state.js';
 import Block from './Block.jsx';
+import { useDomain } from '../core/domain.js';
 import KebabMenu from './KebabMenu.jsx';
 
 const SORTS = {
@@ -29,6 +30,7 @@ function groupSummary(links) {
 }
 
 export default function Tray({ trayLinks, provisionLinks, state, dispatch, focusActive, filter, setFilter, filterOpts, onConfirmDistribute, groups }) {
+  const domain = useDomain();
   const [sort, setSort] = useState('load-desc');
   const [collapsed, setCollapsed] = useState(() => new Set());
   const [showProvision, setShowProvision] = useState(false);
@@ -48,7 +50,7 @@ export default function Tray({ trayLinks, provisionLinks, state, dispatch, focus
   });
 
   const byGroup = {};
-  for (const l of shown) (byGroup[l.controlGroup || '—'] ??= []).push(l);
+  for (const l of shown) (byGroup[domain.groupOf(l) || '—'] ??= []).push(l);
   const blocks = (links) => links.map((l) => (
     <Block key={l.ref} link={l} dispatch={dispatch} groups={groups} selected={state.selectedLinks.includes(l.ref)} />
   ));

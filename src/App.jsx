@@ -1,5 +1,8 @@
 import { useEffect, useReducer, useRef, useState } from 'react';
 import * as api from './api.js';
+import { DomainProvider } from './core/domain.js';
+import driversDomain from './drivers/domain.js';
+import HubLayoutLab from './components/HubLayoutLab.jsx';
 import TypesPage from './components/TypesPage.jsx';
 import EstimatePage from './components/EstimatePage.jsx';
 import ImportScreen from './components/ImportScreen.jsx';
@@ -12,8 +15,16 @@ import { clearSession, loadSession, loadTypes, saveSession, setSessionKey } from
 import { changeCount, diffRows, initialState, intersectionSuggestions, reducer } from './state.js';
 
 const embedded = embed.isEmbedded();
+// A lab surface is asked for by name in the URL and linked from nowhere. Read
+// once at module load, so nothing in the app can navigate into one by accident.
+// Asked for by name, either in the URL or by the page that embeds the build.
+// Read once at module load, so nothing in the app can navigate into one.
+const lab = window.__DAT_LAB__ ?? new URLSearchParams(window.location.search).get('lab');
 
-export default function App() {
+// `domain` is the tool's own subject — which words, which capacities, which
+// rules. It defaults to the driver pack so the standalone entry needs no change;
+// the LCP entry passes its own.
+export default function App({ domain = driversDomain }) {
   const [state, dispatch] = useReducer(reducer, initialState);
   const { model, assignments, addedDrivers, selectedLinks } = state;
   // standalone reads the session at mount; embedded the key isn't known until
@@ -58,12 +69,11 @@ export default function App() {
     const off = embed.onInit((msg, error) => {
       if (error) { if (hasModel.current) setNotice(error); else setFatal(error); return; }
       try {
-        payload.current = { form: msg.form, links: msg.links, assessment: msg.assessment };
-        // A hub the host sends with no cables — only a requirement assessment —
-        // is the tender case, and lands on the estimate rather than a tray.
-        const model = msg.assessment && !msg.links?.trim()
-          ? api.parseEstimate(msg.assessment, types.current)
-          : api.parseText(msg.form, msg.links, types.current);
+        payload.current = { form: msg.form, links: msg.links, assessment: msg.assessment,
+          modules: msg.modules };
+        // What the payload MEANS is the domain's business — the two tools are
+        // sent different things by different overlays.
+        const model = domain.parseInit(msg, types.current);
         const focus = msg.focusZone;
         // No match is a legitimate state — a hub with no drivers yet is exactly
         // what this tool exists to fix. Land on the list with a notice instead.
@@ -120,14 +130,14 @@ export default function App() {
   // they key on refs, not on model identity.
   useEffect(() => {
     if (!model) return;
-    const rebuilt = api.rebuild(state.presets);
+    const rebuilt = domain.rebuild(state.presets);
     if (rebuilt) dispatch({ type: 'SET_MODEL', model: rebuilt });
   }, [model, state.presets]);
 
   useEffect(() => {
     if (!model) return;
     let stale = false;
-    api.validate(assignments, addedDrivers)
+    domain.validate(model, assignments, addedDrivers)
       .then((r) => !stale && dispatch({ type: 'SET_FLAGS', flags: r.flags }))
       .catch(console.error);
     return () => { stale = true; };
@@ -139,7 +149,7 @@ export default function App() {
   useEffect(() => {
     if (!model || !zone) return;
     let stale = false;
-    api.eligibility(zone, assignments, addedDrivers)
+    domain.eligibility(model, zone, assignments, addedDrivers)
       .then((r) => !stale && dispatch({ type: 'SET_ELIGIBILITY', eligibility: r }))
       .catch(console.error);
     return () => { stale = true; };
@@ -156,7 +166,7 @@ export default function App() {
   //
   useEffect(() => {
     saveSession(state);
-    if (embedded && model) embed.send({ type: 'dat:dirty', changeCount: changeCount(state) });
+    if (embedded && model) embed.send({ type: embed.topic('dirty'), changeCount: changeCount(state) });
   }, [model, assignments, addedDrivers, state.prefs, state.presets, state.view]);
 
   useEffect(() => {
@@ -172,6 +182,14 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
+  // A lab is opened by name with nothing loaded, so it brings its own data:
+  // otherwise the link lands on the import screen and the point is lost.
+  useEffect(() => {
+    if (lab && !model && !embedded) {
+      api.loadDemo().then((m) => dispatch({ type: 'INIT', model: m, demo: true }));
+    }
+  }, [lab, model]);
+
   let screen;
   if (!model && embedded) {
     // A silent blank iframe is the worst failure mode — it looks identical to a
@@ -183,8 +201,21 @@ export default function App() {
         </div>
       </div>
     );
+  } else if (!model && lab) {
+    screen = <div className="container py-5 text-secondary">Loading the demo…</div>;
   } else if (!model) {
     screen = <ImportScreen dispatch={dispatch} saved={saved} onResume={resume} onDiscard={discard} />;
+  } else if (lab === 'hub' || state.view.page === 'layout') {
+    // Still a test surface. Two ways in: ?lab=hub for the standalone demo, and a
+    // deliberately quiet mark on a hub's page. The overlay is bound to a hub, so
+    // the hub page is the only place an embedded user can reach it from - and
+    // from there it opens on that hub and goes back to it.
+    const fromHub = state.view.page === 'layout';
+    screen = <HubLayoutLab state={state} dispatch={dispatch}
+      zone={fromHub ? state.view.zone : null}
+      onBack={fromHub
+        ? () => dispatch({ type: 'SET_VIEW', view: { page: 'zone', zone: state.view.zone } })
+        : null} />;
   } else if (state.view.page === 'estimate') {
     screen = <EstimatePage state={state} dispatch={dispatch} zone={state.view.zone} />;
   } else if (state.view.page === 'drivers' || state.view.page === 'types') {
@@ -198,6 +229,7 @@ export default function App() {
     screen = <Landing state={state} dispatch={dispatch} />;
   }
   return (
+    <DomainProvider value={domain}>
     <LabelContext.Provider value={state.prefs.label}>
       <div className="app-shell">
       {notice && (
@@ -211,5 +243,6 @@ export default function App() {
       </div>
       {state.demo && model && <Tutorial dispatch={dispatch} view={state.view} />}
     </LabelContext.Provider>
+    </DomainProvider>
   );
 }

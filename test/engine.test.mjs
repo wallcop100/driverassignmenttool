@@ -469,7 +469,11 @@ test('an added driver is appended to Elements, not only pointed at', () => {
   // without this the patch repoints a cable at an Element the workbook has not got
   assert.match(script, /getWorksheet\("Elements"\)/);
   assert.match(script, /"typeRef":"T100"/);
-  assert.match(script, /col_E_ContextType\).setValue\("Position"\)/);
+  // the kind comes off the row now rather than being written into the script, so
+  // a hub that is an Element is not filed as a Position
+  assert.match(script, /col_E_ContextType\)\.setValue\(el\.contextType\)/);
+  assert.match(script, /"contextType":"Position"/, 'defaults to Position when the host is silent');
+  assert.match(script, /CHECK ContextType: assumed Position/);
   assert.match(script, /"contextRef":"HUB-G"/);
   // Quantity 1 is the schema default, so it is left blank rather than written
   assert.match(script, /if \(el.quantity !== 1\)/);
@@ -798,7 +802,8 @@ test('the estimate patch appends Elements rows carrying a Quantity', () => {
   assert.match(script, /columnIndex\(WS_E, "Quantity", false\)/);
   assert.match(script, /"ref":"E5000X"/);
   assert.match(script, /"typeRef":"ET-CCR-D-350-2CH-01"/);
-  assert.match(script, /col_E_ContextType\)\.setValue\("Position"\)/);
+  assert.match(script, /col_E_ContextType\)\.setValue\(el\.contextType\)/);
+  assert.match(script, /"contextType":"Position"/);
   assert.match(script, /"contextRef":"P50447"/);
   assert.match(script, /"quantity":5/);   // one row, not five
   assert.equal(script.split('"ref":"E5000X"').length - 1, 1);
@@ -1268,4 +1273,18 @@ test('a driver type with no Parameters at all is still a driver to fill in', () 
   assert.equal(p.maxPowerW, 185);
   assert.equal(p.outputVoltageV, 24);
   assert.equal(p.outputs, 2, 'the datasheet supplies the node count the sheet lacks');
+});
+
+test('a hub that is an Element is not filed as a Position', () => {
+  // the hub kind comes from the host; when it says Element, that is what the
+  // appended Elements rows get, and no CHECK note is raised
+  const m = gfModel(gfLinks(1));
+  const added = [{ ref: 'E5000X', typeRef: 'T100', zone: 'HUB-G' }];
+  const script = engine.generatePatchScript(
+    m, { 'E5000X|OP.1': { toEntityType: 'Link', refs: ['L1'] } }, added, undefined,
+    { hubRef: 'E80023', hubLabel: 'HUB-G', hubContextType: 'Element' },
+  );
+  assert.match(script, /"contextType":"Element"/);
+  assert.match(script, /"contextRef":"E80023"/);
+  assert.doesNotMatch(script, /CHECK ContextType/);
 });

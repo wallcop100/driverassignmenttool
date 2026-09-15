@@ -766,3 +766,88 @@ body { background: #f6f8fb; }
   background: #eef5ff; border-bottom: 1px solid #bcd3f7;
 }
 .zone-notice { margin: 10px 14px 0; }
+
+/* ---- Hub layout lab ----
+   Drawn the way 5642600A draws it: hatched cabinet walls, drivers rounded and
+   PSUs square, Feed Provision hatched at the bottom, dimensions on the outside
+   with arrows and extension lines. People check it against the CAD, so it
+   should read like the CAD. */
+.hub-lab { user-select: none; }
+.hub-dim { font-variant-numeric: tabular-nums; }
+/* H1 and H2 are two drawings, not one drawing of two bays: a separate bay gets
+   its own sheet, its own title and its own dimensions. */
+.hub-sheets { display: flex; gap: 46px; align-items: flex-start; margin: 18px 0; flex-wrap: wrap; }
+.hub-sheet { display: flex; flex-direction: column; gap: 6px; }
+.hub-sheet.is-separate { padding-left: 28px; border-left: 1px dashed #cbd5e1; }
+.hub-sheet-head { display: flex; align-items: baseline; gap: 10px; font-size: 12px; }
+.hub-sheet-head span { color: #8a95a3; font-variant-numeric: tabular-nums; }
+.hub-stage { display: flex; gap: 4px; align-items: flex-end; flex-wrap: wrap; }
+.hub-bay-wrap { display: flex; flex-direction: column; gap: 4px; }
+/* the clearance envelope, as the CAD draws it: 50 to the sides, 25 above and below */
+/* drawn over the blocks so a centreline reads through the part it runs through —
+   which means it must not swallow the drag */
+.hub-envelope { pointer-events: none; }
+.hub-envelope rect { fill: none; stroke: #a855f7; stroke-width: 0.8; }
+.hub-envelope line { stroke: #a855f7; stroke-width: 0.6; }
+.hub-bay-head {
+  display: flex; align-items: center; gap: 8px; font-size: 11px; color: #8a95a3;
+}
+.hub-bay-head label { display: inline-flex; align-items: center; gap: 3px; margin: 0; }
+.hub-bay-head input { margin: 0; }
+.hub-svg { overflow: visible; }
+.hub-svg.is-target rect:first-of-type { stroke: #2563eb; }
+.hub-g { cursor: grab; }
+.hub-g:active { cursor: grabbing; }
+.hub-g.is-dragging { opacity: .3; }
+.hub-g.is-sel > rect:first-of-type { stroke: #2563eb; stroke-width: 2; stroke-dasharray: none; }
+.hub-t {
+  font-family: ui-sans-serif, system-ui, sans-serif; fill: #16212e;
+  pointer-events: none; letter-spacing: -.1px;
+}
+.hub-drop { stroke: #2563eb; stroke-width: 2; }
+.hub-dimline line { stroke: #b08900; stroke-width: 1; }
+.hub-dimline text {
+  font: 9px/1 ui-sans-serif, system-ui, sans-serif; fill: #8a6d1f;
+  font-variant-numeric: tabular-nums;
+}
+.hub-controls {
+  display: flex; align-items: center; gap: 12px 16px; flex-wrap: wrap; font-size: 12px;
+  border-top: 1px solid #eef1f6; padding-top: 12px;
+}
+.hub-controls > * { flex: 0 0 auto; max-width: 100%; }
+.hub-sheets { overflow-x: auto; }
+.hub-fit { flex-direction: row; align-items: center; gap: 5px; }
+.hub-fit .fld-box { gap: 4px; padding: 2px 5px; font-size: 12px; }
+.hub-check { display: inline-flex; align-items: center; gap: 5px; margin: 0; color: #64748b; }
+.hub-verdict { font-size: 12px; }
+.hub-verdict.is-ok { color: #2c6b39; }
+.hub-verdict.is-over { color: var(--status-fail); font-weight: 600; }
+.hub-bays { display: inline-flex; align-items: center; gap: 5px; color: #64748b; }
+.hub-bays button {
+  border: 1px solid #dbe3ee; background: #fff; border-radius: 4px; min-width: 20px; line-height: 1.3;
+}
+.hub-bays button:disabled { color: #cbd5e1; }
+.hub-sizes { display: flex; align-items: flex-end; gap: 8px; flex-wrap: wrap; }
+.hub-sizes .fld-box { gap: 4px; }
+
+/* Containers that sit on a rail in a fixed order are stacked, not wrapped: a
+   DIN panel is read top to bottom, and a grid would imply their order is free.
+   Drivers in a hub keep the grid, because theirs is. */
+.driver-grid.is-column { flex-direction: column; flex-wrap: nowrap; align-items: stretch; }
+.driver-grid.is-column .driver-bin { width: auto !important; max-width: 960px; }
+
+/* Several groups on one slot is a fault on a driver output and ordinary wiring
+   on a bus segment — a Cresnet branch or a QS link carries many loops by
+   design, so it is stated, not alarmed. */
+.cg-chip.cg-many { background: #eef2f7; color: #475569; font-weight: 500; }
+
+/* The hub page's way into the space layout: the same low-key language as the
+   import screen's demo dot. Findable by someone who knows it is there, easy to
+   overlook for someone who does not. */
+.space-link {
+  margin-left: 4px; width: 26px; height: 26px; padding: 0; border: none; border-radius: 50%;
+  background: none; color: #cbd5e1; line-height: 1; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.space-link .material-icons { font-size: 17px; }
+.space-link:hover, .space-link:focus-visible { color: #7C5CFC; background: #f3f0ff; outline: none; }

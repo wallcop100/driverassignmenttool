@@ -1,0 +1,151 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>LCP harness</title>
+<!-- Stands in for the DJ 101698 overlay so the LCP tool is developable without
+     Kaizen. The payload is set 109311's panel E08001 as it really is: an
+     ET-LCP5-Panel declaring 15 ways, holding modules that carry no slot at all. -->
+<style>html,body{margin:0;height:100%}iframe{border:0;width:100%;height:100vh}</style>
+<iframe id="f" src="./lcp/api/index.html?parentOrigin=PARENT"></iframe>
+<script type="module">
+document.getElementById('f').src =
+  `./lcp/api/index.html?parentOrigin=${encodeURIComponent(location.origin)}`;
+
+// Real data. Toggle with ?set=109311 for the Crestron panel that has nothing
+// slotted, or the default: branch 10328 set 108962, a Lutron QSX panel where the
+// arrangement is already done — several modules share one position, slots are
+// grouped (<3.1>), and the module types declare real widths.
+const WHICH = new URLSearchParams(location.search).get('set') ?? '109287';
+const REV = WHICH === '109311';
+
+const MODULES_LUTRON = `ElementRef,ElementTypeRef,ElementName,PanelRef,PanelName,PanelTypeRef,PanelParameters,ContextParameters
+E41501,ET-MOD-DALI-LUTRON,#1.1,E40001,#1,ET-LCP-T1,"<1,2,3,4,5>",<1>
+E40508,ET-Panduit,,E40001,#1,ET-LCP-T1,,<1>
+E41502,ET-MOD-DALI-LUTRON,#1.2,E40001,#1,ET-LCP-T1,,<2>
+E41755,ET-MOD-QSX-PROC-1,#1.2.2,E40001,#1,ET-LCP-T1,,<2>
+E40510,ET-Panduit,,E40001,#1,ET-LCP-T1,,<2>
+E41503,ET-MOD-DALI-LUTRON,#1.3,E40001,#1,ET-LCP-T1,,<3.1>
+E40505,ET-MOD-PSU,#1.3.2,E40001,#1,ET-LCP-T1,,<3>
+E40511,ET-Panduit,,E40001,#1,ET-LCP-T1,,<3>
+E41504,ET-MOD-DALI-LUTRON,#1.4,E40001,#1,ET-LCP-T1,,<4>
+E40507,ET-KPL,,E40001,#1,ET-LCP-T1,,<4>
+E40512,ET-Panduit,,E40001,#1,ET-LCP-T1,,<4>
+E40506,ET-MOD-CENCN2,#1.5,E40001,#1,ET-LCP-T1,,<5>
+E40513,ET-Panduit,,E40001,#1,ET-LCP-T1,,<5>
+E41592,ET-MOD-DALI-LUTRON,#26.1,E40010,#26,ET-LCP-T1,"<1,2,3,4,5>",<1.1>
+E41763,ET-MOD-QSX-PROC-2,#26.1.2,E40010,#26,ET-LCP-T1,,<1>
+E40595,ET-MOD-HUB,#26.3.2,E40010,#26,ET-LCP-T1,,<3>
+E40599,ET-MOD-AP4,#26.5,E40010,#26,ET-LCP-T1,,<5>`;
+
+const TYPES_LUTRON = `Ref,Name,Parameters
+ET-MOD-DALI-LUTRON,Lutron DALI module,"{<A(DA1),<B(DA2),>LINK}"
+ET-MOD-QSX-PROC-1,Lutron QSX processor 1 link,"{<L1,>ETH}"
+ET-MOD-QSX-PROC-2,Lutron QSX processor 2 link,"{<L1,<L2,>ETH}"
+ET-MOD-PSU,Panel PSU,"{<NET,<24(24/G Only)}[108mm,,]"
+ET-KPL,Keypad landing,"{BUS.1,BUS.2,BUS.3,BUS.4,BUS.5}[15mm,,]"
+ET-MOD-HUB,Network hub,"{>NET.MASTER,<NET.A,<NET.B,<NET.C}"
+ET-MOD-AP4,Access point,"{>LAN,NET<>,<24(24V Input)}"
+ET-MOD-CENCN2,Crestron CEN-CN2,"{>LAN,<NET.1,<NET.2}"
+ET-Panduit,Panduit trunking,"[15mm,,]"`;
+
+const LINKS_LUTRON = `LinkRef,LinkName,PanelRef,ToElementRef,ToNode,ControlGroup,Loop,ControlType,LoadW,Devices
+L4001,Hall DALI loop,E40001,E41501,A,HALL,DA1,DALI,
+L4002,Lounge DALI loop,E40001,E41501,B,LOUNGE,DA2,DALI,
+L4003,Kitchen DALI loop,E40001,E41502,A,KITCHEN,DA3,DALI,
+L4004,Study DALI loop,E40001,,,STUDY,DA4,DALI,
+L4005,Processor link,E40001,E41755,L1,,QS-LINK,QS,
+L4006,Panel 24V,E40001,E40505,24,,,,
+L4007,Keypads WC,E40001,,,WC-KP,DA1,DALI,
+L4008,Snug DALI,E40010,,,SNUG,DA5,DALI,`;
+
+const MODULES_CRESTRON = `ElementRef,ElementTypeRef,ElementName,PanelRef,PanelName,PanelTypeRef,PanelParameters,ContextParameters
+E08002,ET-MOD-DALI,,E08001,LCP-01,ET-LCP5-Panel,"<01,02,03,04,05,06,07,08,08a,08b,LB1,LB2,P1,P2,P3>",
+E08003,ET-MOD-DALI,,E08001,LCP-01,ET-LCP5-Panel,,
+E08009,ET-PROCESSOR-C,,E08001,LCP-01,ET-LCP5-Panel,,
+E08004,ET-MOD-PHASE,,E08001,LCP-01,ET-LCP5-Panel,,
+E08005,ET-MOD-PHASE,,E08001,LCP-01,ET-LCP5-Panel,,
+E08006,ET-MOD-SWITCH,,E08001,LCP-01,ET-LCP5-Panel,,
+E08007,ET-MOD-MOTOR,,E08001,LCP-01,ET-LCP5-Panel,,
+E08011,ET-PS-CRESTRON,,E08001,LCP-01,ET-LCP5-Panel,,`;
+
+const TYPES_CRESTRON = `Ref,Name,Parameters
+ET-MOD-DALI,Lutron DALI module,"{<A(DL1),<B(DL2),>NET}"
+ET-MOD-PHASE,Phase dimming module,"{<01,<02,<03,<04}"
+ET-MOD-SWITCH,Switching module,"{<01,<02,<03,<04,<05,<06}"
+ET-MOD-MOTOR,Motor module,"{<M1,<M2,<M3,<M4}"
+ET-PROCESSOR-C,Crestron processor,"{>NET,>PWR}"
+ET-PS-CRESTRON,Crestron PSU,"{<OP.1,<OP.2}"`;
+
+const LINKS_CRESTRON = `LinkRef,LinkName,PanelRef,ToElementRef,ToNode,ControlGroup,Loop,ControlType,LoadW,Devices
+C001,Lounge cove,E08001,E08002,A,LOUNGE,L1,DALI,180
+C002,Hall downlights,E08001,E08002,B,HALL,L1,DALI,140
+C005,Dining feature,E08001,E08004,01,DINING,L4,PHASE,380
+C006,Dining wall,E08001,E08004,02,DINING,L4,PHASE,300
+C007,Snug,E08001,E08004,02,SNUG,L5,PHASE,120`;
+
+// project 5294, branch 10358 "Part 2/3 - LSC + S", set 109287 —
+// the SAME panel E08001 as 109311, but with the arrangement done: every module
+// carries its way, and 01.a / 01.b are two DALI modules sharing way 01.
+const MODULES_HANS = `ElementRef,ElementTypeRef,ElementName,PanelRef,PanelName,PanelTypeRef,PanelParameters,ContextParameters
+E08002,ET-MOD-DALI,Universal DALI Power Module,E08001,LCP-01,ET-LCP5-Panel,"<01,02,03,04,05,06,07,08,08a,08b,LB1,LB2,P1,P2,P3>",<01.a>
+E08003,ET-MOD-DALI-LUTRON,Lutron LQSE-2DALUNV-D,E08001,LCP-01,ET-LCP5-Panel,,<01.b>
+E08050,ET-LQSE-2DALUNV-D,Lutron DALI module,E08001,LCP-01,ET-LCP5-Panel,,<08a>
+E08051,ET-DALI-MOD,THEBEN S128 KNX DALI-Gateway,E08001,LCP-01,ET-LCP5-Panel,,<08b>
+E08004,ET-MOD-PHASE,Crestron - DIN-1DIMU4,E08001,LCP-01,ET-LCP5-Panel,,<02>
+E08005,ET-MOD-PHASE,Crestron - DIN-1DIMU4,E08001,LCP-01,ET-LCP5-Panel,,<03>
+E08006,ET-MOD-SWITCH,Crestron - DIN-8SW8-I,E08001,LCP-01,ET-LCP5-Panel,,<04>
+E08007,ET-MOD-MOTOR,Crestron - DIN-2MC2,E08001,LCP-01,ET-LCP5-Panel,,<05>
+E08008,ET-MOD-MOTOR,Crestron - DIN-2MC2,E08001,LCP-01,ET-LCP5-Panel,,<06>
+E08009,ET-PROCESSOR-C,Crestron - DIN-AP4,E08001,LCP-01,ET-LCP5-Panel,,<07>
+E08010,ET-CRESTRON-DIN-HUB,Crestron - DIN-HUB,E08001,LCP-01,ET-LCP5-Panel,,<08>
+E08011,ET-PS-CRESTRON,Crestron - DIN-PWS60,E08001,LCP-01,ET-LCP5-Panel,,<P1>
+E08013,ET-LANDINGBOARD,Future Automation - QS-WLB,E08001,LCP-01,ET-LCP5-Panel,,<LB1>`;
+
+const TYPES_HANS = `Ref,Name,Parameters
+ET-MOD-DALI,Universal DALI Power Module,"{Output 1,Output 2}"
+ET-MOD-DALI-LUTRON,Lutron LQSE-2DALUNV-D,"{1,2,LINK}"
+ET-LQSE-2DALUNV-D,Lutron DALI module,"{<DALI B 1,<DALI B 2,>QS}"
+ET-DALI-MOD,THEBEN S128 KNX DALI-Gateway,"{>230V,<D1,<D2}"
+ET-MOD-PHASE,Crestron - DIN-1DIMU4,"{<L1/N1,<L2/N2,<L3/N3,<L4/N4,>NET}"
+ET-MOD-SWITCH,Crestron - DIN-8SW8-I,"{<L1/N1,<L2/N2,<L3/N3,<L4/N4,<L5/N5,<L6/N6,<L7/N7,<L8/N8,>NET}"
+ET-MOD-MOTOR,Crestron - DIN-2MC2,"{<L1/N1,<L2/N2,>NET}"
+ET-PROCESSOR-C,Crestron - DIN-AP4,"{<CRESNET,>PWR24,<NET,>LAN}"
+ET-CRESTRON-DIN-HUB,Crestron - DIN-HUB,"{<NETHOST>,<NET A,<NET B,<NET C,<NETPWRINPUT>}"
+ET-PS-CRESTRON,Crestron - DIN-PWS60,"{<PWR24}"
+ET-LANDINGBOARD,Future Automation - QS-WLB,"{<QSLink1,<QSLink2}"`;
+
+// Real link ends off 109287. Note NET B: three different loops land on it.
+const LINKS_HANS = `LinkRef,LinkName,PanelRef,ToElementRef,ToNode,ControlGroup,Loop,ControlType,LoadW,Devices
+X000212,Snug pendants,E08001,E08006,L1/N1,SNUG,SW-1,LOCAL,900,
+X000213,Plant room,E08001,E08006,L2/N2,PLANT,SW-1,LOCAL,2600,
+X000214,Store,E08001,E08006,L3/N3,STORE,SW-2,LOCAL,400,
+X000206,Drapes W,E08001,E08007,L1/N1,DRAPE-W,MC-1,LOCAL,,
+X000211,Drapes E,E08001,E08007,L2/N2,DRAPE-E,MC-1,LOCAL,,
+X000215,Keypads GF,E08001,E08010,NET B,KP-GF,Keypad loop 1,CRESNET,,
+X000234,Turn loop,E08001,E08010,NET B,TURN,Turn loop 1,CRESNET,,
+X000238,Keypads FF,E08001,E08010,NET B,KP-FF,Keypad loop 2,CRESNET,,
+X000227,Keypads SF,E08001,E08010,NET C,KP-SF,Keypad loop 1,CRESNET,,
+X000301,15.1A,E08001,E08002,Output 1,LOUNGE,DA1 Ground floor,DALI,,50
+X000303,15.1B,E08001,E08002,Output 2,STAIR,DA2 Stair,DALI,,70
+X000304,26.3.1A,E08001,E08003,1,MASTER,DA3 First floor,DALI,,42
+X000305,21.1A,E08001,E08050,DALI B 1,ENSUITE,DA4 Second floor,DALI,,40
+X000306,49.1B,E08001,E08051,D1,DRESS,DA5 KNX,DALI,,30`;
+
+const MODULES = WHICH === '109287' ? MODULES_HANS : REV ? MODULES_CRESTRON : MODULES_LUTRON;
+const TYPES   = WHICH === '109287' ? TYPES_HANS : REV ? TYPES_CRESTRON : TYPES_LUTRON;
+const LINKS   = WHICH === '109287' ? LINKS_HANS : REV ? LINKS_CRESTRON : LINKS_LUTRON;
+const FOCUS   = WHICH === '108962' ? 'E40001' : 'E08001';
+const SET     = Number(WHICH);
+
+// The tool announces itself when it has mounted. Posting on iframe load races
+// React and the payload is dropped.
+window.addEventListener('message', (e) => {
+  if (e.data?.type !== 'lcp:ready') return;
+  const w = document.getElementById('f').contentWindow;
+  w.postMessage({ type: 'lcp:types', version: 1, types: TYPES }, '*');
+  w.postMessage({
+    type: 'lcp:init', version: 1, modules: MODULES, links: LINKS, focusZone: FOCUS,
+    context: { branchId: REV ? '10359' : '10328', systemSetId: SET, hubRef: FOCUS,
+               hubLabel: FOCUS, hubContextType: 'Element' },
+  }, '*');
+});
+</script>

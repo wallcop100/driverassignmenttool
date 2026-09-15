@@ -1,9 +1,15 @@
 // Local, in-browser engine calls behind the same async surface the components
 // used when this talked to a Python sidecar. The parsed model is held here so
 // validate/eligibility/export keep their original (assignments, added) signatures.
-import demoForm from './demo/form.csv?raw';
-import demoAssessment from './demo/assessment.csv?raw';
-import demoLinks from './demo/links.csv?raw';
+// The demo CSVs are bundled by Vite's ?raw, which only a bundler understands —
+// importing them at module scope made this whole file unloadable under plain
+// `node --test`, and so made anything that imports it untestable. They are only
+// needed when somebody actually clicks Demo, so they are fetched then.
+const demo = () => Promise.all([
+  import('./demo/form.csv?raw'),
+  import('./demo/links.csv?raw'),
+  import('./demo/assessment.csv?raw'),
+]).then((m) => m.map((x) => x.default));
 import * as embed from './embed.js';
 import * as engine from './engine.js';
 
@@ -91,7 +97,7 @@ export async function generateEstimatePatch(opts, zone) {
 // The demo carries all three modes at once, because a real job does: most hubs
 // designed, HUB-B1 cabled but with no drivers, and HUB-J still at tender.
 export function loadDemo() {
-  return parseText(demoForm, demoLinks, null, demoAssessment);
+  return demo().then(([form, links, assessment]) => parseText(form, links, null, assessment));
 }
 
 export async function validate(assignments, addedDrivers) {
@@ -144,7 +150,7 @@ function download(text, suggestedName, mime) {
 // host over the return channel and let it deal with the browser.
 export async function saveCsv(text, suggestedName) {
   if (embed.isEmbedded()) {
-    return embed.send({ type: 'dat:export', kind: 'csv', filename: suggestedName, content: text });
+    return embed.send({ type: embed.topic('export'), kind: 'csv', filename: suggestedName, content: text });
   }
   return download(text, suggestedName, 'text/csv');
 }
@@ -153,7 +159,7 @@ export async function saveCsv(text, suggestedName) {
 // editor — standalone that means the clipboard, not a file.
 export async function copyPatch(text) {
   if (embed.isEmbedded()) {
-    return embed.send({ type: 'dat:export', kind: 'patch', filename: 'DriverAssignmentPatch.osts', content: text });
+    return embed.send({ type: embed.topic('export'), kind: 'patch', filename: 'DriverAssignmentPatch.osts', content: text });
   }
   await navigator.clipboard.writeText(text);
   return true;

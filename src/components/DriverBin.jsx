@@ -4,23 +4,37 @@ import Block from './Block.jsx';
 import FlagDialog from './FlagDialog.jsx';
 import KebabMenu from './KebabMenu.jsx';
 import Tooltip from './Tooltip.jsx';
+import { useDomain } from '../core/domain.js';
+
+
+// One reading of "how full", used by every bar a domain hands over.
+const pctOf = (c) => (c.cap ? Math.round((100 * c.used) / c.cap) : 0);
 
 function Bar({ used, cap, unit, projected, title }) {
   const pct = cap ? Math.round((100 * used) / cap) : 0;
   const over = pct > 100;
+  // A domain may hand over a figure with NO cap — a count of runs on a bus,
+  // where the segment's allowance is a different quantity entirely. That is a
+  // reading, not a gauge: no bar to fill, and no "/" with nothing after it.
+  const uncapped = cap == null;
   return (
     <div className="node-metric" title={title}>
-      <div className="slot-fill">
-        <div className={over ? 'bg-fail' : 'bg-ok'} style={{ width: `${Math.min(pct, 100)}%` }} />
-      </div>
-      <span className={`metric-label ${over ? 'text-danger fw-bold' : 'text-secondary'}`}>
-        {projected != null ? <b>→ {projected.toFixed(1)}</b> : used.toFixed(1)}/{cap}{unit}
+      {!uncapped && (
+        <div className="slot-fill">
+          <div className={over ? 'bg-fail' : 'bg-ok'} style={{ width: `${Math.min(pct, 100)}%` }} />
+        </div>
+      )}
+      <span className={`metric-label ${uncapped ? 'ms-auto text-secondary' : ''} ${over ? 'text-danger fw-bold' : 'text-secondary'}`}>
+        {projected != null ? <b>→ {projected.toFixed(1)}</b>
+          : uncapped ? Math.round(used) : used.toFixed(1)}
+        {uncapped ? '' : `/${cap}`}{unit}
       </span>
     </div>
   );
 }
 
 function Slot({ driver, node, state, dispatch, links, flagIndex, onNodeClick, groups }) {
+  const domain = useDomain();
   const [hover, setHover] = useState(false);
   const key = keyOf(driver.ref, node.name);
   const entry = state.assignments[key] ?? { toEntityType: '', refs: [] };
@@ -37,8 +51,9 @@ function Slot({ driver, node, state, dispatch, links, flagIndex, onNodeClick, gr
   const nodeWatts = placed.reduce((s, l) => s + (l.loadW ?? 0), 0);
   const seriesFv = placed.reduce((s, l) => s + (l.fvV ?? 0), 0);
 
-  const cgs = [...new Set(placed.map((l) => l.controlGroup).filter(Boolean))];
+  const cgs = [...new Set(placed.map((l) => domain.groupOf(l)).filter(Boolean))];
   const cg = cgs.length === 1 ? cgs[0] : null;
+  const manyOk = domain.slotAllowsManyGroups(driver, node);
 
   const dragLink = state.draggingLink ? links[state.draggingLink] : null;
   const ghost = hover && dragLink;
@@ -61,8 +76,10 @@ function Slot({ driver, node, state, dispatch, links, flagIndex, onNodeClick, gr
       <div className="slot-header">
         <span className="fw-semibold">{node.name || '—'}</span>
         {cgs.length > 1 ? (
-          <Tooltip content={`Serves multiple ControlGroups: ${cgs.join(', ')}`}>
-            <span className="cg-chip cg-split">{cgs.join(' / ')}</span>
+          <Tooltip content={manyOk
+            ? `Carries ${cgs.length} ${domain.groupLabel} — a shared segment takes several by design`
+            : `Serves multiple ${domain.groupLabel}: ${cgs.join(', ')}`}>
+            <span className={`cg-chip ${manyOk ? 'cg-many' : 'cg-split'}`}>{cgs.join(' / ')}</span>
           </Tooltip>
         ) : cg ? (
           <span className="cg-chip" style={{ background: cgColor(cg, groups).bg, color: cgColor(cg, groups).text }}>
@@ -72,7 +89,7 @@ function Slot({ driver, node, state, dispatch, links, flagIndex, onNodeClick, gr
         <span className="ms-auto d-flex align-items-center gap-1">
           {node.maxLoadW == null && node.maxFvV == null && (
             <span className="text-secondary metric-label">
-              {driver.undetermined ? 'undetermined' : `${nodeWatts.toFixed(1)}W`}
+              {domain.slotSummary(driver, node, { watts: nodeWatts })}
             </span>
           )}
           <KebabMenu title="Node actions" items={[{
@@ -82,22 +99,22 @@ function Slot({ driver, node, state, dispatch, links, flagIndex, onNodeClick, gr
         </span>
       </div>
 
-      {/* Watts, measured against whichever cap actually binds this output: its
-          own NodeMaxPower(W) if the type states one, otherwise the driver total,
-          which is the real limit and is shared across the outputs. Most types
-          state only a forward voltage, so without this a node showed an fV bar
-          and nothing at all for watts. */}
-      {(node.maxLoadW ?? driver.maxPowerW) != null && (
-        <Bar used={nodeWatts} cap={node.maxLoadW ?? driver.maxPowerW} unit="W"
-          title={node.maxLoadW != null
-            ? `NodeMaxPower(W) for ${node.name}`
-            : `Watts on the driver total, shared across all ${driver.nodes.length} outputs`}
-          projected={ghost ? nodeWatts + (dragLink.loadW ?? 0) : null} />
-      )}
-      {node.maxFvV != null && (
-        <Bar used={seriesFv} cap={node.maxFvV} unit="fV"
-          projected={ghost ? seriesFv + (dragLink.fvV ?? 0) : null} />
-      )}
+      {/* What a capacity MEANS is the domain's business — which watt cap binds
+          this output, whether a forward-voltage limit exists at all. The slot
+          draws whatever bars it is handed. */}
+      {domain.slotCapacities(driver, node, {
+        watts: nodeWatts, fv: seriesFv,
+        count: placed.length,
+        index: driver.nodes.findIndex((n) => n.name === node.name),
+        // a loop link knows how many fittings are on it, when the host says
+        devices: placed.some((l) => l.devices != null)
+          ? placed.reduce((n, l) => n + (l.devices ?? 0), 0) : null,
+        ghostWatts: ghost ? nodeWatts + (dragLink.loadW ?? 0) : null,
+        ghostFv: ghost ? seriesFv + (dragLink.fvV ?? 0) : null,
+      }).map((c, i) => (
+        <Bar key={i} used={c.used} cap={c.cap} unit={c.unit} title={c.title}
+          projected={c.projected} />
+      ))}
 
       <div className="slot-blocks">
         {entry.refs.map((r) => (
@@ -124,9 +141,11 @@ export default function DriverBin({ driver, state, dispatch, links, accent, flag
   const fail = severity === 'FAIL';
   const mismatch = severity === 'MISMATCH';
   const warn = severity === 'WARN';
-  const load = driverLoad(driver, state.assignments, links);
-  const pct = driver.maxPowerW ? Math.round((100 * load) / driver.maxPowerW) : null;
-  const width = driver.undetermined ? 260 : Math.max(230, Math.min(140 + driver.maxPowerW * 1.8, 560));
+  const domain = useDomain();
+  const caps = domain.capacities(driver, { assignments: state.assignments, links });
+  const badge = domain.badge(driver);
+  const load = caps[0]?.used ?? 0;
+  const width = domain.widthOf(driver);
 
   // #1 dim-the-impossible: classify relative to the selected link
   const status = driverStatus(driver.ref, state.selectedLinks, state.eligibility);
@@ -146,10 +165,9 @@ export default function DriverBin({ driver, state, dispatch, links, accent, flag
         {/* added here, so not in the DesignDB yet — the same dashed-and-dotted
             language a moved cable and a corrected type use */}
         {driver.added && <span className="type-added">added</span>}
-        <span className={`type-chip type-${driver.powerType ?? 'unknown'}`}>
-          {driver.powerType ?? '?'}{driver.powerType === 'CC' && driver.currentA ? ` ${driver.currentA}A`
-            : driver.powerType === 'CV' && driver.outputVoltageV ? ` ${driver.outputVoltageV}V` : ''}
-        </span>
+        {badge && (
+          <span className={`type-chip type-${badge.kind}`}>{badge.text}</span>
+        )}
         {/* the same mark a moved cable carries: a dot means you changed this and
             it is not in the DesignDB yet */}
         {state.presets?.[driver.typeRef] && (
@@ -188,26 +206,28 @@ export default function DriverBin({ driver, state, dispatch, links, accent, flag
           },
         ]} />
       </div>
-      {driver.maxPowerW != null ? (
-        <Tooltip content={driver.driverRestrictions || 'Driver Restrictions'}>
+      {caps.map((c, i) => (c.cap != null ? (
+        <Tooltip key={i} content={c.title}>
           <div className="bin-capacity">
-            <span className="cap-title text-secondary">driver total</span>
+            <span className="cap-title text-secondary">{c.label}</span>
             <div className="slot-fill flex-grow-1">
-              <div className={pct > 100 ? 'bg-fail' : 'bg-ok'} style={{ width: `${Math.min(pct, 100)}%` }} />
+              <div className={pctOf(c) > 100 ? 'bg-fail' : 'bg-ok'}
+                style={{ width: `${Math.min(pctOf(c), 100)}%` }} />
             </div>
-            <span className={`small ${pct > 100 ? 'text-danger fw-bold' : 'text-secondary'}`}>
-              {load.toFixed(1)}/{driver.maxPowerW}W{pct > 100 && ' FAIL'}
+            <span className={`small ${pctOf(c) > 100 ? 'text-danger fw-bold' : 'text-secondary'}`}>
+              {c.used.toFixed(1)}/{c.cap}{c.unit}{pctOf(c) > 100 && ' FAIL'}
             </span>
           </div>
         </Tooltip>
       ) : (
-        /* No MaxPower(W) on the type, so there is no bar to draw and no capacity
-           to check. That is worth a sentence, not a question mark. */
-        <button type="button" className="bin-capacity bin-undet" onClick={() => setShowUndet(true)}>
+        /* No declared limit, so there is no bar to draw and no capacity to
+           check. That is worth a sentence, not a question mark. */
+        <button key={i} type="button" className="bin-capacity bin-undet"
+          onClick={() => setShowUndet(true)}>
           <span className="material-icons">help_outline</span>
-          <span className="small">undetermined · {load.toFixed(1)}W</span>
+          <span className="small">undetermined · {c.used.toFixed(1)}{c.unit}</span>
         </button>
-      )}
+      )))}
       {driver.nodes.map((node) => (
         <Slot key={node.name} driver={driver} node={node} state={state} dispatch={dispatch}
           links={links} flagIndex={flagIndex} onNodeClick={onNodeClick} groups={groups} />
@@ -242,7 +262,7 @@ function UndeterminedDialog({ driver, load, onClose }) {
             </span>
           </li>
           <li>
-            <b>{load.toFixed(1)}W assigned so far</b>
+            <b>{caps[0] ? `${caps[0].used.toFixed(1)}${caps[0].unit}` : ''} assigned so far</b>
             <span>Added up from the cables on it, with nothing to compare it to.</span>
           </li>
         </ul>

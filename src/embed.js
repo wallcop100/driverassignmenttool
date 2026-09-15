@@ -6,8 +6,19 @@
 // we will ever post to, and the only origin we will accept messages from.
 export const VERSION = 1;
 
+// Two tools now ride this file, and a host page can hold both. Every message is
+// prefixed with the tool that owns it — `dat:init` and `lcp:init` are different
+// messages — and each build declares which one it answers to. Without this the
+// first frame to reply would swallow the other's init, and an export from either
+// would be indistinguishable.
+let PREFIX = 'dat';
+export const setPrefix = (p) => { PREFIX = p; };
+export const prefix = () => PREFIX;
+export const topic = (name) => `${PREFIX}:${name}`;
+
 export function isEmbedded() {
-  return typeof window !== 'undefined' && window.__DAT_EMBED__ === true && window.self !== window.top;
+  if (typeof window === 'undefined' || window.self === window.top) return false;
+  return window.__DAT_EMBED__ === true || window.__LCP_EMBED__ === true;
 }
 
 // Pure: no window, no env, no side effects. All the security logic lives here so
@@ -15,7 +26,7 @@ export function isEmbedded() {
 // Returns { ok } or { ok: false, reason, mismatch? } — callers DROP, never throw,
 // and never echo the payload back.
 export function validateInit(msg, origin, allowedOrigin) {
-  const env = validateEnvelope(msg, origin, allowedOrigin, 'dat:init');
+  const env = validateEnvelope(msg, origin, allowedOrigin, topic('init'));
   if (!env.ok) return env;
   // form is optional: a hub with no drivers yet has no Driver Assignment rows to
   // send. Links OR an assessment is the payload — a hub with no cables at all is
@@ -34,7 +45,7 @@ export function validateInit(msg, origin, allowedOrigin) {
 
 // The driver type library, sent once before dat:init. Same envelope rules.
 export function validateTypes(msg, origin, allowedOrigin) {
-  const env = validateEnvelope(msg, origin, allowedOrigin, 'dat:types');
+  const env = validateEnvelope(msg, origin, allowedOrigin, topic('types'));
   if (!env.ok) return env;
   if (typeof msg.types !== 'string' || !msg.types.trim()) return { ok: false, reason: 'missing types CSV' };
   return { ok: true };
@@ -92,5 +103,5 @@ export function send(msg) {
   return true;
 }
 
-export const sendReady = () => send({ type: 'dat:ready' });
-export const sendError = (message) => send({ type: 'dat:error', message });
+export const sendReady = () => send({ type: topic('ready') });
+export const sendError = (message) => send({ type: topic('error'), message });

@@ -10,6 +10,7 @@ import LabelConfig from './LabelConfig.jsx';
 import ReviewModal from './ReviewModal.jsx';
 import Search from './Search.jsx';
 import SetupNotice from './SetupNotice.jsx';
+import { useDomain } from '../core/domain.js';
 import Tooltip from './Tooltip.jsx';
 import Tray from './Tray.jsx';
 
@@ -27,6 +28,7 @@ function buildFlagIndex(flags) {
 }
 
 export default function ZonePage({ state, dispatch, zone, onResetToCurrentSet }) {
+  const domain = useDomain();
   const { model, assignments, addedDrivers, flags, eligibility, focusNode } = state;
   const [showReview, setShowReview] = useState(false);
   const [problemsOnly, setProblemsOnly] = useState(false);
@@ -39,7 +41,7 @@ export default function ZonePage({ state, dispatch, zone, onResetToCurrentSet })
   const zoneCables = model.links.filter((l) => l.zone === zone && !isProvision(l));
   const trayFilterOptions = useMemo(() => filterOptions(zoneCables), [zoneCables]);
   // evenly-spaced ControlGroup hues need the full set present in this zone
-  const cgGroups = useMemo(() => zoneControlGroups(model, zone), [model, zone]);
+  const cgGroups = useMemo(() => zoneControlGroups(model, zone, domain.groupOf), [model, zone, domain]);
 
   // #5 actionable = FAIL/MISMATCH; info = WARN (hidden from block styling unless toggled on)
   const shownFlags = showInfo ? flags : flags.filter((f) => f.level !== 'WARN');
@@ -158,14 +160,25 @@ export default function ZonePage({ state, dispatch, zone, onResetToCurrentSet })
             <label className="form-check-label small" htmlFor="problemsOnly">Problems only</label>
           </div>
         </div>
+        {/* The way into the hub space layout. Kept as quiet as the import screen's
+            demo dot on purpose: it is a test surface, and a hub's page is about
+            assigning, not drawing. Present only where the subject has a space. */}
+        {domain.spaceLayout && (
+          <button type="button" className="space-link"
+            title="Hub space layout (test)"
+            aria-label="Open the hub space layout"
+            onClick={() => dispatch({ type: 'SET_VIEW', view: { page: 'layout', zone } })}>
+            <span className="material-icons">straighten</span>
+          </button>
+        )}
       </header>
 
-      <SetupNotice state={state} dispatch={dispatch} className="zone-notice" />
+      {domain.setupNotice() && <SetupNotice state={state} dispatch={dispatch} className="zone-notice" />}
 
       <div className="zone-toolbar">
         <button className="btn btn-sm btn-outline-primary"
           onClick={() => dispatch({ type: 'SET_VIEW', view: { page: 'drivers', zone } })}>
-          <span className="material-icons small-icon align-middle">add</span> Driver
+          <span className="material-icons small-icon align-middle">add</span> {domain.terms.container}
         </button>
         <button className="btn btn-sm btn-outline-secondary" disabled={!state.undo.length}
           onClick={() => dispatch({ type: 'UNDO' })} title="Undo (Ctrl+Z)">
@@ -223,7 +236,7 @@ export default function ZonePage({ state, dispatch, zone, onResetToCurrentSet })
           focusActive={!!focusNode} filter={trayFilter} setFilter={setTrayFilter} filterOpts={trayFilterOptions}
           onConfirmDistribute={confirmDistribute} groups={cgGroups} />
 
-        <div className="driver-grid" data-tour="grid">
+        <div className={`driver-grid is-${domain.binLayout}`} data-tour="grid">
           {shownDrivers.map((d) => (
             <DriverBin key={d.ref} driver={d} state={state} dispatch={dispatch}
               links={links} accent={accent} flagIndex={flagIndex} onNodeClick={onNodeClick} groups={cgGroups} />
@@ -245,7 +258,7 @@ export default function ZonePage({ state, dispatch, zone, onResetToCurrentSet })
               </p>
               <button className="btn btn-lg btn-primary"
                 onClick={() => dispatch({ type: 'SET_VIEW', view: { page: 'drivers', zone } })}>
-                <span className="material-icons align-middle">add</span> Add drivers
+                <span className="material-icons align-middle">add</span> Add {domain.terms.containers}
               </button>
             </div>
           ))}

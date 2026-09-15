@@ -29,6 +29,17 @@
 // outputs on one address, which is exactly what separates it from a DualDrive
 // 560/A (two outputs, two addresses). A ref's "1CH" counts addresses.
 //
+// `code` is what the drawings write on the block: manufacturer plus the model
+// code, short enough to sit inside it. The catalogue's `name` is the full one
+// people search by, which is too long to letter a 153mm box with.
+//
+// `sizeMm` is [length, width, height] straight off the part's spec page, which
+// is how those pages give it. On a hub elevation the length runs horizontally
+// and the width vertically, so the board reads it as [w, h, d]. Only parts whose
+// page states dimensions in text carry it: several give them in a drawing
+// instead, and a size guessed from a picture is worse than an empty box the
+// layout asks you to fill in.
+//
 // `common` marks the parts actually specified on most jobs. They are the ones
 // offered when you open the new-type dialog; the rest of the catalogue is a
 // press or a search away. Everything here is a real part — the fold is about
@@ -36,22 +47,22 @@
 
 export const PARTS = [
   // ---- EldoLED constant current ----
-  { name: 'EldoLED SoloDrive 240/A', re: /(?:solo|slo|sl0)[a-z]*240/, powerType: 'CC',
+  { name: 'EldoLED SoloDrive 240/A', code: 'EldoLED SL0240A', re: /(?:solo|slo|sl0)[a-z]*240/, powerType: 'CC',
     maxPowerW: 20, minA: 0.15, maxA: 1.05, maxFvV: 40, outputs: 1, addresses: 1,
     kind: 'driver', controlType: 'DALI', page: 105740 },
-  { name: 'EldoLED SoloDrive 360/A', re: /(?:solo|slo|sl0)[a-z]*360/, powerType: 'CC',
+  { name: 'EldoLED SoloDrive 360/A', code: 'EldoLED SL0360A', re: /(?:solo|slo|sl0)[a-z]*360/, powerType: 'CC',
     maxPowerW: 30, minA: 0.15, maxA: 1.4, maxFvV: 55, outputs: 1, addresses: 1,
-    kind: 'driver', controlType: 'DALI', page: 105744 , common: true },
-  { name: 'EldoLED SoloDrive 560/A', re: /(?:solo|slo|sl0)[a-z]*560/, powerType: 'CC',
+    kind: 'driver', controlType: 'DALI', sizeMm: [210, 40, 33.5], page: 105744 , common: true },
+  { name: 'EldoLED SoloDrive 560/A', code: 'EldoLED SL0560A', re: /(?:solo|slo|sl0)[a-z]*560/, powerType: 'CC',
     maxPowerW: 50, minA: 0.15, maxA: 1.4, maxFvV: 55, outputs: 2, addresses: 1,
     kind: 'driver', controlType: 'DALI', page: 128706 , common: true },
   { name: 'EldoLED SoloDrive 20CA-E1Z0D', re: /(?:solo|slo)[a-z]*20ca/, powerType: 'CC',
     maxPowerW: 20, minA: 0.15, maxA: 1.05, maxFvV: 40, outputs: 1, addresses: 1,
     kind: 'driver', controlType: 'DALI', page: 105741 },
-  { name: 'EldoLED DualDrive 560/A', re: /(?:dual|dl0|dlo)[a-z]*560/, powerType: 'CC',
+  { name: 'EldoLED DualDrive 560/A', code: 'EldoLED DL0560A3', re: /(?:dual|dl0|dlo)[a-z]*560/, powerType: 'CC',
     maxPowerW: 50, minA: 0.15, maxA: 1.4, maxFvV: 55, outputs: 2, addresses: 2,
-    kind: 'driver', controlType: 'DALI', page: 105742 , common: true },
-  { name: 'EldoLED DualDrive 562/A', re: /(?:dual|dl0|dlo)[a-z]*562/, powerType: 'CC',
+    kind: 'driver', controlType: 'DALI', sizeMm: [153.6, 76.7, 30.6], page: 105742 , common: true },
+  { name: 'EldoLED DualDrive 562/A', code: 'EldoLED DL0562A', re: /(?:dual|dl0|dlo)[a-z]*562/, powerType: 'CC',
     maxPowerW: 50, minA: 0.15, maxA: 1.4, maxFvV: 55, outputs: 2, addresses: 1,
     kind: 'driver', controlType: 'DALI', page: 124310 },
   { name: 'EldoLED DualDrive 20CA-E2Z0C', re: /(?:dual|dl0|dlo)[a-z]*20ca/, powerType: 'CC',
@@ -74,16 +85,19 @@ export const PARTS = [
   // depending entirely on the supply. That pairing is the normal way a CV
   // ElementType is specified here, so it is modelled rather than hardcoded:
   // see resolveSpec().
-  { name: 'EldoLED LinearDrive 100/A', re: /lin[a-z]*100/, powerType: 'CV', kind: 'dcdc',
+  { name: 'EldoLED LinearDrive 100/A', code: 'EldoLED LIN100A', re: /lin[a-z]*100/, powerType: 'CV', kind: 'dcdc',
     maxPowerW: 100, outputs: 4, addresses: 4, controlType: 'DALI', page: 105850 },
   // Discontinued: kept so the refs still using it resolve, but not offered when
   // adding — the LinearDrive 200D-D2Z2D replaced it, and the 200D-D2Z2C is the
   // tuneable-white part. Set `discontinued` on anything else that stops being
   // specified.
-  { name: 'EldoLED LinearDrive 220D', re: /lin[a-z]*220/, powerType: 'CV', kind: 'dcdc',
-    maxPowerW: 200, outputs: 2, addresses: 2, controlType: 'DALI', page: 137217,
+  // 153 x 50 x 23 is off the eldoLED datasheet rather than page 137217, whose
+  // dimensions are in a drawing. It is the same case as its replacement the
+  // 200D-D2Z2D, which is what you would expect of a like-for-like part.
+  { name: 'EldoLED LinearDrive 220D', code: 'EldoLED 220D', re: /lin[a-z]*220/, powerType: 'CV', kind: 'dcdc',
+    maxPowerW: 200, outputs: 2, addresses: 2, controlType: 'DALI', sizeMm: [153, 50, 23], page: 137217,
     discontinued: true },
-  { name: 'EldoLED LinearDrive 222D', re: /lin[a-z]*222/, powerType: 'CV', kind: 'dcdc',
+  { name: 'EldoLED LinearDrive 222D', code: 'EldoLED 222D', re: /lin[a-z]*222/, powerType: 'CV', kind: 'dcdc',
     maxPowerW: 192, outputs: 2, addresses: 2, controlType: 'DMX', page: 105847,
     note: 'Spec page says "Outputs: 4" while its description says 2-channel — outputs unconfirmed' },
   // What the 220D became. DT6, so two outputs on two addresses as before.
@@ -94,40 +108,43 @@ export const PARTS = [
   // in the name to match — so the type resolved to a bare supply and reported
   // itself as ControlType Local, unswitched, with no DC/DC driver in front of it.
   { name: 'EldoLED LinearDrive 200D-D2Z2D',
-    re: /200d?d2z2d|lin[a-z]*200(?!d?d2z2c)/, powerType: 'CV', kind: 'dcdc',
-    maxPowerW: 200, outputs: 2, addresses: 2, controlType: 'DALI', page: 105745, common: true },
+    code: 'EldoLED LIN220D', re: /200d?d2z2d|lin[a-z]*200(?!d?d2z2c)/, powerType: 'CV', kind: 'dcdc',
+    maxPowerW: 200, outputs: 2, addresses: 2, controlType: 'DALI', sizeMm: [153, 50, 23], page: 105745, common: true },
   // The tuneable-white one, written D2Z2C2 on the datasheet. DT8 drives a dynamic
   // white fitting from ONE address across both channels — and, because those two
   // channels drive a single strip, from ONE node: {<OP.1-2}, not {<OP.1,<OP.2}.
   // Two separately connectable outputs would be two nodes; these are not.
   // The separator is a hyphen: ':' is spoken for elsewhere in Parameters syntax
   // and is banned in a node name (page 140180).
-  { name: 'EldoLED LinearDrive 200D-D2Z2C', re: /200d?d2z2c/, powerType: 'CV', kind: 'dcdc',
+  { name: 'EldoLED LinearDrive 200D-D2Z2C', code: 'EldoLED LIN220D-TW', re: /200d?d2z2c/, powerType: 'CV', kind: 'dcdc',
     maxPowerW: 192, outputs: 1, addresses: 1, nodeNames: ['OP.1-2'],
-    controlType: 'DALI', page: 106074,
+    controlType: 'DALI', sizeMm: [153, 50, 23], page: 106074,
     note: 'DALI-2 DT8, dynamic white — must be on a DT8 control system, and the LightShape profile set' },
   // 144W per output is 6A at 24V — derived from the rail, not fixed.
-  { name: 'EldoLED LinearDrive 720D', re: /lin[a-z]*720/, powerType: 'CV', kind: 'dcdc',
+  { name: 'EldoLED LinearDrive 720D', code: 'EldoLED LIN720D', re: /lin[a-z]*720/, powerType: 'CV', kind: 'dcdc',
     maxPowerW: 720, nodeCurrentA: 6, outputs: 4, addresses: 4,
     controlType: 'DALI', page: 105811, common: true },
 
   // ---- constant voltage supplies ----
+  // Supply case sizes are off the Mean Well HLG datasheets (L x W x H), not a
+  // Kaizen spec page: the HLG-185H/150H case is 228 x 68 x 38.8 and the 100H is
+  // 220 x 68 x 38.8. The whole series shares a case per wattage band.
   // No LED outputs of their own: they feed a DC/DC driver. Given an outputs
   // count of 1 so a preset built from one is well formed, but they are not
   // normally what a cable is assigned to.
-  { name: 'Meanwell HLG-185-24', re: /hlg185h?24/, powerType: 'CV',
-    maxPowerW: 185, outputV: 24, outputs: 1, kind: 'supply', controlType: 'Local', page: 106079 },
-  { name: 'Meanwell HLG-150-24', re: /hlg150h?24/, powerType: 'CV',
-    maxPowerW: 150, outputV: 24, outputs: 1, kind: 'supply', controlType: 'Local', page: 140230 },
+  { name: 'Meanwell HLG-185-24', code: 'Meanwell HLG-185-24', re: /hlg185h?24/, powerType: 'CV',
+    maxPowerW: 185, outputV: 24, outputs: 1, kind: 'supply', controlType: 'Local', page: 106079, sizeMm: [228, 68, 38.8] },
+  { name: 'Meanwell HLG-150-24', code: 'Meanwell HLG-150-24', re: /hlg150h?24/, powerType: 'CV',
+    maxPowerW: 150, outputV: 24, outputs: 1, kind: 'supply', controlType: 'Local', page: 140230, sizeMm: [228, 68, 38.8] },
   { name: 'Meanwell HLG-150-48', re: /hlg150h?48/, powerType: 'CV',
-    maxPowerW: 150, outputV: 48, outputs: 1, kind: 'supply', controlType: 'Local', page: 140232 },
-  { name: 'Meanwell HLG-100-24', re: /hlg100h?24/, powerType: 'CV',
-    maxPowerW: 100, outputV: 24, outputs: 1, kind: 'supply', controlType: 'Local', page: 140228 },
+    maxPowerW: 150, outputV: 48, outputs: 1, kind: 'supply', controlType: 'Local', page: 140232, sizeMm: [228, 68, 38.8] },
+  { name: 'Meanwell HLG-100-24', code: 'Meanwell HLG-100-24', re: /hlg100h?24/, powerType: 'CV',
+    maxPowerW: 100, outputV: 24, outputs: 1, kind: 'supply', controlType: 'Local', page: 140228, sizeMm: [220, 68, 38.8] },
   { name: 'Meanwell HLG-100H-54', re: /hlg100h?54/, powerType: 'CV',
-    maxPowerW: 100, outputV: 54, outputs: 1, kind: 'supply', controlType: 'Local', page: 128658 },
+    maxPowerW: 100, outputV: 54, outputs: 1, kind: 'supply', controlType: 'Local', page: 128658, sizeMm: [220, 68, 38.8] },
   { name: 'Meanwell HLG-80H-24', re: /hlg80h?24/, powerType: 'CV',
     maxPowerW: 80, outputV: 24, outputs: 1, kind: 'supply', controlType: 'Local', page: 128641 },
-  { name: 'PowerLED PCV24100', re: /pcv24100/, powerType: 'CV',
+  { name: 'PowerLED PCV24100', code: 'PowerLED PCV24100', re: /pcv24100/, powerType: 'CV',
     maxPowerW: 100, outputV: 24, outputs: 1, kind: 'supply', controlType: 'Local', page: 106081,
     stem: 'ET-CVR-S-24-1CH' },  // unswitched supplies are -S-, not -D- (page 135910)
   { name: 'PowerLED PCV24150', re: /pcv24150/, powerType: 'CV',
