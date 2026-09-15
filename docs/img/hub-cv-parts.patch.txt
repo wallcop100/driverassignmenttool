@@ -1,0 +1,166 @@
+// Lighting DesignDB patch - Driver Assignment Tool
+  // Find a column by header. Columns listed as addable are appended to the
+  // header row when the workbook has not got them yet (pre-V4.6 books), and
+  // a header this script created is marked so it reads as new in the sheet.
+  function columnIndex(ws: ExcelScript.Worksheet, name: string, add: boolean): number {
+    const found = ws.getCell(0, 0).getEntireRow().find(name, { completeMatch: true });
+    if (found) { return found.getColumnIndex(); }
+    if (!add) { throw new Error("Column not found: " + name); }
+    const at = ws.getUsedRange().getColumnCount();
+    const cell = ws.getCell(0, at);
+    cell.setValue(name);
+    const f = cell.getFormat().getFont();
+    f.setColor("#C00000");
+    f.setItalic(true);
+    f.setBold(true);
+    console.log("Added column " + name + " to " + ws.getName());
+    return at;
+  }
+
+  // An electrical value supplied by this script, as against one the design
+  // already held. Red italic, not bold: the header carries the bold.
+  function setElectrical(cell: ExcelScript.Range, value: number | string) {
+    cell.setValue(value);
+    const f = cell.getFormat().getFont();
+    f.setColor("#C00000");
+    f.setItalic(true);
+  }
+
+function main(DB: ExcelScript.Workbook) {
+  try {
+    const closeAt = (s: string, i: number, open: string): number => {
+      if (open === "[[") { const j = s.indexOf("]]", i + 2); return j < 0 ? -1 : j + 2; }
+      if (open === "[") { const j = s.indexOf("]", i + 1); return j < 0 ? -1 : j + 1; }
+      if (open === "{") {
+        let d = 0;
+        for (let k = i; k < s.length; k++) { if (s[k] === "{") { d++; } else if (s[k] === "}") { d--; if (d === 0) { return k + 1; } } }
+        return -1;
+      }
+      for (let k = i + 1; k < s.length; k++) {
+        if (s[k] === "[") { const inner = closeAt(s, k, s[k + 1] === "[" ? "[[" : "["); if (inner < 0) { return -1; } k = inner - 1; }
+        else if (s[k] === "(") { const j = s.indexOf(")", k + 1); if (j < 0) { return -1; } k = j; }
+        else if (s[k] === ">") { return k + 1; }
+      }
+      return -1;
+    };
+    const mergeFlavour = (current: string, flavour: string, value: string): string => {
+      const s = String(current === null || current === undefined ? "" : current);
+      let out = "";
+      let done = false;
+      let i = 0;
+      while (i < s.length) {
+        const c = s[i];
+        const open = c === "[" ? (s[i + 1] === "[" ? "[[" : "[") : (c === "{" || c === "<" ? c : "");
+        const end = open === "" ? -1 : closeAt(s, i, open);
+        if (end < 0) { out += c; i++; continue; }
+        const kind = open === "[[" ? "capacity" : open === "[" ? "size" : open === "{" ? "nodes" : "spaces";
+        if (kind === flavour && !done) { done = true; } else { out += s.slice(i, end); }
+        i = end;
+      }
+      out = out.trim();
+      return value ? value + out : out;
+    };
+    const WS_E = DB.getWorksheet("Elements");
+    const col_E_Ref = columnIndex(WS_E, "Ref", false);
+    const col_E_Name = columnIndex(WS_E, "Name", false);
+    const col_E_TypeRef = columnIndex(WS_E, "TypeRef", false);
+    const col_E_ContextType = columnIndex(WS_E, "ContextType", false);
+    const col_E_ContextRef = columnIndex(WS_E, "ContextRef", false);
+    const col_E_Quantity = columnIndex(WS_E, "Quantity", false);
+    const col_E_IsDeleted = columnIndex(WS_E, "IsDeleted", false);
+    const col_E_IsTBC = columnIndex(WS_E, "IsTBC", true);
+    const col_E_IsPropertiesTBC = columnIndex(WS_E, "IsPropertiesTBC", false);
+    const col_E_ContextParameters = columnIndex(WS_E, "ContextParameters", true);
+    const col_E_Parameters = columnIndex(WS_E, "Parameters", true);
+    const data_E = WS_E.getUsedRange().getValues();
+    const rowOf_E = new Map<string, number>();
+    for (let i = 1; i < data_E.length; i++) { rowOf_E.set(String(data_E[i][col_E_Ref]), i); }
+    let nextRow_E = data_E.length;
+    const WS_ET = DB.getWorksheet("ElementTypes");
+    const col_ET_Ref = columnIndex(WS_ET, "Ref", false);
+    const col_ET_Parameters = columnIndex(WS_ET, "Parameters", true);
+    const col_ET_IsTBC = columnIndex(WS_ET, "IsTBC", true);
+    const col_ET_IsPropertiesTBC = columnIndex(WS_ET, "IsPropertiesTBC", false);
+    const data_ET = WS_ET.getUsedRange().getValues();
+    const rowOf_ET = new Map<string, number>();
+    for (let i = 1; i < data_ET.length; i++) { rowOf_ET.set(String(data_ET[i][col_ET_Ref]), i); }
+    // --- CHANGE: ElementTypes sizes ---
+    const typeSizes = [
+      {"ref":"ET-CCR-D-300-2CH-01","size":"[153.6mm,76.7mm,30.6mm]","setSpaces":false,"spaces":""},
+      {"ref":"ET-CVR-D-24-2CH-01","size":"[238mm,143mm,38.8mm]","setSpaces":true,"spaces":"<PSU(ET-CVR-PSU-24)[228mm,68mm,38.8mm,10mm,75mm,0],Driver(ET-CVR-01)[153mm,50mm,23mm,0,0,0]>"},
+      {"ref":"ET-CVR-PSU-24","size":"[228mm,68mm,38.8mm]","setSpaces":false,"spaces":""},
+      {"ref":"ET-CCR-D-350-2CH-01","size":"[153.6mm,76.7mm,30.6mm]","setSpaces":false,"spaces":""},
+      {"ref":"ET-CCR-D-350-1CH-01","size":"[210mm,40mm,33.5mm]","setSpaces":false,"spaces":""},
+      {"ref":"ET-CCR-D-300-1CH-EM-01","size":"[210mm,40mm,33.5mm]","setSpaces":false,"spaces":""},
+      {"ref":"ET-CCR-D-1050-1CH-EM-01","size":"[210mm,40mm,33.5mm]","setSpaces":false,"spaces":""},
+      {"ref":"ET-CCR-D-1050-1CH-01","size":"[210mm,40mm,33.5mm]","setSpaces":false,"spaces":""},
+      {"ref":"ET-CCR-D-300-1CH-01","size":"[210mm,40mm,33.5mm]","setSpaces":false,"spaces":""},
+    ];
+    for (const t of typeSizes) {
+      const row = rowOf_ET.get(t.ref);
+      if (row === undefined) { console.log("WARNING: type " + t.ref + " not found in ElementTypes - size not written."); continue; }
+      const was = String(data_ET[row][col_ET_Parameters]);
+      let next = t.size ? mergeFlavour(was, "size", t.size) : was;
+      if (t.setSpaces) { next = mergeFlavour(next, "spaces", t.spaces); }
+      if (next === was) { console.log("Type " + t.ref + " already " + next); continue; }
+      WS_ET.getCell(row, col_ET_Parameters).setValue(next);
+      WS_ET.getCell(row, col_ET_IsPropertiesTBC).clear(ExcelScript.ClearApplyTo.contents);
+      console.log("Type " + t.ref + ": " + was + " -> " + next);
+    }
+
+    // --- CHANGE: where each driver sits ---
+    const placed = [
+      {"ref":"E50019","xyz":"[50mm,25mm,0mm]","spaces":"<A.1>","contextType":"Position","contextRef":"p50123","size":null,"setJb":false,"jb":""},
+      {"ref":"E50020","xyz":"[50mm,151.7mm,0mm]","spaces":"<A.1>","contextType":"Position","contextRef":"p50123","size":null,"setJb":false,"jb":""},
+      {"ref":"E50021","xyz":"[50mm,278.4mm,0mm]","spaces":"<A.1>","contextType":"Position","contextRef":"p50123","size":null,"setJb":false,"jb":""},
+      {"ref":"E50022","xyz":"[50mm,405.1mm,0mm]","spaces":"<A.1>","contextType":"Position","contextRef":"p50123","size":null,"setJb":true,"jb":"<JB.1[80mm,35mm,40mm,158mm,0,0],JB.2[80mm,35mm,40mm,158mm,35mm,0]>"},
+      {"ref":"E50023","xyz":"[50mm,598.1mm,0mm]","spaces":"<A.1>","contextType":"Position","contextRef":"p50123","size":null,"setJb":false,"jb":""},
+      {"ref":"E50024","xyz":"[50mm,791.1mm,0mm]","spaces":"<A.1>","contextType":"Position","contextRef":"p50123","size":null,"setJb":false,"jb":""},
+      {"ref":"E50025","xyz":"[50mm,917.8mm,0mm]","spaces":"<A.1>","contextType":"Position","contextRef":"p50123","size":null,"setJb":false,"jb":""},
+      {"ref":"E50026","xyz":"[50mm,1044.5mm,0mm]","spaces":"<A.1>","contextType":"Position","contextRef":"p50123","size":null,"setJb":false,"jb":""},
+    ];
+    for (const it of placed) {
+      const row = rowOf_E.get(it.ref);
+      if (row === undefined) { console.log("WARNING: " + it.ref + " not found in Elements - skipped."); continue; }
+      const was = String(data_E[row][col_E_ContextParameters]);
+      const next = mergeFlavour(mergeFlavour(was, "spaces", it.spaces), "size", it.xyz);
+      if (next !== was) { if (next === "") { WS_E.getCell(row, col_E_ContextParameters).clear(ExcelScript.ClearApplyTo.contents); } else { WS_E.getCell(row, col_E_ContextParameters).setValue(next); } }
+      if (it.contextRef) {
+        WS_E.getCell(row, col_E_ContextType).setValue(it.contextType);
+        WS_E.getCell(row, col_E_ContextRef).setValue(it.contextRef);
+      }
+      const wasP = String(data_E[row][col_E_Parameters]);
+      let nextP = it.size ? mergeFlavour(wasP, "size", it.size) : wasP;
+      if (it.setJb) { nextP = mergeFlavour(nextP, "spaces", it.jb); }
+      if (nextP !== wasP) { if (nextP === "") { WS_E.getCell(row, col_E_Parameters).clear(ExcelScript.ClearApplyTo.contents); } else { WS_E.getCell(row, col_E_Parameters).setValue(nextP); } }
+      WS_E.getCell(row, col_E_IsPropertiesTBC).clear(ExcelScript.ClearApplyTo.contents);
+      console.log(it.ref + ": " + was + " -> " + next + (it.contextRef ? " in " + it.contextRef : ""));
+    }
+
+    const WS_P = DB.getWorksheet("Positions");
+    const col_P_Ref = columnIndex(WS_P, "Ref", false);
+    const col_P_Parameters = columnIndex(WS_P, "Parameters", true);
+    const col_P_IsPropertiesTBC = columnIndex(WS_P, "IsPropertiesTBC", false);
+    const data_P = WS_P.getUsedRange().getValues();
+    const rowOf_P = new Map<string, number>();
+    for (let i = 1; i < data_P.length; i++) { rowOf_P.set(String(data_P[i][col_P_Ref]), i); }
+    // --- CHANGE: the hub's own size ---
+    {
+      const row = rowOf_P.get("p50123");
+      if (row === undefined) { console.log("WARNING: hub " + "p50123" + " not found - its size was not written."); }
+      else {
+        const was = String(data_P[row][col_P_Parameters]);
+        const next = mergeFlavour(mergeFlavour(was, "spaces", "<A.1[338mm,1110mm,150mm,0,0,0]>"), "capacity", "[[338mm,1110mm,150mm]]");
+        if (next === "") { WS_P.getCell(row, col_P_Parameters).clear(ExcelScript.ClearApplyTo.contents); }
+        else if (next !== was) { WS_P.getCell(row, col_P_Parameters).setValue(next); }
+        WS_P.getCell(row, col_P_IsPropertiesTBC).clear(ExcelScript.ClearApplyTo.contents);
+        console.log("Hub " + "p50123" + ": " + was + " -> " + next);
+      }
+    }
+
+    console.log("Patch complete.");
+  } catch (e) {
+    console.log("Script error: " + e);
+    throw e;
+  }
+}

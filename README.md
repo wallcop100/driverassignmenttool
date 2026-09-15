@@ -50,6 +50,12 @@ the driver type library, or a requirement assessment with the library. A
 previously exported Driver Assignment CSV can be re-imported to resume, and the
 faint dot in the card corner loads the bundled demo.
 
+## Hub layouts
+
+[docs/hub-layout.md](docs/hub-layout.md) shows, scenario by scenario with screenshots,
+the Parameters and ContextParameters the space layout writes for a hub.
+`node docs/hub-layout-shots.mjs` retakes the pictures and the patch rows.
+
 ## Screens
 
 `node docs/screens.mjs` renders each surface to standalone HTML in `docs/`,

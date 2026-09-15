@@ -96,7 +96,8 @@ tool can draw the same hub from the DB alone. What each part of the drawing read
 
 **In the hub but not placed** is the absence of a space: an Element contexted into
 the hub (or one of its enclosure Elements) whose `ContextParameters` names no
-`<space>`. A renderer should list those beside the drawing, not drop them. The tool
+`<space>`. A renderer should list those beside the drawing, not drop them. Worked
+examples, with the rows each scenario writes: [docs/hub-layout.md](docs/hub-layout.md). The tool
 keeps that true: dragging something back to its tray clears its placement, and a
 driver added to a hub that already has a layout stays unplaced until someone places
 it. Only on a hub with no stored layout at all does the tool place the drivers it
