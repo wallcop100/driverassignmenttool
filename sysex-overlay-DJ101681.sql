@@ -1,5 +1,5 @@
 -- SysEx Overlay - Lighting Interactive Driver Assignment --
--- V1.8 -- (DJ 101681: V1.7 live as revision 68; V1.8 sends IsTBC / IsPropertiesTBC, NOT YET SAVED)
+-- V1.8 -- (DJ 101681: V1.8 live as revision 73; sends IsTBC / IsPropertiesTBC)
 
 --SQL HEADER--
 DECLARE @Container_TypeRef AS varchar(max) = 'PSU.HUB';   -- comma separated list of PSU-HUB Types
