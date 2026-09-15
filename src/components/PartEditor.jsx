@@ -10,7 +10,7 @@ import ResizeIcon from './ResizeIcon.jsx';
 // would reach more than one asks whether it is for this Element or for the type.
 
 const ROLES = ['PSU', 'Driver', 'EM'];
-const ICON = { w: 'fit_width', h: 'height', both: 'arrows_outward' };
+const ICON = { w: 'fit_width', h: 'height' };
 
 const SOURCE = {
   edited: 'arranged here, not in the DB yet',
@@ -33,11 +33,15 @@ export default function PartEditor({
   const actRef = useRef(null);
   actRef.current = act;
 
+  // the type's envelope is its parts; the preview also shows this Element's
+  // junction boxes, which sit beside them and are not the type's to state
   const env = recipe.envelope(parts) ?? [100, 50, 30];
-  const k = Math.min(1.2, 300 / Math.max(env[0], 1), 190 / Math.max(env[1], 1));
+  const jbs = recipe.jbSpaces(jboxes ?? 0, parts);
+  const view = recipe.envelope([...parts, ...jbs]) ?? env;
+  const k = Math.min(1.2, 300 / Math.max(view[0], 1), 190 / Math.max(view[1], 1));
   const PAD = 18;
-  const W = env[0] * k + PAD * 2;
-  const H = env[1] * k + PAD * 2;
+  const W = view[0] * k + PAD * 2;
+  const H = view[1] * k + PAD * 2;
 
   // one drag at a time: moving a part, or pulling one of its edges, on the snap
   useEffect(() => {
@@ -105,7 +109,7 @@ export default function PartEditor({
       </div>
 
       <svg className="pe-preview" width={W} height={H}>
-        <rect className="pe-envelope" x={PAD} y={PAD} width={env[0] * k} height={env[1] * k} />
+        <rect className="pe-envelope" x={PAD} y={H - PAD - env[1] * k} width={env[0] * k} height={env[1] * k} />
         {parts.map((p, i) => {
           const x = PAD + p.at[0] * k;
           const y = H - PAD - (p.at[1] + p.size[1]) * k;
@@ -118,7 +122,17 @@ export default function PartEditor({
               <text className="pe-label" x={x + w / 2} y={y + h / 2 + 4} textAnchor="middle">{p.space}</text>
               {handle(i, 'w', x + w, y + h / 2)}
               {handle(i, 'h', x + w / 2, y)}
-              {handle(i, 'both', x + w, y)}
+            </g>
+          );
+        })}
+        {jbs.map((sp) => {
+          const x = PAD + sp.at[0] * k;
+          const y = H - PAD - (sp.at[1] + sp.size[1]) * k;
+          return (
+            <g key={sp.name} className="pe-jb">
+              <rect x={x} y={y} width={sp.size[0] * k} height={sp.size[1] * k} />
+              <text x={x + (sp.size[0] * k) / 2} y={y + (sp.size[1] * k) / 2 + 4} textAnchor="middle">JB</text>
+              <title>{`Junction box allowance on ${elementLabel}${jbStored ? '' : ' (the default, not in the DB)'}`}</title>
             </g>
           );
         })}

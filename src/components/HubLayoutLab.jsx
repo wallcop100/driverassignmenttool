@@ -58,6 +58,8 @@ function moduleFor(driver, ctx = {}) {
   const base = {
     ref: driver.ref, typeRef: driver.typeRef, label: driver.typeRef,
     kind: feed ? 'feed' : 'module', jboxes: n, jbStored: storedJb != null, jbAuto,
+    // one upright module to a row: see packSlot in core/layout.js
+    alone: true,
   };
 
   if (!feed) {
@@ -132,7 +134,7 @@ const LINE = {
   edited: { stroke: '#b7791f', strokeDasharray: '6 3' },
 };
 
-const ICON = { w: 'fit_width', h: 'height', both: 'arrows_outward' };
+const ICON = { w: 'fit_width', h: 'height' };
 
 // px per mm. The drawing used to be fixed at 0.36, which is small on a screen.
 const ZOOM_MIN = 0.25;
@@ -183,6 +185,8 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
   const [exact, setExact] = useState(null);       // a dimension being typed in place
   const [shake, setShake] = useState(null);       // a bay refusing a height below its contents
   const [snapOpen, setSnapOpen] = useState(false);
+  const [nudgeAt, setNudgeAt] = useState(null);   // { b, axis } the arrow keys move
+  const [notice, setNotice] = useState(null);
   const svgEls = useRef({});
   const menuEl = useRef(null);
   const resizeRef = useRef(null);
@@ -241,12 +245,20 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
   // the editor and the snap chip close on a click outside them
   useEffect(() => {
     if (!editing && !snapOpen) return undefined;
-    const onDoc = (e) => {
-      if (!e.target.closest?.('.hub-pop, .hub-pencil')) setEditing(null);
-      if (!e.target.closest?.('.hub-snap')) setSnapOpen(false);
+    // The editor is docked, so clicking the drawing or scrolling leaves it open:
+    // only its own close, Escape, or another pencil changes it.
+    const onDoc = (e) => { if (!e.target.closest?.('.hub-snap')) setSnapOpen(false); };
+    const onKey = (e) => {
+      if (e.key !== 'Escape' || e.target.closest?.('input, select, textarea')) return;
+      setEditing(null);
+      setSnapOpen(false);
     };
     document.addEventListener('mousedown', onDoc);
-    return () => document.removeEventListener('mousedown', onDoc);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDoc);
+      window.removeEventListener('keydown', onKey);
+    };
   }, [editing, snapOpen]);
 
   // a bay menu closes when you click anywhere outside it
@@ -282,11 +294,46 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
     return () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); };
   }, [resize?.axis, resize?.b]);
 
+  // Arrow keys move whichever bay edge was last grabbed or focused. An SVG handle
+  // is not reliably focused by a click, so the keys are heard on the window.
+  const keyRef = useRef(null);
+  useEffect(() => {
+    if (!nudgeAt) return undefined;
+    const onKey = (e) => {
+      if (e.target.closest?.('input, select, textarea')) return;
+      if (e.key === 'Escape') { setNudgeAt(null); return; }
+      keyRef.current?.(e, nudgeAt.b, nudgeAt.axis);
+    };
+    const onDown = (e) => { if (!e.target.closest?.('.hub-handle')) setNudgeAt(null); };
+    window.addEventListener('keydown', onKey);
+    document.addEventListener('mousedown', onDown);
+    return () => { window.removeEventListener('keydown', onKey); document.removeEventListener('mousedown', onDown); };
+  }, [nudgeAt]);
+  useEffect(() => {
+    if (!notice) return undefined;
+    const t = setTimeout(() => setNotice(null), 3600);
+    return () => clearTimeout(t);
+  }, [notice]);
+
   const usedBy = (typeRef) => [...model.drivers, ...addedDrivers].filter((d) => d.typeRef === typeRef).length;
 
   // one type per hub, sized with no junction boxes: what its ElementType states
   const hubDrivers = drivers.filter((d) => d.zone === hub);
   const types = [...new Map(hubDrivers.map((d) => [d.typeRef, moduleFor(d, { ...ctx, jbSet: { [d.ref]: 0 } })])).values()];
+
+  // Every driver type in the set, not only this hub's. A size belongs to the
+  // type, and the spec patch already writes every type it can, so the size patch
+  // does the same: opening one hub is not a reason to leave the others unsized.
+  const setTypes = [...new Map([
+    ...drivers.map((d) => [d.typeRef, d]),
+    ...(model.inventory ?? []).map((t) => [t.typeRef, t]),
+  ]).values()].map((t) => {
+    const ref = `__type:${t.typeRef}`;
+    return moduleFor(
+      { ref, typeRef: t.typeRef, name: t.name ?? '', typeName: t.typeName ?? t.name ?? '', powerType: t.powerType, nodes: t.nodes },
+      { ...ctx, jbSet: { [ref]: 0 } },
+    );
+  });
 
   // the editor follows the block whose pencil was pressed, or the sizeless type
   // picked from the legend, since that one has no block to press
@@ -329,8 +376,43 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
   const heightOf = (b) => Math.max(contentH(b), opt(b).height > 0 ? opt(b).height : 0);
   const separate = cur.opts.map((o, i) => (o.separate ? i : null)).filter((i) => i != null);
 
+  // One column's width: what the bay holds, with a sizeless feed spanning it
+  // rather than holding it open. Measuring with the feed already stretched to the
+  // current width is what stopped a bay with a feed ever getting narrower.
+  const colWidth = (b) => (cur.bays[b].length ? hl.naturalWidth(hl.spanFeeds(cur.bays[b], null)) : 2 * hl.TRUNK + 50);
+
+  // How many bays a width would make. A bay is one column of upright modules;
+  // pulling it past room for a second column makes a second bay, sharing the 50
+  // between them, instead of packing two columns whose clearances overlap.
+  const baysFor = (b, w) => {
+    const loose = cur.bays[b].filter((i) => i.kind !== 'feed');
+    if (loose.filter((i) => i.rot !== 90).length < 2) return 1;
+    return Math.max(1, Math.min(loose.length, Math.floor((w - hl.CLEAR_X) / (colWidth(b) - hl.CLEAR_X))));
+  };
+  const splitWide = (b, w) => {
+    const k = baysFor(b, w);
+    if (k < 2) return false;
+    const items = cur.bays[b];
+    const feeds = items.filter((i) => i.kind === 'feed');
+    const loose = items.filter((i) => i.kind !== 'feed');
+    const per = Math.ceil(loose.length / k);
+    const chunks = Array.from({ length: k }, (_, j) => loose.slice(j * per, (j + 1) * per)).filter((c) => c.length);
+    chunks[0] = [...feeds, ...chunks[0]];
+    const o = opt(b);
+    edit({
+      bays: [...cur.bays.slice(0, b), ...chunks, ...cur.bays.slice(b + 1)],
+      opts: [...cur.opts.slice(0, b),
+        ...chunks.map((_, j) => ({ ...o, width: null, height: j === 0 ? o.height : null,
+          separate: j === 0 ? o.separate : false, ref: j === 0 ? o.ref : '' })),
+        ...cur.opts.slice(b + 1)],
+    });
+    setNotice(`Bay ${b + 1} holds one column of drivers, so it became ${chunks.length} bays.`);
+    return true;
+  };
+
   // a height at or below the contents is no height at all: the contents decide
   const commitBay = (r) => {
+    if (r.axis !== 'h' && splitWide(r.b, r.w)) return;
     const patch = {};
     if (r.axis !== 'h') patch.width = r.w;
     if (r.axis !== 'w') {
@@ -350,21 +432,22 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
     setResize({
       b, axis, si, x0: e.clientX, y0: e.clientY, mx: e.clientX, my: e.clientY, rx: rect.left, ry: rect.top,
       startW: w, startH: heightOf(b), w, h: heightOf(b),
-      minW: laid[b].length ? hl.naturalWidth(laid[b]) : 2 * hl.TRUNK + 50,
+      minW: colWidth(b),
     });
   };
   const keyResize = (e, b, axis) => {
     const shift = e.shiftKey;
     if ((axis === 'w' || axis === 'both') && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')) {
       e.preventDefault();
-      const min = laid[b].length ? hl.naturalWidth(laid[b]) : 2 * hl.TRUNK + 50;
-      setOpt(b, { width: nudge(widthOf(b), e.key === 'ArrowRight' ? 1 : -1, snap, { shift, min }) });
+      const next = nudge(widthOf(b), e.key === 'ArrowRight' ? 1 : -1, snap, { shift, min: colWidth(b) });
+      if (!splitWide(b, next)) setOpt(b, { width: next });
     } else if ((axis === 'h' || axis === 'both') && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
       e.preventDefault();
       const next = nudge(heightOf(b), e.key === 'ArrowUp' ? 1 : -1, snap, { shift });
       commitBay({ b, axis: 'h', h: next });
     }
   };
+  keyRef.current = keyResize;
   const openExact = (e, b, axis, si) => {
     e.stopPropagation();
     const rect = svgEls.current[`s${si}`]?.getBoundingClientRect() ?? { left: 0, top: 0 };
@@ -374,7 +457,10 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
   const commitExact = () => {
     const n = Number(exact?.value);
     if (exact && n > 0) {
-      if (exact.axis === 'w') setOpt(exact.b, { width: Math.max(n, laid[exact.b].length ? hl.naturalWidth(laid[exact.b]) : 0) });
+      if (exact.axis === 'w') {
+        const w = Math.max(n, colWidth(exact.b));
+        if (!splitWide(exact.b, w)) setOpt(exact.b, { width: w });
+      }
       else commitBay({ b: exact.b, axis: 'h', h: n });
     }
     setExact(null);
@@ -399,7 +485,7 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
   const tbcCount = hubDrivers.filter((d) => isTbc(d.ref, d.typeRef)).length;
   // A feed with no size is drawn at a placeholder, not a datasheet figure, so it
   // is never offered to the patch: somebody has to type the real one.
-  const notInDb = types.filter((m) => m.size
+  const notInDb = setTypes.filter((m) => m.size
     && (m.sizedBy === 'edited' || (m.sizedBy === 'datasheet' && m.kind !== 'feed')));
   const inPatch = notInDb.filter((m) => !skip.includes(m.typeRef));
 
@@ -477,6 +563,7 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
   };
 
   const focusTbc = focusModule && isTbc(focusRef, focusType);
+
 
   const flagBlock = focusModule ? (
     <div className="hub-inspect-flags">
@@ -559,11 +646,12 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
   ) : null;
 
   const bayHandle = (b, axis, cx, cy, si) => (
-    <g key={axis} className="hub-handle" transform={`translate(${cx},${cy})`} tabIndex={0} role="button"
+    <g key={axis} className={`hub-handle ${nudgeAt?.b === b && nudgeAt.axis === axis ? 'is-armed' : ''}`}
+      transform={`translate(${cx},${cy})`} tabIndex={0} role="button"
       aria-label={`Bay ${b + 1} ${axis === 'w' ? 'width' : axis === 'h' ? 'height' : 'width and height'}`}
       onMouseDown={(e) => e.stopPropagation()}
-      onPointerDown={(e) => startResize(e, b, axis, si)}
-      onKeyDown={(e) => keyResize(e, b, axis)}
+      onPointerDown={(e) => { setNudgeAt({ b, axis }); startResize(e, b, axis, si); }}
+      onFocus={() => setNudgeAt({ b, axis })}
       onDoubleClick={(e) => openExact(e, b, axis === 'h' ? 'h' : 'w', si)}>
       <title>
         {`Drag to set bay ${b + 1}'s ${axis === 'w' ? 'width' : axis === 'h' ? 'height' : 'width and height'}`
@@ -575,7 +663,12 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
   );
 
   return (
-    <div className="container-fluid py-3 hub-lab" onMouseUp={onDrop} onMouseLeave={() => setDrag(null)}>
+    <div className={`container-fluid py-3 hub-lab ${editing && inspector ? 'has-dock' : ''}`}
+      onMouseUp={onDrop} onMouseLeave={() => setDrag(null)}>
+      {/* one editor at a time, docked where it is always on screen */}
+      {editing && inspector && (
+        <aside className="hub-dock" aria-label="Editor">{inspector}</aside>
+      )}
       <div className="dp-head">
         {onBack && (
           <button className="btn btn-sm btn-outline-secondary d-flex align-items-center"
@@ -616,11 +709,43 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
             </div>
           )}
         </span>
+        <div className="hub-controls">
+          <span className="hub-bays">
+            bays
+            <button disabled={cur.bays.length <= 1} onClick={removeBay}>−</button>
+            {cur.bays.length}
+            <button onClick={addBay}>+</button>
+          </span>
+          <button className="btn btn-sm btn-link p-0" onClick={() => edit({ bays: hl.rebalance(cur.bays).map(feedFirst) })}>
+            Auto-arrange
+          </button>
+          {sel.length > 0 && (
+            <>
+              <span className="hub-bays">
+                junction boxes
+                {/* one per output on CV and none on CC to start, reduced from there */}
+                <button onClick={() => setJboxes(sel, null)} title="Back to one per output on CV, none on CC">auto</button>
+                {[0, 1, 2, 3, 4].map((n) => (
+                  <button key={n} onClick={() => setJboxes(sel, n)}>{n}</button>
+                ))}
+              </span>
+              <button className="btn btn-sm btn-outline-secondary"
+                onClick={() => edit({ bays: sel.reduce((bs, r) => hl.rotate(bs, r), cur.bays) })}
+                title="Stand it on its side, as HUB-A does across its top zone">
+                Rotate 90°
+              </button>
+              <button className="btn btn-sm btn-outline-primary" onClick={splitSelected}>
+                Split {sel.length} into a new bay
+              </button>
+            </>
+          )}
+        </div>
+        {notice && <span className="hub-notice" role="status">{notice}</span>}
         {cur.fromDb && <span className="hub-fromdb" title="Opened from the bays and placements the DB holds">from the DB</span>}
         <span className="ms-auto d-flex align-items-center gap-2">
           {notInDb.length > 0 && (
             <details className="hub-inpatch">
-              <summary>{inPatch.length} of {notInDb.length} not in the DB go in the patch</summary>
+              <summary>{inPatch.length} of {notInDb.length} types in the set not in the DB go in the patch</summary>
               <div className="hub-inpatch-list">
                 {notInDb.map((m) => (
                   <label key={m.typeRef}>
@@ -657,12 +782,12 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
         {tbcCount > 0 && <span><Origin kind="tbc" what="These Elements" />{tbcCount}</span>}
         {types.filter((m) => m.sizedBy === 'missing').map((m) => (
           <button key={m.typeRef} type="button" className="btn btn-sm btn-link p-0"
-            onClick={() => setEditing({ typeRef: m.typeRef })} title="Give this type a size">
+            onClick={() => setEditing({ typeRef: m.typeRef })}
+            title="Give this type a size">
             <Origin kind="missing" what={m.typeRef} /> {m.typeRef}
           </button>
         ))}
         <span className="text-secondary">Hover a block for its pencil, hover a bay to resize it.</span>
-        {editing && !editing.ref && inspector && <div className="hub-pop" style={{ left: 0, top: '100%' }}>{inspector}</div>}
       </div>
 
       <div className="hub-sheets">
@@ -871,7 +996,7 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
                         <g className="hub-pencil" transform={`translate(${x + px(p.size[0]) - 17},${y + 3})`}
                           onMouseDown={(e) => {
                             e.stopPropagation();
-                            setEditing({ ref: p.ref, sheet: si, x: LEFT + x, y: 10 + y + px(p.size[1]) + 6 });
+                            setEditing({ ref: p.ref });
                           }}>
                           <title>{p.recipe ? 'Parts, junction boxes and TBC' : 'Size, junction boxes and TBC'}</title>
                           <rect width="14" height="14" rx="3" />
@@ -907,7 +1032,7 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
                       edge started stays until you let go */}
                   {sheet.slots.map((b, local) => {
                     const live = resize?.b === b;
-                    if (!drag && hover !== b && !live) return null;
+                    if (!drag && hover !== b && !live && nudgeAt?.b !== b) return null;
                     if (drag) return null;
                     const bw = live ? resize.w : widths[local];
                     const bh = live ? resize.h : heightOf(b);
@@ -922,7 +1047,6 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
                         <rect className={`hub-live ${live ? 'is-live' : ''}`} x={x0} y={top} width={px(bw)} height={px(bh)} />
                         {bayHandle(b, 'w', x0 + px(bw), top + px(bh) / 2, si)}
                         {bayHandle(b, 'h', x0 + px(bw) / 2, top, si)}
-                        {bayHandle(b, 'both', x0 + px(bw), top, si)}
                       </g>
                     );
                   })}
@@ -966,9 +1090,10 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
               {resize?.si === si && (() => {
                 const o = opt(resize.b);
                 const fits = (o.target.w || o.target.h) ? hl.fitsIn({ w: resize.w, h: resize.h }, o.target).fits : true;
-                const text = resize.axis === 'w' ? `${resize.startW} → ${resize.w}mm`
-                  : resize.axis === 'h' ? `${resize.startH} → ${resize.h}mm`
-                    : `${resize.startW} × ${resize.startH} → ${resize.w} × ${resize.h}mm`;
+                const k = resize.axis === 'w' ? baysFor(resize.b, resize.w) : 1;
+                const text = resize.axis === 'w'
+                  ? `${resize.startW} → ${resize.w}mm${k > 1 ? `, ${k} bays` : ''}`
+                  : `${resize.startH} → ${resize.h}mm`;
                 // keyed on the value, so each snap step replays the spring
                 return (
                   <div key={text} className={`hub-readout ${fits ? '' : 'is-over'}`}
@@ -983,46 +1108,12 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
                   onKeyDown={(e) => { if (e.key === 'Enter') commitExact(); if (e.key === 'Escape') setExact(null); }}
                   onBlur={commitExact} />
               )}
-              {editing?.ref && editing.sheet === si && inspector && (
-                <div className="hub-pop" style={{ left: editing.x, top: editing.y }}>{inspector}</div>
-              )}
               </div>
             </div>
           );
         })}
       </div>
 
-      <div className="hub-controls">
-        <span className="hub-bays">
-          bays
-          <button disabled={cur.bays.length <= 1} onClick={removeBay}>−</button>
-          {cur.bays.length}
-          <button onClick={addBay}>+</button>
-        </span>
-        <button className="btn btn-sm btn-link p-0" onClick={() => edit({ bays: hl.rebalance(cur.bays).map(feedFirst) })}>
-          Auto-arrange
-        </button>
-        {sel.length > 0 && (
-          <>
-            <span className="hub-bays">
-              junction boxes
-              {/* one per output on CV and none on CC to start, reduced from there */}
-              <button onClick={() => setJboxes(sel, null)} title="Back to one per output on CV, none on CC">auto</button>
-              {[0, 1, 2, 3, 4].map((n) => (
-                <button key={n} onClick={() => setJboxes(sel, n)}>{n}</button>
-              ))}
-            </span>
-            <button className="btn btn-sm btn-outline-secondary"
-              onClick={() => edit({ bays: sel.reduce((bs, r) => hl.rotate(bs, r), cur.bays) })}
-              title="Stand it on its side, as HUB-A does across its top zone">
-              Rotate 90°
-            </button>
-            <button className="btn btn-sm btn-outline-primary" onClick={splitSelected}>
-              Split {sel.length} into a new bay
-            </button>
-          </>
-        )}
-      </div>
     </div>
   );
 }

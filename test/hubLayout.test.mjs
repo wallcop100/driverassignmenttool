@@ -640,3 +640,11 @@ test('every bay width and start comes back from the saved rows alone', () => {
   assert.deepEqual(geo.heights.slice(0, 2), [255, 700], 'a stated height comes back as stated');
   assert.equal(hl.extent(back.slice(0, 2), { widths: geo.widths.slice(0, 2), heights: geo.heights.slice(0, 2) }).w, 788);
 });
+
+test('an upright hub module takes a row to itself, however wide the bay', () => {
+  const M = (ref) => ({ ref, label: ref, size: [153, 50, 23], alone: true });
+  const rows = hl.packBay([M('A'), M('B'), M('C')], 1000);
+  assert.equal(rows.length, 3, 'never side by side, so clearances never overlap');
+  const turned = hl.packBay([{ ...M('A'), rot: 90 }, { ...M('B'), rot: 90 }], 380);
+  assert.equal(turned.length, 1, 'turned ones still run across the top, as HUB-A has them');
+});

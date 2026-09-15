@@ -139,13 +139,18 @@ export function packSlot(items, slotWidth = SLOT_WIDTH) {
     const c = clearOf(item);
     const inset = c.x === CLEAR_X ? TRUNK : 0;
     const avail = slotWidth - inset * 2;
+    // An item marked `alone` takes a row to itself unless it is turned. An
+    // upright PSU-hub module carries its trunking down BOTH sides, so two of them
+    // side by side would share one run nobody drew and their clearances would
+    // overlap. A wider bay is more bays, not two columns in one.
+    const solo = !!item.alone && item.rot !== 90;
     // a row is one orientation: the trunking cannot be down the sides and across
     // the ends of the same row
-    if (row && (row.inset !== inset
+    if (row && (solo || row.solo || row.inset !== inset
       || row.x + Math.max(row.clearX, c.x) + size[0] > avail + 0.01)) close();
     if (!row) {
       row = {
-        at: [], x: 0, h: 0, clearX: 0, inset,
+        at: [], x: 0, h: 0, clearX: 0, inset, solo,
         y: rows.reduce((n, r) => n + r.h, 0),
         // the band is hatched on the edges that carry the 50
         pad: c.y, hatched: c.y === CLEAR_X,
