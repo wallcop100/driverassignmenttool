@@ -440,11 +440,24 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
     return true;
   };
 
+  // The reverse: squeezed under half a column, a bay gives its contents to its
+  // neighbour (the bay to its left, or to its right for the first) and goes.
+  const mergeTarget = (b, w) => (cur.bays.length > 1 && w < colWidth(b) / 2 ? (b > 0 ? b - 1 : 1) : null);
+  const mergeNarrow = (b, w) => {
+    const into = mergeTarget(b, w);
+    if (into == null) return false;
+    const bays = cur.bays.map((items, i) => (i === into ? [...items, ...cur.bays[b]] : items));
+    const opts = cur.opts.map((o, i) => (i === into ? { ...o, width: null } : o));
+    edit({ bays: bays.filter((_, i) => i !== b), opts: opts.filter((_, i) => i !== b) });
+    setNotice(`Bay ${b + 1} was narrower than half a column, so its contents moved into bay ${into + 1}.`);
+    return true;
+  };
+
   // a height at or below the contents is no height at all: the contents decide
   const commitBay = (r) => {
-    if (r.axis !== 'h' && splitWide(r.b, r.w)) return;
+    if (r.axis !== 'h' && (splitWide(r.b, r.w) || mergeNarrow(r.b, r.w))) return;
     const patch = {};
-    if (r.axis !== 'h') patch.width = r.w;
+    if (r.axis !== 'h') patch.width = Math.max(r.w, colWidth(r.b));
     if (r.axis !== 'w') {
       const floor = contentH(r.b, patch.width ?? widthOf(r.b));
       patch.height = r.h > floor ? r.h : null;
@@ -462,13 +475,16 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
     setResize({
       b, axis, si, x0: e.clientX, y0: e.clientY, mx: e.clientX, my: e.clientY, rx: rect.left, ry: rect.top,
       startW: w, startH: heightOf(b), w, h: heightOf(b),
-      minW: colWidth(b),
+      // with a neighbour to merge into, the drag may go past the column
+      minW: cur.bays.length > 1 ? snap : colWidth(b),
     });
   };
   const keyResize = (e, b, axis) => {
     const shift = e.shiftKey;
     if ((axis === 'w' || axis === 'both') && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')) {
       e.preventDefault();
+      // one more step left from the narrowest a bay goes merges it
+      if (e.key === 'ArrowLeft' && widthOf(b) <= colWidth(b) && mergeNarrow(b, 0)) return;
       const next = nudge(widthOf(b), e.key === 'ArrowRight' ? 1 : -1, snap, { shift, min: colWidth(b) });
       if (!splitWide(b, next)) setOpt(b, { width: next });
     } else if ((axis === 'h' || axis === 'both') && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
@@ -489,7 +505,7 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
     if (exact && n > 0) {
       if (exact.axis === 'w') {
         const w = Math.max(n, colWidth(exact.b));
-        if (!splitWide(exact.b, w)) setOpt(exact.b, { width: w });
+        if (!mergeNarrow(exact.b, n) && !splitWide(exact.b, w)) setOpt(exact.b, { width: w });
       }
       else commitBay({ b: exact.b, axis: 'h', h: n });
     }
@@ -1226,8 +1242,9 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
                 const o = opt(resize.b);
                 const fits = (o.target.w || o.target.h) ? hl.fitsIn({ w: resize.w, h: resize.h }, o.target).fits : true;
                 const k = resize.axis === 'w' ? baysFor(resize.b, resize.w) : 1;
+                const into = resize.axis === 'w' ? mergeTarget(resize.b, resize.w) : null;
                 const text = resize.axis === 'w'
-                  ? `${resize.startW} → ${resize.w}mm${k > 1 ? `, ${k} bays` : ''}`
+                  ? `${resize.startW} → ${resize.w}mm${k > 1 ? `, ${k} bays` : ''}${into != null ? `, into bay ${into + 1}` : ''}`
                   : `${resize.startH} → ${resize.h}mm`;
                 // keyed on the value, so each snap step replays the spring
                 return (
