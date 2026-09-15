@@ -12,7 +12,7 @@ function locate(issue) {
     : issue.node != null ? `[data-node="${escape(`${issue.driver}|${issue.node}`)}"]`
     : `[data-driver="${escape(issue.driver)}"]`;
   const el = document.querySelector(sel);
-  if (!el) return; // hidden by a filter/toggle right now — nothing to point at
+  if (!el) return; // hidden by a filter/toggle right now - nothing to point at
   el.scrollIntoView({ behavior: 'smooth', block: 'center' });
   el.classList.add('tour-pulse');
   setTimeout(() => el.classList.remove('tour-pulse'), PULSE_MS);
@@ -30,7 +30,7 @@ export default function IssuesBadge({ issues }) {
       {open && (
         // .issues-pop's own box (incl. its top padding) sits flush against the
         // badge with no gap, so the cursor never leaves it while crossing from
-        // badge to rows — see styles.css for why that matters.
+        // badge to rows - see styles.css for why that matters.
         <div className="issues-pop">
           <div className="issues-pop-inner">
             {issues.map((f) => (

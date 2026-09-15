@@ -2,7 +2,7 @@
 //
 // Nothing here knows what a driver or a panel is. It knows how to find a column
 // without hard-coding its number, how to repoint a link end, how to append and
-// soft-delete an Element with its cascade, and how to write a layout back — all
+// soft-delete an Element with its cascade, and how to write a layout back - all
 // of which is the same work whether the thing being patched is a driver in a hub
 // or a module in a panel.
 //
@@ -23,13 +23,13 @@
 // It deviates in one place, deliberately: the rules ask for a single bulk
 // setValues() at the end, and this writes changed cells individually. Writing a
 // whole used range back would rewrite every cell of a live workbook to fix a
-// handful, and the expensive part — rescanning the sheet per row — is gone
+// handful, and the expensive part - rescanning the sheet per row - is gone
 // either way.
 const esc = (v) => String(v).replace(/"/g, '\\"');
 
 // Column lookup that can ADD the column. The ten driver attributes arrived with
 // Lighting DesignDB V4.6, so a workbook made before it simply has no
-// MaxPower(W) column to find — and find() on a missing header throws, taking the
+// MaxPower(W) column to find - and find() on a missing header throws, taking the
 // whole script with it. `add` columns are appended to the header row instead,
 // which is what makes onboarding an older workbook a single paste.
 export const COL_HELPER = [
@@ -89,7 +89,7 @@ export function script(body, tool = 'Driver Assignment Tool') {
 
 // ---- LinksMap ----
 // A logical link can span several LinksMap rows sharing one Ref (a loop serving
-// many fittings), told apart by LinkRefRowKey — which the hub CSV does not carry.
+// many fittings), told apart by LinkRefRowKey - which the hub CSV does not carry.
 // In practice every row of a Ref shares its From end, so patching them all is
 // both right and necessary: patching only the first, as a bare find() does,
 // leaves the rest pointing at the old driver. The exception is a cable fed from
@@ -153,7 +153,7 @@ export const LAYOUT_COLS = ['ContextParameters', 'Parameters'];
 // feed and its control link are invisible to it and nothing else would catch
 // them. Deleting the Element without them leaves links pointing at a deleted row.
 //
-// A cable this same patch repoints is exempt — it is not orphaned, it has been
+// A cable this same patch repoints is exempt - it is not orphaned, it has been
 // moved, and OMIT runs before CHANGE so the cascade would otherwise delete the
 // row the repoint is about to rewrite.
 export const deleteSection = (refs, keepLinks) => `    // --- OMIT: Elements, with cascade ---\n`

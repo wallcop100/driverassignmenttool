@@ -2,7 +2,7 @@
 //
 // This lives in the DataJoin overlay template (DJ 101681), NOT in the tool.
 // It is baked into each rendered design page, so a page rendered before an
-// edit here keeps running the old copy — re-run the DJ after changing it.
+// edit here keeps running the old copy - re-run the DJ after changing it.
 //
 // Changes over the previous version:
 //
@@ -13,17 +13,17 @@
 //
 //   2. No `if (!window.__datOpen)` guard. Every hub button carries its own copy
 //      of this function; with the guard, the first one clicked won on the page
-//      and every later copy — including a corrected one — was silently skipped.
+//      and every later copy - including a corrected one - was silently skipped.
 //      One stale button poisoned the whole page. Last definition wins now.
 //
 //   3. context.branchId is sent, so the tool can scope and retire saved work
 //      per branch. See the __datOpen signature below.
 //
-//   4. No close confirmation, and exports are always the patch script — the
+//   4. No close confirmation, and exports are always the patch script - the
 //      tool suppresses its CSV output when embedded.
 //
 // Note: the tool's own asset paths stay relative (../assets/...) and that is
-// correct — inside the frame they resolve against the frame's own URL.
+// correct - inside the frame they resolve against the frame's own URL.
 
 var TOOL_ORIGIN = 'https://wallcop100.github.io';
 var TOOL_PATH = '/driverassignmenttool/api/';
@@ -32,7 +32,7 @@ var TOOL_PATH = '/driverassignmenttool/api/';
 //
 // branchId + systemSetId together scope the tool's saved work. systemSetIds are
 // sequential within a branch, so when the user opens a newer set the tool drops
-// every stored session for that branch below it — no stale work, no manual
+// every stored session for that branch below it - no stale work, no manual
 // cleanup. Send the branch the design belongs to, as a plain id; the tool never
 // parses it beyond comparing equality.
 //
@@ -46,7 +46,7 @@ window.__datOpen = function (ref, hub, ver, branch) {
   if (!f || !l) { IWalertmessage('No data block for ' + ref); return; }
   var form = f.textContent, links = l.textContent;
 
-  // Driver type library — ONE block for the whole page, not one per hub. The
+  // Driver type library - ONE block for the whole page, not one per hub. The
   // per-hub rows carry no "Driver Restrictions"; the tool joins the ratings on
   // ElementTypeRef from here. Optional: without it the tool still works, but
   // every driver reads as "type undeclared" and Add Driver can only offer the
@@ -55,10 +55,10 @@ window.__datOpen = function (ref, hub, ver, branch) {
   var types = ty ? ty.textContent : '';
 
   // The CSVs must keep their line breaks. If the overlay writer ever collapses
-  // them, the tool sees one row and reports a column error — catch it here
+  // them, the tool sees one row and reports a column error - catch it here
   // instead, where the message can name the cause.
   if (form.indexOf('\n') === -1 || links.indexOf('\n') === -1) {
-    IWalertmessage('Driver tool: CSV data block for ' + ref + ' has no line breaks — check the overlay writer.');
+    IWalertmessage('Driver tool: CSV data block for ' + ref + ' has no line breaks - check the overlay writer.');
     return;
   }
 
@@ -106,7 +106,7 @@ window.__datOpen = function (ref, hub, ver, branch) {
       clearTimeout(watchdog);
       st.textContent = '';
       // Types BEFORE init. postMessage preserves order from one source, so
-      // sending them in this order is enough — no ack needed. Arriving after
+      // sending them in this order is enough - no ack needed. Arriving after
       // init still works, but only while the user has made no changes yet.
       if (types) {
         fr.contentWindow.postMessage({ type: 'dat:types', version: 1, types: types }, TOOL_ORIGIN);
@@ -125,7 +125,7 @@ window.__datOpen = function (ref, hub, ver, branch) {
       st.textContent = dirty ? dirty + ' unsaved' : '';
     }
     if (m.type === 'dat:error') IWalertmessage('Driver tool: ' + m.message);
-    // Embedded, the tool only ever emits kind:'patch' — the CSV round-trip is
+    // Embedded, the tool only ever emits kind:'patch' - the CSV round-trip is
     // disabled there because this workbook cannot ingest that format.
     if (m.type === 'dat:export') {
       copyToClipboard(m.content);

@@ -1,5 +1,5 @@
 -- SysEx Overlay - Lighting Interactive LCP --
--- V0.1 -- (live in DJ 101698 "Interactive LCP" as revision 1)
+-- V0.2 -- (DJ 101698 "Interactive LCP": V0.2 live as revision 10)
 
 --SQL HEADER--
 DECLARE @PanelTypes       AS nvarchar(400) = N'LCP';       -- comma separated patterns against the panel ElementType Ref. KEEP nvarchar(400): max breaks the run page parameter parser (DJ 101676 V0.6)
@@ -63,6 +63,7 @@ DECLARE @Branch varchar(50) = CONVERT(varchar(50), ISNULL(@SystemBranchID,0));
 	IF COL_LENGTH('tempdb..#ElementsRaw','ID_')  IS NOT NULL ALTER TABLE #ElementsRaw  DROP COLUMN [ID_];
 
 {{>CalculatedPositions}}
+{{>ElementTopLevelContext}}
 
 
 /* ---- 1. the panels ------------------------------------------------------------------
@@ -190,22 +191,24 @@ WHERE  CP.ControlTypeRef LIKE '%DALI%'
   AND  ISNULL(CP.Link_ControlDetails,'') <> ''
 GROUP BY CP.Link_ControlDetails;
 
--- (b) remote-driver fittings: the ballasts ride with the driver Element, so they
--- are counted there and not on the fitting. Same rule as 101269's second INSERT.
+-- (b) DJ 101269's second branch, VERBATIM. An earlier version joined drivers to
+-- their direct ContextRef and required a loop name; 101269 walks each Element up
+-- to its TOP-LEVEL position and names the loop from that position's
+-- Link_ControlDetails, falling back to its ExtRef or Ref. Measured on set 109311
+-- the shortcut matched 101269 on 22 loops and lost U3A (16) and U3B (15) entirely.
 INSERT #LoopBallasts (Loop, Ballasts, Fittings)
-SELECT CP.Link_ControlDetails,
-       SUM(ET.BallastCountPerUoM * COALESCE(E.Quantity,1)),
+SELECT COALESCE(CP.Link_ControlDetails, CP.PositionExtRef, CP.PositionRef),
+       SUM(ET.BallastCountPerUoM * COALESCE(E.Quantity, 1)),
        COUNT(DISTINCT CP.PositionRef)
-FROM   #ElementsRaw E
-JOIN   #CalculatedPositions CP ON CP.PositionRef = E.ContextRef AND E.ContextType = 'Position'
+FROM   #Elements E
+OUTER APPLY (SELECT TopLevel FROM #ElementTopLevelContext ETL WHERE E.Ref = ETL.Ref) ETL
 LEFT JOIN #ElementTypes ET ON ET.Ref = E.TypeRef
+LEFT JOIN #CalculatedPositions CP ON CP.PositionRef = ETL.TopLevel
 WHERE  CP.IsLink_SecondaryPowerRef = '1'
   AND  CP.IsParent = '0'
-  AND  ISNULL(E.IsDeleted,'0') = '0'
+  AND  ISNULL(E.IsDeleted, '0') = '0'
   AND  CP.Quantity > 0
-  AND  ISNULL(CP.Link_ControlDetails,'') <> ''
-  AND  ET.BallastCountPerUoM IS NOT NULL
-GROUP BY CP.Link_ControlDetails;
+GROUP BY CP.Link_ControlDetails, CP.PositionExtRef, CP.PositionRef;
 
 -- and the control groups on each loop, counted 101269's way: a group named after
 -- its own loop is not a separate group, and counting it reports a fault one
@@ -312,7 +315,9 @@ SELECT l.PanelRef,
 INTO #LinkCsv
 FROM #LcpLinks l
 LEFT JOIN (SELECT Loop, SUM(Ballasts) AS Ballasts, SUM(Fittings) AS Fittings
-           FROM #LoopBallasts GROUP BY Loop) b ON b.Loop = l.Loop
+           FROM #LoopBallasts
+           WHERE Ballasts > 0 AND ISNULL(Loop,'0') <> '0'   -- as 101269's #PreReport
+           GROUP BY Loop) b ON b.Loop = l.Loop
 GROUP BY l.PanelRef;
 
 

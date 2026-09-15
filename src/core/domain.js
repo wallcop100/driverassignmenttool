@@ -1,7 +1,7 @@
 // What a tool has to tell the shared components about its own subject.
 //
-// The core screens — a container with slots, a tray of things to place, a review
-// of what changed — are the same whether the container is a PSU hub full of
+// The core screens - a container with slots, a tray of things to place, a review
+// of what changed - are the same whether the container is a PSU hub full of
 // drivers or a control panel full of modules. What differs is what a capacity
 // MEANS: watts and forward volts on a driver output, ways and terminals on a
 // panel module. So the components ask the domain rather than reading
@@ -17,7 +17,7 @@ export const NEUTRAL = {
   msgPrefix: 'dat',
   storagePrefix: 'assignmenttool',
 
-  // [{ label, used, cap, unit, title, fail }] — the bars across a container.
+  // [{ label, used, cap, unit, title, fail }] - the bars across a container.
   // `null` cap means "no declared limit", which is a fact worth drawing, not a
   // zero-width bar.
   capacities: () => [],
@@ -41,14 +41,14 @@ export const NEUTRAL = {
     slot: 'output', slots: 'outputs',
   },
 
-  // What a cable is grouped BY on screen — the chip on a slot, the colour, and
+  // What a cable is grouped BY on screen - the chip on a slot, the colour, and
   // the tray's grouping. A driver cares about the ControlGroup; a panel does not:
   // there, what matters is the loop, Link_ControlDetails, because that is what a
   // circuit or a bus segment is.
   groupOf: (link) => link?.controlGroup ?? null,
   groupLabel: 'ControlGroup',
 
-  // May one slot legitimately carry several groups? On a driver output, no — it
+  // May one slot legitimately carry several groups? On a driver output, no - it
   // is one circuit. On a panel's bus terminal, yes, and painting it as a fault
   // is the tool being wrong rather than the design.
   slotAllowsManyGroups: () => false,
@@ -60,9 +60,8 @@ export const NEUTRAL = {
   // Whether this tool has an onboarding notice to show at all.
   setupNotice: () => false,
 
-  // Whether this subject has a physical space to lay out. A PSU hub does - that
-  // is the space requirement drawing. A control panel's arrangement is its ways,
-  // which the panel view already is.
+  // Whether this subject has a layout to edit: a PSU hub's space requirement
+  // drawing, or the ways a control panel's modules sit in.
   spaceLayout: false,
 
   // 'grid' wraps containers into a flowing grid; 'column' stacks them in one

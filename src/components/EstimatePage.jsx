@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import * as api from '../api.js';
 import { resolveSpec } from '../engine.js';
 
-// Tender estimate — Positions rolled up by DJ 100053, no links and no drivers.
+// Tender estimate - Positions rolled up by DJ 100053, no links and no drivers.
 // There is nothing to assign here, so there is no tray and no bins: the question
 // is only how many drivers of what, per hub, and the answer is a count you can
 // patch in as Elements.
@@ -167,20 +167,20 @@ export default function EstimatePage({ state, dispatch, zone }) {
               <div key={l.key} className="dp-ref">
                 <span className="dp-ref-id">{l.count} × {l.typeRef}</span>
                 <span className="dp-ref-spec">
-                  {l.positionTypes?.join(', ') || '—'} · {fmt(l.qty)} UoM · {l.perDriver} per driver
+                  {l.positionTypes?.join(', ') || '-'} · {fmt(l.qty)} UoM · {l.perDriver} per driver
                   {l.perNode != null && ` · ${l.perNode} per output`}
                 </span>
                 <span className="dp-ref-use" title={`Limited by ${WHY[l.limit] ?? l.limit}`}>
                   {l.limit} limited
                 </span>
-                <span className="dp-ref-use">{l.controlGroup || '—'}</span>
+                <span className="dp-ref-use">{l.controlGroup || '-'}</span>
               </div>
             ))}
             {z.unmatched.map((u) => (
               <div key={u.key} className="dp-ref is-off">
                 <span className="dp-ref-id">{fmt(u.qty)} UoM</span>
                 <span className="dp-fault">
-                  {u.reason ?? 'no type in the library can take these'} — {u.key}
+                  {u.reason ?? 'no type in the library can take these'} - {u.key}
                 </span>
               </div>
             ))}
@@ -196,13 +196,13 @@ export default function EstimatePage({ state, dispatch, zone }) {
             <thead>
               <tr>
                 <th>Hub</th><th>Location</th><th>PositionType</th><th>ControlGroup</th>
-                <th className="text-end" title="SumQuantity — in the PositionType's UoM: metres for tape, pieces for fittings. DJ 100053 strips the unit off P.Dim, so the number does not say which">
+                <th className="text-end" title="SumQuantity - in the PositionType's UoM: metres for tape, pieces for fittings. DJ 100053 strips the unit off P.Dim, so the number does not say which">
                   Quantity
                 </th>
-                <th className="text-end" title="PowerPerUoM — watts per metre for tape, per piece for a fitting">PowerPerUoM</th>
+                <th className="text-end" title="PowerPerUoM - watts per metre for tape, per piece for a fitting">PowerPerUoM</th>
                 <th className="text-end" title="Forward voltage per UoM, from CC_Vf ÷ SumQuantity">fV per UoM</th>
                 <th>CC/CV</th>
-                <th className="text-end" title="CurrentPerUoM — the current this fitting is driven at">CC_Current</th>
+                <th className="text-end" title="CurrentPerUoM - the current this fitting is driven at">CC_Current</th>
                 <th title="The driver this row was sized onto">Driver</th>
               </tr>
             </thead>
@@ -217,9 +217,9 @@ export default function EstimatePage({ state, dispatch, zone }) {
                     <td>{r.controlGroup}</td>
                     <td className="text-end">{r.qty}</td>
                     <td className="text-end">{fmt(r.wPer)}</td>
-                    <td className="text-end">{fmt(r.fvPer) ?? '—'}</td>
-                    <td>{r.powerType ?? '—'}</td>
-                    <td className="text-end">{r.currentA != null ? `${r.currentA}A` : '—'}</td>
+                    <td className="text-end">{fmt(r.fvPer) ?? '-'}</td>
+                    <td>{r.powerType ?? '-'}</td>
+                    <td className="text-end">{r.currentA != null ? `${r.currentA}A` : '-'}</td>
                     <td>{servedBy.get(r.ref) ?? <span className="dp-fault">no driver</span>}</td>
                   </tr>
                 );

@@ -12,12 +12,12 @@ export default function Block({ link, linkRef, flags = [], pending, selected, di
   const fail = severity === 'FAIL';
   const mismatch = severity === 'MISMATCH';
   const warn = severity === 'WARN';
-  const solid = fail || mismatch; // both get a solid fill — equally serious, not a subtle ring
+  const solid = fail || mismatch; // both get a solid fill - equally serious, not a subtle ring
   const cls = ['cable-block', fail && 'is-fail', !fail && mismatch && 'is-mismatch',
     !fail && !mismatch && warn && 'is-warn', pending && 'is-pending', selected && 'is-selected',
     !link && 'is-unknown'].filter(Boolean).join(' ');
   // proportional to load for the packing visual, but only a *minimum* so the
-  // label/fV text is never clipped — the block grows to fit its content.
+  // label/fV text is never clipped - the block grows to fit its content.
   const minWidth = link?.loadW ? Math.max(46, Math.min(link.loadW * 5, 220)) : 56;
 
   const color = cgColor(link ? domain.groupOf(link) : null, groups);
@@ -28,15 +28,15 @@ export default function Block({ link, linkRef, flags = [], pending, selected, di
   const detailLines = link
     ? [`${ref}`,
        `${link.loadW ?? '?'}W · ${link.powerType ?? 'no type'}`,
-       !link.powerType ? 'No SecondaryPowerType declared — check the Links CSV' : null,
+       !link.powerType ? 'No SecondaryPowerType declared - check the Links CSV' : null,
        link.fvV != null ? `${link.fvV}fV` : null,
        link.currentA != null ? `${link.currentA}A` : null,
-       `${domain.groupLabel} ${domain.groupOf(link) || '—'}`,
+       `${domain.groupLabel} ${domain.groupOf(link) || '-'}`,
        [link.location, link.positionType].filter(Boolean).join(' · ') || null,
        [link.threadCount && `${link.threadCount} thread`, link.controlType].filter(Boolean).join(' · ') || null,
        ...flags.map((f) => f.message),
       ].filter(Boolean)
-    : [`${ref} (no load data — not in Links CSV)`];
+    : [`${ref} (no load data - not in Links CSV)`];
 
   return (
     <Tooltip content={detailLines}>

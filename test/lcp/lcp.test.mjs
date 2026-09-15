@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { buildModel } from '../../src/lcp/parse.js';
-import lcp, { slotKind, moduleKind, slotFault, controlFaults, DALI_MAX_GROUPS } from '../../src/lcp/domain.js';
+import lcp, { slotKind, moduleKind, slotFault, controlFaults, DALI_MAX_GROUPS, outputsOf, terminalBallasts } from '../../src/lcp/domain.js';
 
 const RECIPE = '<01,02,03,04,05,06,07,08,08a,08b,LB1,LB2,P1,P2,P3>';
 const MODULES = `ElementRef,ElementTypeRef,ElementName,PanelRef,PanelTypeRef,PanelParameters,ContextParameters
@@ -33,7 +33,7 @@ test('a panel reads as a container of modules with terminals', () => {
   const dali = m.drivers.find((x) => x.ref === 'E08002');
   assert.deepEqual(dali.nodes.map((n) => n.name), ['A', 'B', 'NET']);
   assert.equal(dali.nodes[0].detail, 'DL1', 'the terminal detail survives');
-  assert.equal(dali.slot, null, 'nobody has slotted it — that is the work');
+  assert.equal(dali.slot, null, 'nobody has slotted it - that is the work');
   assert.equal(m.drivers.find((x) => x.ref === 'E08013').slot, 'LB1');
 });
 
@@ -54,13 +54,28 @@ test('the baseline is what the design already says, so a finished panel is clean
   assert.equal(Object.keys(m.baseline).length, 2, 'C003 lands nowhere yet');
 });
 
-test('capacity is ways taken against ways declared, not watts', () => {
+test('capacity is outputs used against outputs declared, not watts', () => {
   const m = buildModel(MODULES, LINKS, TYPES);
   const dali = m.drivers.find((x) => x.ref === 'E08002');
   const [cap] = lcp.capacities(dali, { assignments: m.baseline });
-  assert.equal(cap.cap, 3);
+  // {<A(DL1),<B(DL2),>NET}: two outputs; NET is how it hangs off the bus
+  assert.equal(cap.cap, 2);
   assert.equal(cap.used, 2);
-  assert.equal(cap.unit, ' ways');
+  assert.equal(cap.label, 'outputs');
+});
+
+test('a phase module has four outputs, not five - its NET terminal is not one', () => {
+  // Crestron DIN-1DIMU4 as project 5294 declares it
+  const dim = { ref: 'E1', typeRef: 'ET-MOD-PHASE', name: 'Crestron - DIN-1DIMU4',
+    nodes: [{ name: 'L1/N1', dir: '<' }, { name: 'L2/N2', dir: '<' }, { name: 'L3/N3', dir: '<' },
+      { name: 'L4/N4', dir: '<' }, { name: 'NET', dir: '>' }] };
+  assert.deepEqual(outputsOf(dim).map((n) => n.name), ['L1/N1', 'L2/N2', 'L3/N3', 'L4/N4']);
+  const [outs] = lcp.capacities(dim, { assignments: {} });
+  assert.equal(outs.cap, 4);
+  assert.match(outs.title, /1 network or power terminal not counted/);
+  // and the DIN-HUB counts its three branches, not its host or power inputs
+  const hub = { typeRef: 'ET-CRESTRON-DIN-HUB', nodes: ['NETHOST', 'NET A', 'NET B', 'NET C', 'NETPWRINPUT'].map((name) => ({ name })) };
+  assert.deepEqual(outputsOf(hub).map((n) => n.name), ['NET A', 'NET B', 'NET C']);
 });
 
 test('slot kind is inferred from the name, and says when it is guessing', () => {
@@ -88,7 +103,7 @@ test('a DALI loop is counted per LOOP, the way DJ 101269 counts it', () => {
   assert.match(loopFaults({ links: many })[0].message, /has 17 control groups/);
   assert.deepEqual(loopFaults({ links: many.slice(0, DALI_MAX_GROUPS) }), []);
 
-  // DJ 101269 excludes a group named after its own loop — it is not a separate
+  // DJ 101269 excludes a group named after its own loop - it is not a separate
   // group, and counting it would report a fault one short of the real limit
   const named = [...many.slice(0, DALI_MAX_GROUPS),
     { loop: 'L1', controlGroup: 'L1', controlType: 'DALI' }];
@@ -98,7 +113,7 @@ test('a DALI loop is counted per LOOP, the way DJ 101269 counts it', () => {
   assert.deepEqual(loopFaults({ links: [{ loop: 'L1', controlGroup: 'G1' }] }), [],
     'no ballast data, no ballast claim');
   const over = loopFaults({ links: [{ loop: 'L1', ballasts: 40 }, { loop: 'L1', ballasts: 30 }] });
-  assert.match(over[0].message, /carries 70 ballasts — past the 64 DALI addresses/);
+  assert.match(over[0].message, /carries 70 ballasts - past the 64 DALI addresses/);
   assert.match(over[0].message, /DJ 101269 is the authority/);
   assert.equal(over[0].level, 'WARN', '64 is the DALI spec, not a house rule');
 });
@@ -147,7 +162,7 @@ test('two cables may share a dimmer channel, but only if they are one circuit', 
     { 'E1|L1/N1': { refs: ['C1', 'C2'] } }), []);
 });
 
-test('a limit is claimed only when the maker is known — the project 5294 trap', () => {
+test('a limit is claimed only when the maker is known - the project 5294 trap', () => {
   // project 5294 writes ET-MOD-PHASE for a CRESTRON DIN-1DIMU4. Matching on the
   // ref alone gave it Lutron's 400W zone limits; it is rated 5A a channel.
   assert.equal(matchModule('ET-MOD-PHASE', 'Crestron - DIN-1DIMU4').model, 'DIN-1DIMU4');
@@ -170,7 +185,7 @@ test('Lutron output limits are per zone INDEX, not per module', () => {
   assert.deepEqual(outputLimit(phase, 0), { a: 1.7, w: 400 });
   assert.deepEqual(outputLimit(phase, 1), { a: 1.0, w: 250 });
   assert.deepEqual(outputLimit(phase, 3), { a: 1.0, w: 250 });
-  // switching is 10A a zone and the zones are independent — no module total
+  // switching is 10A a zone and the zones are independent - no module total
   const sw = matchModule('ET-MOD-SWITCH', 'Lutron LQSE-4S10-D');
   assert.equal(sw.model, 'LQSE-4S10-D');
   assert.equal(sw.totalA, null);
@@ -190,7 +205,7 @@ test('a zone over its limit is caught, and zone 1 is judged by its own figure', 
   assert.deepEqual(outputFaults(model, { 'E1|L1/N1': { refs: ['C1'] } }), []);
   const bad = outputFaults(model, { 'E1|L2/N2': { refs: ['C2'] } });
   assert.equal(bad.length, 1);
-  assert.match(bad[0].message, /carries 300W — Lutron LQSE-4A5-230-D channel 2 takes 250W/);
+  assert.match(bad[0].message, /carries 300W - Lutron LQSE-4A5-230-D channel 2 takes 250W/);
 });
 
 test('the zones share a module total, so passing every zone is not passing', () => {
@@ -200,11 +215,11 @@ test('the zones share a module total, so passing every zone is not passing', () 
   const sum = phase.perOutputA.reduce((a, b) => a + b, 0);
   assert.ok(sum < phase.totalA, 'the zone limits alone cannot reach the module total');
   // so the module bar has to be drawn from the cables, not from the limits
-  const [ways, total] = lcp.capacities(
+  const [outs, total] = lcp.capacities(
     { ref: 'E1', typeRef: 'ET-MOD-PHASE', name: 'Lutron LQSE-4A5-230-D',
       nodes: [{ name: 'L1/N1' }, { name: 'L2/N2' }] },
     { assignments: { 'E1|L1/N1': { refs: ['C1'] } }, links: [{ ref: 'C1', loadW: 2300 }] });
-  assert.equal(ways.unit, ' ways');
+  assert.equal(outs.label, 'outputs');
   assert.equal(total.cap, 10);
   assert.equal(total.unit, 'A');
   assert.equal(total.used, 10, '2300W at 230V is 10A');
@@ -249,7 +264,7 @@ test('several loops on one Cresnet branch is normal wiring, not a fault', () => 
 });
 
 test('a run landing on a bus is never checked against a device count', () => {
-  // 20 Cresnet devices, 99 QS devices, 64 DALI ballasts — none of them is a
+  // 20 Cresnet devices, 99 QS devices, 64 DALI ballasts - none of them is a
   // count of cables, and one run can carry a whole daisy chain
   assert.equal(BUS_LIMITS.Cresnet.devices, 20);
   assert.equal(BUS_LIMITS.Cresnet.watts, 75, '3.13A at 24V, per isolated segment');
@@ -294,7 +309,7 @@ test('every DALI module in the estate gives DALI loops, however it names them', 
 });
 
 test('a DALI module upstream link is the QS link, not one of its loops', () => {
-  // {<DALI B 1,<DALI B 2,>QS} — the last one is how the module hangs off the
+  // {<DALI B 1,<DALI B 2,>QS} - the last one is how the module hangs off the
   // processor, and it has the QS link's limits, not DALI's
   const m = { typeRef: 'ET-LQSE-2DALUNV-D', name: 'Lutron DALI module' };
   assert.deepEqual(terminalKind({ name: 'QS' }, m), { kind: 'bus', bus: 'QS' });
@@ -309,7 +324,7 @@ test('a DALI module upstream link is the QS link, not one of its loops', () => {
 test('a DALI terminal carries no lighting load and no run cap', () => {
   const m = { ref: 'E1', typeRef: 'ET-MOD-DALI', name: 'Universal DALI Power Module',
     nodes: [{ name: 'Output 1' }, { name: 'Output 2' }] };
-  // several loops on one DALI output is normal — it is a bus
+  // several loops on one DALI output is normal - it is a bus
   const model = { drivers: [m], links: [{ ref: 'A', loop: 'DA1' }, { ref: 'B', loop: 'DA2' }] };
   const assignments = { 'E1|Output 1': { refs: ['A', 'B'] } };
   assert.deepEqual(terminalLoopFaults(model, assignments), []);
@@ -319,37 +334,38 @@ test('a DALI terminal carries no lighting load and no run cap', () => {
 });
 
 test('the module bar counts ways occupied, not cables landed', () => {
-  // a DALI module with three runs across its two loops is 2 of 2 ways used —
+  // a DALI module with three runs across its two loops is 2 of 2 ways used - 
   // counting cables made it read 3/2 and fail
   const m = { ref: 'E1', typeRef: 'ET-MOD-DALI', name: 'Universal DALI Power Module',
     nodes: [{ name: 'Output 1' }, { name: 'Output 2' }] };
-  const [ways] = lcp.capacities(m, { assignments: {
+  const [outs] = lcp.capacities(m, { assignments: {
     'E1|Output 1': { refs: ['A', 'B'] }, 'E1|Output 2': { refs: ['C'] },
   } });
-  assert.equal(ways.used, 2);
-  assert.equal(ways.cap, 2);
+  assert.equal(outs.used, 2);
+  assert.equal(outs.cap, 2);
   // and one empty loop reads as one way used
   const [half] = lcp.capacities(m, { assignments: { 'E1|Output 1': { refs: ['A', 'B'] } } });
   assert.equal(half.used, 1);
 });
 
 // ---- a DALI loop is ONE link -----------------------------------------------
-// Measured on set 108908: X504505 "15.1B" is a single link with 100 ends —
+// Measured on set 108908: X504505 "15.1B" is a single link with 100 ends - 
 // 50 fittings converging on one module output, TopologyNotesText "Loop".
-test('a DALI output gauges the ballasts on its loop, not the cables at the panel', () => {
+test('a DALI output gauges the ballasts on its loop, once per loop', () => {
   const m = { ref: 'E1', typeRef: 'ET-MOD-DALI', name: 'Universal DALI Power Module',
     nodes: [{ name: 'Output 1' }] };
-  // no count from the host: a run tally with no cap, because runs are not ballasts
-  const [plain] = lcp.slotCapacities(m, { name: 'Output 1' }, { count: 1 });
+  // no ballast count from the host: a run tally with no cap
+  const [plain] = lcp.slotCapacities(m, { name: 'Output 1' }, { count: 1, links: [{ ref: 'A', loop: 'L1' }] });
   assert.equal(plain.cap, null);
-  assert.match(plain.unit, /run/);
-  // the host counts the loop's ends: now it is a real gauge
-  const [gauge] = lcp.slotCapacities(m, { name: 'Output 1' }, { count: 1, devices: 50 });
-  assert.equal(gauge.used, 50);
+  // the host sends the loop's total on every cable of that loop: counted ONCE.
+  // CS-D-L1 on set 109311 is 54 ballasts across 8 fittings - the old gauge read
+  // the fittings, and added it again for every cable on the loop.
+  const links = [{ ref: 'A', loop: 'CS-D-L1', ballasts: 54 }, { ref: 'B', loop: 'CS-D-L1', ballasts: 54 }];
+  const [gauge] = lcp.slotCapacities(m, { name: 'Output 1' }, { count: 2, links });
+  assert.equal(gauge.used, 54, 'not 108');
   assert.equal(gauge.cap, 64);
   assert.equal(gauge.unit, ' ballasts');
-  // and 50 of 64 is the real set 108908 figure — comfortably inside
-  assert.ok(gauge.used < gauge.cap);
-  const over = lcp.slotCapacities(m, { name: 'Output 1' }, { count: 1, devices: 70 });
-  assert.ok(over[0].used > over[0].cap, 'and a loop over 64 shows as over');
+  // two different loops on one output do add up
+  assert.equal(terminalBallasts([{ ref: 'A', loop: 'L1', ballasts: 30 }, { ref: 'B', loop: 'L2', ballasts: 40 }]), 70);
+  assert.equal(terminalBallasts([{ ref: 'A', loop: 'L1' }]), null, 'no count, no claim');
 });

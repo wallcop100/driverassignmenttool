@@ -2,8 +2,8 @@
 //
 // A hub is a container and a bay is a slot, so the geometry, the edits and the
 // save/load round trip all live in core/layout.js. What is here is what only a
-// hub has — Feed Provision, a driver composed with its PSU and junction boxes,
-// and the one generic enclosure type a separated bay becomes — plus the hub
+// hub has - Feed Provision, a driver composed with its PSU and junction boxes,
+// and the one generic enclosure type a separated bay becomes - plus the hub
 // vocabulary the rest of this tool is written in.
 import * as L from './core/layout.js';
 import { GAP } from './core/layout.js';
@@ -59,7 +59,7 @@ export function composite(parts) {
 
 
 // ONE enclosure type, not a catalogue. set 108908 grew ET-PSU-ENC-T1/2-V1 through
-// T11-V7 plus -EXT variants — a type per size — and that caused more trouble
+// T11-V7 plus -EXT variants - a type per size - and that caused more trouble
 // than it solved. A separated bay is a logical wrapper: it holds drivers and
 // states its own size in its own Parameters, so the type does not need to encode
 // the size at all.

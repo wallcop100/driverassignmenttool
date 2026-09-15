@@ -20,7 +20,7 @@ body { background: #f6f8fb; }
 .dropzone.is-over { border-color: #7C5CFC; background: #f3f0ff; }
 .dropzone-icon { font-size: 40px; color: #94a3b8; }
 
-/* sneaky demo entry — a faint dot in the card corner */
+/* sneaky demo entry - a faint dot in the card corner */
 .demo-link {
   position: absolute; right: 8px; bottom: 6px; width: 18px; height: 18px; padding: 0;
   border: none; background: none; color: #cbd5e1; font-weight: 700; line-height: 1; cursor: pointer;
@@ -49,7 +49,7 @@ body { background: #f6f8fb; }
 .text-warn { color: var(--status-warn); }
 .text-mismatch { color: var(--status-mismatch); }
 
-/* ---- proper hover UI (Tooltip.jsx) — replaces native title= boxes ----
+/* ---- proper hover UI (Tooltip.jsx) - replaces native title= boxes ----
    Visibility is CSS-driven (:hover) with a dwell delay, not a JS mouseenter
    timer: in a drag-and-drop app the cursor sweeps over many blocks just
    passing through, and an instant popup on every one of them is jarring.
@@ -116,7 +116,7 @@ body { background: #f6f8fb; }
   display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
   padding: 10px 16px; background: #fff; border-bottom: 1px solid #e3e8ef;
 }
-/* which hub, and which point in time — the embedded user has no other cue */
+/* which hub, and which point in time - the embedded user has no other cue */
 .badge-context { background: #eef2f7; color: #475569; font-weight: 600; }
 
 /* ---- zone toolbar (actions moved out of the tray) ---- */
@@ -171,7 +171,7 @@ body { background: #f6f8fb; }
   background: repeating-linear-gradient(45deg, #f8fafc, #f8fafc 8px,
     #eef2f7 8px, #eef2f7 10px);
 }
-/* headers wrap rather than clip — nothing gets cut off */
+/* headers wrap rather than clip - nothing gets cut off */
 .bin-header { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .bin-header .text-truncate { overflow: visible !important; white-space: normal !important; text-overflow: clip !important; }
 .bin-capacity { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -223,7 +223,7 @@ body { background: #f6f8fb; }
   border-radius: 6px; padding: 0; font-size: 12px; font-weight: 600; cursor: grab;
   user-select: none; display: flex; align-items: stretch; min-height: 28px;
   /* a label with many fields wraps onto multiple lines instead of spilling
-     past the rail/bin edge — max-width caps it to the container, not the text */
+     past the rail/bin edge - max-width caps it to the container, not the text */
   max-width: 100%; box-sizing: border-box;
 }
 .block-band {
@@ -242,7 +242,7 @@ body { background: #f6f8fb; }
   border-radius: 50%; background: var(--zone-accent);
 }
 /* FAIL and MISMATCH (incl. CC/CV type, voltage, and mA current checks) both get
-   a solid, equally serious fill — a subtle ring made these easy to miss. */
+   a solid, equally serious fill - a subtle ring made these easy to miss. */
 .cable-block.is-fail { background: var(--status-fail) !important; border-color: var(--status-fail); color: #fff; }
 .cable-block.is-fail .block-band { background: rgba(255, 255, 255, 0.28); }
 .cable-block.is-mismatch { background: var(--status-mismatch) !important; border-color: var(--status-mismatch); color: #fff; }
@@ -296,7 +296,7 @@ body { background: #f6f8fb; }
 /* ---- "N issues" hover popup (click a row to locate + pulse the entity) ---- */
 .issues-badge { position: relative; display: inline-flex; }
 .issues-pop {
-  /* flush against the badge (top: 100%, no gap) — any offset here is dead space
+  /* flush against the badge (top: 100%, no gap) - any offset here is dead space
      the mouse crosses on the way from badge to popup; crossing it lands on an
      ancestor, firing mouseleave and closing the popup before you can reach it */
   position: absolute; left: 0; top: 100%; padding-top: 6px; z-index: 80; min-width: 260px; max-width: 340px;
@@ -435,7 +435,7 @@ body { background: #f6f8fb; }
 .type-ch { color: #64748b; text-align: right; font-variant-numeric: tabular-nums; }
 
 /* ---- popup-sized iframe (~900x700) ----
-   header/toolbar/grid already flex-wrap, so nothing breaks when narrow — it
+   header/toolbar/grid already flex-wrap, so nothing breaks when narrow - it
    just wraps into extra rows, and vertical space is what a 700px popup hasn't
    got. Tighten until header + toolbar fit two rows; the driver grid gets the rest. */
 @media (max-width: 900px) {
@@ -525,11 +525,11 @@ body { background: #f6f8fb; }
 }
 /* A type worth a look is marked, not painted. A yellow ground reads as a
    highlighter drawn through the numbers, and the numbers are what the card is
-   for — so the mark is the rail and the button in the foot, and the card keeps
+   for - so the mark is the rail and the button in the foot, and the card keeps
    its own paper. */
 .tp-card.is-off { border-left-color: #d9a441; }
 .tp-card.is-editing { grid-column: 1 / -1; border-left-color: #2563eb; }
-/* already on this hub — the picker sorts these first and says so quietly */
+/* already on this hub - the picker sorts these first and says so quietly */
 .tp-card.is-here { border-left-color: #93b4e3; }
 .tp-card-top { display: flex; align-items: center; gap: 8px; }
 .tp-ref {
@@ -674,7 +674,7 @@ body { background: #f6f8fb; }
 .est-c .margin-input { width: 58px; height: 26px; padding: 0 .35rem; }
 
 /* A driver whose ElementType you have corrected. Same language as a moved
-   cable — a dot, and the dashed edge that says "yours, not theirs". */
+   cable - a dot, and the dashed edge that says "yours, not theirs". */
 .type-edited {
   display: inline-flex; align-items: center; gap: 4px; font-size: 10.5px;
   color: #6b5a22; border: 1px dashed #d9a441; border-radius: 999px; padding: 0 7px 0 5px;
@@ -784,7 +784,7 @@ body { background: #f6f8fb; }
 .hub-stage { display: flex; gap: 4px; align-items: flex-end; flex-wrap: wrap; }
 .hub-bay-wrap { display: flex; flex-direction: column; gap: 4px; }
 /* the clearance envelope, as the CAD draws it: 50 to the sides, 25 above and below */
-/* drawn over the blocks so a centreline reads through the part it runs through —
+/* drawn over the blocks so a centreline reads through the part it runs through - 
    which means it must not swallow the drag */
 .hub-envelope { pointer-events: none; }
 .hub-envelope rect { fill: none; stroke: #a855f7; stroke-width: 0.8; }
@@ -837,7 +837,7 @@ body { background: #f6f8fb; }
 .driver-grid.is-column .driver-bin { width: auto !important; max-width: 960px; }
 
 /* Several groups on one slot is a fault on a driver output and ordinary wiring
-   on a bus segment — a Cresnet branch or a QS link carries many loops by
+   on a bus segment - a Cresnet branch or a QS link carries many loops by
    design, so it is stated, not alarmed. */
 .cg-chip.cg-many { background: #eef2f7; color: #475569; font-weight: 500; }
 
@@ -851,3 +851,30 @@ body { background: #f6f8fb; }
 }
 .space-link .material-icons { font-size: 17px; }
 .space-link:hover, .space-link:focus-visible { color: #7C5CFC; background: #f3f0ff; outline: none; }
+
+/* ---- hub space layout: per-bay tabs and their menu, zoom ---- */
+.hub-zoom { display: inline-flex; align-items: center; gap: 4px; color: #475569; font-size: 13px; }
+.hub-zoom button { border: 1px solid #cbd5e1; background: #fff; border-radius: 4px; width: 26px; height: 26px; line-height: 1; }
+.hub-baybar { position: relative; height: 32px; margin-top: 4px; }
+.hub-baytab {
+  position: absolute; top: 0; height: 30px; display: flex; align-items: center; gap: 4px;
+  padding: 0 0 0 6px; border-bottom: 2px solid #16212e; font-size: 11px; color: #475569; box-sizing: border-box;
+}
+.hub-baytab-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-right: auto; }
+.hub-baymenu {
+  position: absolute; top: 32px; right: 0; z-index: 40; min-width: 230px;
+  background: #fff; border: 1px solid #dbe3ee; border-radius: 8px; box-shadow: 0 10px 30px rgba(15, 23, 42, .16);
+  padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; font-size: 13px; color: #1e293b;
+}
+.hub-baymenu label { display: flex; align-items: center; gap: 6px; margin: 0; }
+.hub-baymenu .hub-mrow > span { width: 78px; color: #64748b; }
+.hub-baymenu input[type="number"] { width: 64px; }
+
+/* The driver total's bar was never visible. The card wraps it in the tooltip
+   anchor, which is inline-flex and so only as wide as its content, and an empty
+   bar has no content: it was squeezed to nothing, leaving "136.8/180W" as text.
+   With the watt bars no longer repeated on each output it is the one watt bar a
+   driver shows, so it takes the card's width and never less than a readable bar. */
+.tt-anchor:has(> .bin-capacity) { display: flex; width: 100%; }
+.bin-capacity { flex: 1 1 auto; }
+.bin-capacity .slot-fill { flex: 1 1 60px; min-width: 60px; }

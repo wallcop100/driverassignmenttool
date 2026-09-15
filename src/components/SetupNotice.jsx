@@ -9,7 +9,7 @@ import { bannedNodes, driverTypes, needsSetup, statedAttributes } from '../engin
 //
 // Project wide, not per hub: the host sends the whole library, a driver type
 // belongs to the job rather than to the hub that happens to be open, and filling
-// one in should settle it everywhere it is used. Control gear is left out — it
+// one in should settle it everywhere it is used. Control gear is left out - it
 // has none of these attributes and never will.
 export default function SetupNotice({ state, dispatch, className = '' }) {
   const { model } = state;

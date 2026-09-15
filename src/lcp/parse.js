@@ -17,7 +17,7 @@ import { parseParams } from '../core/params.js';
 
 const s = (v) => (v == null ? '' : String(v).trim());
 
-// One row per module, carrying its panel denormalised — the same way the driver
+// One row per module, carrying its panel denormalised - the same way the driver
 // form carries Pullzone on every driver row.
 const MODULE_COLS = ['ElementRef', 'ElementTypeRef', 'PanelRef'];
 
@@ -76,7 +76,7 @@ export function parseLinks(text) {
     controlType: s(r.ControlType) || null,
     // what the circuit draws, so an output limit can actually be checked
     loadW: r.LoadW == null || String(r.LoadW).trim() === '' ? null : Number(r.LoadW),
-    // A DALI loop is ONE link carrying many fittings — see the note in
+    // A DALI loop is ONE link carrying many fittings - see the note in
     // domain.js. These are the counts that belong to the loop, and the tool only
     // ever reports them when the host has worked them out; it cannot.
     devices: r.Devices == null || String(r.Devices).trim() === '' ? null : Number(r.Devices),
@@ -89,7 +89,7 @@ export function parseLinks(text) {
 }
 
 export function buildModel(modulesText, linksText, typesText) {
-  if (!modulesText?.trim()) throw new Error('No modules — nothing to arrange or assign.');
+  if (!modulesText?.trim()) throw new Error('No modules - nothing to arrange or assign.');
   const { modules, panels } = parseModules(modulesText);
   const library = parseTypes(typesText);
   const byType = new Map(library.map((t) => [t.typeRef, t]));

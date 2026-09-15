@@ -25,19 +25,19 @@ export function faults(type, spec) {
   const t = type.designDB ?? type;
   const out = [];
   if (t.maxPowerW == null) {
-    out.push(['no MaxPower(W) — nothing to size against',
+    out.push(['no MaxPower(W) - nothing to size against',
       'Without a max power this type cannot be checked or sized against.']);
   } else if (spec?.maxPowerW != null && Math.abs(t.maxPowerW - spec.maxPowerW) > 0.01) {
     const times = t.maxPowerW / spec.maxPowerW;
     out.push([`${t.maxPowerW}W here · spec page says ${fmt(spec.maxPowerW)}W`,
       `This type states ${t.maxPowerW}W. The ${spec.name} spec page says ${fmt(spec.maxPowerW)}W`
-      + `${times >= 1.5 ? ` — ${fmt(times)}× higher, so checks against it would pass an overload` : ''}. `
+      + `${times >= 1.5 ? ` - ${fmt(times)}× higher, so checks against it would pass an overload` : ''}. `
       + `If this is not a ${spec.name}, the name is what matched it.`]);
   }
   if (t.powerType == null) {
-    out.push(['no CC/CV — matches no cable', 'With no declared CC/CV type this driver matches nothing.']);
+    out.push(['no CC/CV - matches no cable', 'With no declared CC/CV type this driver matches nothing.']);
   } else if (t.powerType === 'CC' && t.currentA == null) {
-    out.push(['no CurrentRange — reads as undeclared',
+    out.push(['no CurrentRange - reads as undeclared',
       'With CurrentRange empty the driver has no declared current, so it matches no cable.']);
   } else if (t.powerType === 'CV' && t.outputVoltageV == null) {
     out.push(['no OutputVoltage(V)', 'Without an output voltage the CV check cannot run.']);
@@ -51,7 +51,7 @@ export function faults(type, spec) {
 
 // One line of ratings, from whichever side of a type is being shown.
 export const ratingsOf = (t) => [
-  t.maxPowerW != null ? `${fmt(t.maxPowerW)}W` : '—',
+  t.maxPowerW != null ? `${fmt(t.maxPowerW)}W` : '-',
   t.currentA != null ? `${fmt(t.currentA)}A` : t.outputVoltageV != null ? `${fmt(t.outputVoltageV)}V` : null,
   (t.nodeMaxFvV ?? t.nodes?.[0]?.maxFvV) != null ? `${fmt(t.nodeMaxFvV ?? t.nodes[0].maxFvV)}fV/out` : null,
 ].filter(Boolean).join(' · ');
@@ -62,8 +62,8 @@ export const zoneList = (zones) => {
   return z.length > 2 ? `${z[0]} +${z.length - 1}` : z.join(', ');
 };
 
-// The current the design picked out of the datasheet's range. It says so twice —
-// in the ref and in the name — and when those disagree neither is authoritative,
+// The current the design picked out of the datasheet's range. It says so twice - 
+// in the ref and in the name - and when those disagree neither is authoritative,
 // so both are offered and the choice corrects the name to match. The ref is left
 // alone: it is the key Elements point at and the key the patch writes against,
 // so renaming it is a DesignDB migration, not a menu item.
@@ -81,8 +81,8 @@ export function currentOptions(t, spec) {
 
 const NAME_MA_G = /\d{2,4}\s*mA/i;
 
-// The preset a fix would produce. `mode` is 'fill' — add only what the design
-// states nothing for — or 'replace', which also overwrites what disagrees.
+// The preset a fix would produce. `mode` is 'fill' - add only what the design
+// states nothing for - or 'replace', which also overwrites what disagrees.
 // Both go through SET_PRESET, so the result is pending and reviewable either way.
 export function fixPreset(t, spec, mode, currentA) {
   if (!spec) return null;
@@ -109,8 +109,8 @@ export function fixPreset(t, spec, mode, currentA) {
   };
 }
 
-// Which of the two fixes a type can take. Judged against what the card shows —
-// pending preset included — so filling the blanks does not take the other away.
+// Which of the two fixes a type can take. Judged against what the card shows - 
+// pending preset included - so filling the blanks does not take the other away.
 export const canFill = (t, spec) => !!spec && (t.maxPowerW == null || t.powerType == null
   || (spec.powerType === 'CC' && t.currentA == null)
   || (t.nodes?.[0]?.maxFvV == null && spec.maxFvV != null));
@@ -124,7 +124,7 @@ export const canReplace = (t, spec) => !!spec && spec.maxPowerW != null && t.max
 // Name ("LinDrive 200D & Meanwell HLG-185-24"), so resolveSpec has already
 // paired them. What is left over is what the wizard has to ask about.
 //
-// Returns { ready, asks } — ready are types that can be filled in one press.
+// Returns { ready, asks } - ready are types that can be filled in one press.
 export function autoFillable(inventory, resolveSpec) {
   const ready = [];
   const asks = [];
@@ -132,7 +132,7 @@ export function autoFillable(inventory, resolveSpec) {
     const spec = resolveSpec(t.name || t.typeRef);
     const part = spec?.driver ?? spec ?? null;
     if (!part) { asks.push({ t, spec, why: 'no datasheet match' }); continue; }
-    // A supply named on its own IS the driver — an unswitched PSU feeding a tape
+    // A supply named on its own IS the driver - an unswitched PSU feeding a tape
     // run directly, one output, ControlType Local, which is how page 140180
     // lists the PCV24100. A supply named ALONGSIDE a DC/DC driver is the other
     // half of a pair, and resolveSpec has already combined the two.

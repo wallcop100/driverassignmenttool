@@ -6,7 +6,7 @@ export { outRef };
 
 export const keyOf = (driverRef, node) => `${driverRef}|${node}`;
 
-// available cable-label fields (block face) — order here is display order
+// available cable-label fields (block face) - order here is display order
 export const LABEL_FIELDS = [
   { key: 'ref', label: 'Ref' },
   { key: 'loadW', label: 'Load (W)' },
@@ -41,7 +41,7 @@ export const initialState = {
   suggestions: null,    // Set of "driver|node" keys that would pass (derived from eligibility)
   draggingLink: null,   // link ref mid-drag, for ghost preview
   eligibility: null,    // {nodesByLink, impossibleByLink} for the current zone
-  focusNode: null,      // "driver|node" — fill-this-node mode (reverse flow, #3)
+  focusNode: null,      // "driver|node" - fill-this-node mode (reverse flow, #3)
   distributeGroup: null, // ControlGroup being distributed across marked nodes (#2)
   distributeNodes: [],   // node keys marked as distribution targets
   prefs: DEFAULT_PREFS, // persisted UI prefs (label config)
@@ -100,7 +100,7 @@ export function reducer(state, action) {
         assignments: cloneAssignments(action.model.baseline),
         demo: !!action.demo,
         context: action.context ?? null,
-        // Type corrections belong to the set, not the hub — the ones made in
+        // Type corrections belong to the set, not the hub - the ones made in
         // another hub of this set arrive here already applied.
         presets: action.presets ?? {},
         // an estimate has no cables to assign, so it never lands on a zone
@@ -126,7 +126,7 @@ export function reducer(state, action) {
     }
 
     case 'MOVE_MANY': {
-      // move several links at once — a ControlGroup (#2) or a multi-selection (#8).
+      // move several links at once - a ControlGroup (#2) or a multi-selection (#8).
       const { linkRefs, toKey } = action; // toKey null = unassign all
       const target = state.assignments[toKey];
       if (toKey && target?.refs.length && target.toEntityType === 'Position') return state;
@@ -144,7 +144,7 @@ export function reducer(state, action) {
     }
 
     case 'DISTRIBUTE': {
-      // spread a ControlGroup across the marked nodes (#2) — placements: {nodeKey: [refs]}
+      // spread a ControlGroup across the marked nodes (#2) - placements: {nodeKey: [refs]}
       const { placements } = action;
       const moving = new Set(Object.values(placements).flat());
       if (!moving.size) return { ...state, ...CLEAR_MODES };
@@ -196,7 +196,7 @@ export function reducer(state, action) {
       const { ref } = action;
       const added = state.addedDrivers.some((d) => d.ref === ref);
       const assignments = cloneAssignments(state.assignments);
-      // its cables go back to the tray either way — a deleted driver cannot keep
+      // its cables go back to the tray either way - a deleted driver cannot keep
       // them, and the patch has to repoint them somewhere
       for (const key of Object.keys(assignments)) {
         if (key.split('|')[0] === ref) delete assignments[key];
@@ -223,7 +223,7 @@ export function reducer(state, action) {
     }
 
     // Correct every banned ':' node on the job at once. A rename, not a move:
-    // the node keeps its identity, so the cables on it stay on it — the
+    // the node keeps its identity, so the cables on it stay on it - the
     // assignment keys are just re-spelled. The LinksMap half is swept across the
     // whole sheet by the patch, because a node written this way is used by hubs
     // this session has never opened.
@@ -262,7 +262,7 @@ export function reducer(state, action) {
     }
 
     case 'APPLY_PLAN': {
-      // A whole suggestion — drivers plus their cables — is ONE undo step: it was
+      // A whole suggestion - drivers plus their cables - is ONE undo step: it was
       // one decision, and undoing it a driver at a time would be unusable.
       const { drivers, placements } = action;
       if (!drivers.length) return state;
@@ -433,8 +433,8 @@ export function diffRows(state) {
 }
 
 // The same changes, one row per CABLE rather than per driver node. This is the
-// shape the patch is written in — LinksMap is patched a link at a time, its
-// FromLinkEndContext* repointed — and the shape people describe the work in:
+// shape the patch is written in - LinksMap is patched a link at a time, its
+// FromLinkEndContext* repointed - and the shape people describe the work in:
 // "L104 moved off D2 onto the new driver", not "D2.OP.1 lost L104".
 export function linkDiffRows(state) {
   const { assignments, addedDrivers, model } = state;
@@ -459,7 +459,7 @@ export function linkDiffRows(state) {
 }
 
 // What the host's "N unsaved" means, and what the Review badge counts: cables
-// moved plus types corrected. A type correction is a real edit to the workbook —
+// moved plus types corrected. A type correction is a real edit to the workbook - 
 // counting only cables reported 0 changes on a session that had rewritten a
 // driver's ratings, which reads as nothing to patch.
 export function changeCount(state) {
@@ -518,16 +518,16 @@ export function filterOptions(zoneLinks) {
   return { currents, voltages };
 }
 
-// Provision/mains links (LV-PROV, N/A) have no secondary power type — they don't
+// Provision/mains links (LV-PROV, N/A) have no secondary power type - they don't
 // belong on normal secondary drivers, so they go in a separate tray lane (#6).
 export function isProvision(link) {
   return !link.powerType;
 }
 
-// Worst level present in a flags list — single source of truth so driver/node/
+// Worst level present in a flags list - single source of truth so driver/node/
 // block severity can never drift out of sync (FAIL > MISMATCH > WARN > none).
 // MISMATCH covers wrong CC/CV type, wrong CV voltage, and out-of-band CC current
-// (mA) — all genuinely serious electrical mismatches, same rank as FAIL.
+// (mA) - all genuinely serious electrical mismatches, same rank as FAIL.
 export function severityOf(flagsList) {
   if (flagsList.some((f) => f.level === 'FAIL')) return 'FAIL';
   if (flagsList.some((f) => f.level === 'MISMATCH')) return 'MISMATCH';
@@ -546,7 +546,7 @@ export function driverStatus(driverRef, selectedLinks, eligibility) {
   return hasNode ? 'candidate' : 'full';
 }
 
-// Intersection of eligible nodes across the selection — the green "best-fit" set.
+// Intersection of eligible nodes across the selection - the green "best-fit" set.
 export function intersectionSuggestions(selectedLinks, eligibility) {
   if (!selectedLinks?.length || !eligibility) return null;
   const sets = selectedLinks.map((ref) => new Set(eligibility.nodesByLink[ref] ?? []));
@@ -631,11 +631,11 @@ export function zoneAccent(zone, zones) {
   return ACCENTS[(i < 0 ? 0 : i) % ACCENTS.length];
 }
 
-// All distinct ControlGroups present in one zone's links, sorted — lets colour
+// All distinct ControlGroups present in one zone's links, sorted - lets colour
 // assignment spread hues evenly across however many groups actually exist there,
 // instead of relying on hash luck to keep a handful of groups visually apart.
 export function zoneControlGroups(model, zone, groupOf = (l) => l.controlGroup) {
-  // which field groups a cable is the domain's call — ControlGroup on a driver,
+  // which field groups a cable is the domain's call - ControlGroup on a driver,
   // Link_ControlDetails on a panel
   return [...new Set(model.links.filter((l) => l.zone === zone)
     .map((l) => groupOf(l)).filter(Boolean))].sort();
@@ -648,7 +648,7 @@ function hashHue(str) {
 }
 
 // ControlGroup colour. When the zone's full group list is known, each group gets
-// an evenly-spaced hue around the wheel — maximally distinct for however many
+// an evenly-spaced hue around the wheel - maximally distinct for however many
 // groups are present. Falls back to a stable hash-based hue without it.
 export function cgColor(cg, groups) {
   if (!cg) return { border: '#94a3b8', bg: '#eef2f7', text: '#64748b' };

@@ -1,5 +1,5 @@
 // The only place in the repo that touches postMessage. Keep it small enough to
-// read in one sitting — it is the whole trust boundary between us and the host.
+// read in one sitting - it is the whole trust boundary between us and the host.
 //
 // Handshake: host iframes /api/?parentOrigin=<its own origin>. We validate that
 // claim against a build-time allowlist and then use it as the ONLY targetOrigin
@@ -7,8 +7,8 @@
 export const VERSION = 1;
 
 // Two tools now ride this file, and a host page can hold both. Every message is
-// prefixed with the tool that owns it — `dat:init` and `lcp:init` are different
-// messages — and each build declares which one it answers to. Without this the
+// prefixed with the tool that owns it - `dat:init` and `lcp:init` are different
+// messages - and each build declares which one it answers to. Without this the
 // first frame to reply would swallow the other's init, and an export from either
 // would be indistinguishable.
 let PREFIX = 'dat';
@@ -23,13 +23,13 @@ export function isEmbedded() {
 
 // Pure: no window, no env, no side effects. All the security logic lives here so
 // test/embed.test.mjs can cover it under plain `node --test`, no DOM harness.
-// Returns { ok } or { ok: false, reason, mismatch? } — callers DROP, never throw,
+// Returns { ok } or { ok: false, reason, mismatch? } - callers DROP, never throw,
 // and never echo the payload back.
 export function validateInit(msg, origin, allowedOrigin) {
   const env = validateEnvelope(msg, origin, allowedOrigin, topic('init'));
   if (!env.ok) return env;
   // form is optional: a hub with no drivers yet has no Driver Assignment rows to
-  // send. Links OR an assessment is the payload — a hub with no cables at all is
+  // send. Links OR an assessment is the payload - a hub with no cables at all is
   // sized from its Positions instead (DJ 100053), and a dat:init carrying
   // neither says nothing.
   if (msg.form != null && typeof msg.form !== 'string') return { ok: false, reason: 'malformed form CSV' };
@@ -67,7 +67,7 @@ function validateEnvelope(msg, origin, allowedOrigin, type) {
 const allowlist = () => String(import.meta.env?.VITE_ALLOWED_PARENT_ORIGINS ?? '')
   .split(',').map((s) => s.trim()).filter(Boolean);
 
-let resolved = null; // '' once we know the claim is bad — never retried
+let resolved = null; // '' once we know the claim is bad - never retried
 export function parentOrigin() {
   if (resolved === null) {
     const claimed = new URLSearchParams(window.location.search).get('parentOrigin');
@@ -76,7 +76,7 @@ export function parentOrigin() {
   return resolved;
 }
 
-// cb(msg, error) — error is a string when a message reached us but failed
+// cb(msg, error) - error is a string when a message reached us but failed
 // validation in a way worth surfacing (version mismatch). Everything else is
 // dropped silently; a page gets plenty of postMessage traffic that isn't ours.
 //

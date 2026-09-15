@@ -1,0 +1,44 @@
+/* A control panel's ways, in DJ 101676's rack-detail language: a label box per
+   way, the modules in it side by side, heavy black strokes, fills by class. */
+.pl { padding: 12px 16px; }
+.pl-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+.pl-count { color: #475569; font-weight: 600; }
+.pl-zoom { display: inline-flex; align-items: center; gap: 4px; color: #475569; font-size: 13px; }
+.pl-zoom button { border: 1px solid #cbd5e1; background: #fff; border-radius: 4px; width: 26px; height: 26px; line-height: 1; }
+.pl-tray {
+  border: 1.5px dashed #cbd5e1; border-radius: 6px; padding: 8px 10px; min-height: 62px; margin-bottom: 14px;
+  display: flex; flex-wrap: wrap; gap: 10px; align-items: center; background: #fff;
+}
+.pl-tray-title { color: #64748b; font-size: 12px; margin-right: 6px; }
+.pl-tray.is-over, .pl-row.is-over .pl-rail { background: #f3f0ff; border-color: #7C5CFC; }
+.pl-board {
+  background: #fff; border: 2px solid #111; border-radius: 4px; padding: 12px;
+  display: inline-flex; flex-direction: column; gap: 10px; min-width: 560px; max-width: 100%;
+}
+.pl-row { display: flex; align-items: stretch; gap: 16px; }
+.pl-label {
+  width: 120px; flex: 0 0 auto; border: 1.5px solid #111; background: #fff;
+  display: flex; align-items: center; justify-content: center; font: 600 14px Helvetica, Arial, sans-serif;
+}
+.pl-rail {
+  flex: 1 1 auto; display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+  padding: 6px; border: 2px solid #111; border-radius: 4px; min-height: 58px;
+}
+.pl-mod {
+  flex: 0 0 auto; border: 1.5px solid #111; overflow: hidden; cursor: grab;
+  display: flex; flex-direction: column; justify-content: center; align-items: flex-start;
+  padding: 0 8px; font-family: Helvetica, Arial, sans-serif; line-height: 1.15;
+}
+.pl-mod b { font-weight: 700; white-space: nowrap; }
+.pl-mod span { white-space: nowrap; opacity: .85; }
+.pl-mod.is-turned { align-items: center; padding: 4px 0; }
+.pl-mod.is-drag { opacity: .4; }
+/* moved here, not patched yet: the same dashed mark a moved cable carries */
+.pl-mod.is-moved { outline: 2px dashed #7C5CFC; outline-offset: 2px; }
+.pl-turned { writing-mode: vertical-rl; transform: rotate(180deg); }
+.pl-spare {
+  flex: 1; border: 1.5px dashed #c41f4b; color: #c41f4b; font-weight: 700;
+  text-align: center; padding: 12px; font-family: Helvetica, Arial, sans-serif;
+}
+.pl-empty { color: #94a3b8; font-size: 12px; font-style: italic; }
+.pl-note { color: #64748b; font-size: 12px; margin-top: 10px; max-width: 70ch; }

@@ -38,7 +38,7 @@ export default function ImportScreen({ dispatch, saved, onResume, onDiscard }) {
         <div className="card-body p-4">
           <h4 className="card-title mb-1">Driver Assignment Tool</h4>
           <p className="text-secondary mb-4">
-            Drop your Links Assignment and Driver Assignment CSVs below — both at once, in any order.
+            Drop your Links Assignment and Driver Assignment CSVs below - both at once, in any order.
             A previously exported Driver Assignment CSV can be re-loaded to resume.
             No drivers yet? Drop the Links CSV with the driver type library and the tool will size them for you.
             No links either? Drop the Control Requirement Assessment (DJ 100053) with the type
@@ -55,7 +55,7 @@ export default function ImportScreen({ dispatch, saved, onResume, onDiscard }) {
             onClick={() => fileInput.current?.click()}>
             <span className="material-icons dropzone-icon">{busy ? 'hourglass_top' : 'upload_file'}</span>
             <div className="fw-semibold">{busy ? 'Loading…' : 'Drop both CSVs here'}</div>
-            <div className="text-secondary small">or click to browse — files are auto-detected</div>
+            <div className="text-secondary small">or click to browse - files are auto-detected</div>
             <input ref={fileInput} type="file" accept=".csv" multiple hidden
               onChange={(e) => loadFiles(e.target.files)} />
           </div>

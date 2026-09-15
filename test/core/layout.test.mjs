@@ -1,5 +1,5 @@
 // core/layout.js holds no opinion about what is being arranged. These tests use
-// a lighting control panel and its modules — never a hub or a driver — because
+// a lighting control panel and its modules - never a hub or a driver - because
 // if any hub assumption is still baked in, this is where it shows.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -9,7 +9,7 @@ import * as L from '../../src/core/layout.js';
 const MOD = (ref, w = 17.5, h = 90) => ({ ref, label: ref, size: [w, h, 60] });
 const PANEL = { ref: 'E41592', name: '#LCP5', contextType: 'Element' };
 
-test('a container holds slots and a slot holds items — no hub anywhere', () => {
+test('a container holds slots and a slot holds items - no hub anywhere', () => {
   const slots = [[MOD('A'), MOD('B')], [MOD('C')]];
   const placed = L.placements(slots, { slotWidth: 250 });
   assert.deepEqual(placed.map((p) => p.ref), ['A', 'B', 'C']);
@@ -65,4 +65,41 @@ test('the edits are container-agnostic', () => {
   slots = L.removeSlot(slots);
   assert.deepEqual(slots.map((s) => s.map((i) => i.ref)), [['A', 'B']], 'contents tip back');
   assert.deepEqual(L.splitToSlot(slots, ['B']).map((s) => s.map((i) => i.ref)), [['A'], ['B']]);
+});
+
+// ---- a slot can be its own width ------------------------------------------
+const PART = (ref, w = 210, h = 40) => ({ ref, label: ref, size: [w, h, 150] });
+
+test('equal widths put slots exactly where the single pitch did', () => {
+  assert.deepEqual(L.offsetsOf(3, { slotWidth: 380 }), [0, 330, 660]);
+  assert.deepEqual(L.offsetsOf(3, { slotWidth: 380, joined: false }), [0, 380, 760]);
+});
+
+test('a wider bay beside a standard one moves everything after it', () => {
+  const slots = [[PART('A')], [PART('B')]];
+  const opts = { widths: [500, 380] };
+  // 500 + 380 less the 50 they share
+  assert.equal(L.extent(slots, opts).w, 830);
+  const b = L.placements(slots, opts).find((p) => p.ref === 'B');
+  assert.equal(b.x, 450 + L.TRUNK, 'bay 2 starts at 500 - 50, then its trunking inset');
+  assert.equal(L.widthAt(1, opts), 380);
+  assert.equal(L.widthAt(5, opts), L.SLOT_WIDTH, 'an unset width is the house width');
+});
+
+test('a wider bay takes more across a row than a standard one', () => {
+  const turned = [0, 1, 2, 3, 4, 5, 6, 7].map((n) => ({ ...PART(`D${n}`), rot: 90 }));
+  assert.ok(L.packSlot(turned, 500)[0].at.length > L.packSlot(turned, 380)[0].at.length);
+});
+
+test('per-bay widths survive the save and load round trip, separated bays included', () => {
+  const slots = [[PART('A'), PART('B', 153.6, 76.7)], [PART('C')], [PART('D', 153.6, 76.7)]];
+  const byRef = Object.fromEntries(slots.flat().map((i) => [i.ref, { ...i, rot: 0 }]));
+  const opts = { widths: [380, 520, 400], separate: [2], wrapperRefs: { 2: 'E1' },
+    container: { ref: 'P1', name: '#1', contextType: 'Position' } };
+  const saved = L.save(slots, opts);
+  const back = L.load(saved, byRef, opts);
+  const draw = (s) => L.placements(s, opts).map((p) => [p.ref, p.slot, p.x, p.y]);
+  assert.deepEqual(draw(back), draw(slots));
+  assert.match(saved.slots[0].parameters, /^\[\[400mm,/, 'the separated bay states its own width');
+  assert.match(saved.container.parameters, /^\[\[850mm,/, '380 + 520 - 50 for the bays still on the hub');
 });

@@ -1,14 +1,14 @@
 import { outRef } from '../state.js';
 
 // Every check a driver failed, in full. This was a hover tooltip on a small
-// purple glyph — which told you something was wrong, in a colour that means
+// purple glyph - which told you something was wrong, in a colour that means
 // nothing on its own, and then took the explanation away the moment you moved
 // the mouse toward it.
 //
 // Grouped by check rather than by cable: "three cables are 350mA on a 500mA
 // driver" is one problem with three cables in it, not three problems.
 const LEVELS = {
-  FAIL: ['error', 'A hard failure — the design will not work as assigned.'],
+  FAIL: ['error', 'A hard failure - the design will not work as assigned.'],
   MISMATCH: ['report', 'The driver and the cable disagree about type, voltage or current.'],
   WARN: ['warning', 'Worth a look; not necessarily wrong.'],
   INFO: ['info', 'Expected, and shown for completeness.'],

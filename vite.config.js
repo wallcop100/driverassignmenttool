@@ -10,7 +10,7 @@ export default defineConfig({
       // so all three sit in one Pages artifact with no base-path juggling.
       //   /          the driver tool, standalone drop-two-CSVs page
       //   /api/      the driver tool, embed target for DJ 101681
-      //   /lcp/api/  the LCP tool, embed target for DJ 101698 — its ONLY entry
+      //   /lcp/api/  the LCP tool, embed target for DJ 101698 - its ONLY entry
       input: {
         main: 'index.html',
         embed: 'api/index.html',

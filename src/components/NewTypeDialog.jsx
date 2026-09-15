@@ -4,7 +4,7 @@ import PresetEditor, { draftFromPart, toPreset } from './PresetEditor.jsx';
 import { fmt } from '../typeFaults.js';
 
 // Defining an ElementType the design does not have yet. Not a set of pages to
-// walk: you already know what you want — CC, 500mA or more, two outputs — so the
+// walk: you already know what you want - CC, 500mA or more, two outputs - so the
 // filters are the question and the shortlist is the answer.
 //
 // Nothing here invents a rating. Every value comes from the datasheet part or
@@ -27,7 +27,7 @@ export default function NewTypeDialog({ zone, inventory, dispatch, onClose, onCr
 
   // A filter or a search is a question about the whole catalogue, so it answers
   // from the whole catalogue. With nothing asked, the list is the parts actually
-  // specified on most jobs — thirty-odd rows is a catalogue to browse, not a
+  // specified on most jobs - thirty-odd rows is a catalogue to browse, not a
   // choice to make.
   const filtering = powerType !== 'any' || minA !== '' || minW !== ''
     || outputs !== 'any' || q.trim() !== '';
@@ -42,7 +42,7 @@ export default function NewTypeDialog({ zone, inventory, dispatch, onClose, onCr
       if (powerType !== 'any' && p.powerType !== powerType) return false;
       // A CC part covers a range; asking for 500mA keeps every part that reaches it.
       if (a != null && !(p.powerType === 'CC' && p.maxA != null && p.maxA >= a)) return false;
-      // A DC/DC driver states no wattage of its own — the supply sets it, so a
+      // A DC/DC driver states no wattage of its own - the supply sets it, so a
       // power filter cannot rule it out.
       if (w != null && p.maxPowerW != null && p.maxPowerW < w) return false;
       if (outputs !== 'any' && (p.outputs ?? 1) !== Number(outputs)) return false;
@@ -65,7 +65,7 @@ export default function NewTypeDialog({ zone, inventory, dispatch, onClose, onCr
   const ready = !!part && (!needsPsu || supply) && (!needsCurrent || Number(currentA) > 0);
 
   // draftFromPart leaves the Ref blank: only the full editor used to fill it in,
-  // from its own effect. So the dialog showed "—" where the Ref goes and both
+  // from its own effect. So the dialog showed "-" where the Ref goes and both
   // Create buttons returned early on the empty ref, doing nothing at all.
   const draft = useMemo(() => {
     if (!part) return null;
@@ -179,7 +179,7 @@ export default function NewTypeDialog({ zone, inventory, dispatch, onClose, onCr
         {part && !advanced && (
           <div className="nt-pick">
             {needsPsu && (
-              <label className="nt-filter" title="A DC/DC driver has no rail of its own — the supply sets the voltage and caps the wattage">
+              <label className="nt-filter" title="A DC/DC driver has no rail of its own - the supply sets the voltage and caps the wattage">
                 <span>Supply</span>
                 <select className="form-select form-select-sm" value={psu}
                   onChange={(e) => setPsu(e.target.value)}>
@@ -200,8 +200,8 @@ export default function NewTypeDialog({ zone, inventory, dispatch, onClose, onCr
                 <em>mA</em>
               </label>
             )}
-            <span className="nt-ref" title="Generated from the values — edit it in the fields if it needs to differ">
-              {ready ? proposedRef || '—' : 'choose the values above'}
+            <span className="nt-ref" title="Generated from the values - edit it in the fields if it needs to differ">
+              {ready ? proposedRef || '-' : 'choose the values above'}
             </span>
           </div>
         )}

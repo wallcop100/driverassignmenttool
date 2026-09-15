@@ -1,5 +1,5 @@
 // Renders each of the tool's surfaces to standalone HTML for the docs, using the
-// real demo model, the real engine, and the app's own stylesheet — so a
+// real demo model, the real engine, and the app's own stylesheet - so a
 // screenshot is of what the code produces, not of a drawing of it.
 //
 //   node docs/screens.mjs           write the HTML
@@ -29,12 +29,12 @@ const zoneList = (zones) => {
   return z.length > 2 ? `${z[0]} +${z.length - 1}` : z.join(', ');
 };
 
-// flagged first, then by Ref — the reason to open the page is at the top of it
+// flagged first, then by Ref - the reason to open the page is at the top of it
 const cards = m.inventory
   .map((t) => { const spec = e.resolveSpec(t.name || t.typeRef); return { t, spec, f: faults(t, spec) }; })
   .sort((a, b) => (b.f.length > 0) - (a.f.length > 0) || a.t.typeRef.localeCompare(b.t.typeRef));
 
-const badge = (t) => `<span class="type-power is-${(t.powerType || 'unknown').toLowerCase()}">${t.powerType ?? '—'}</span>`;
+const badge = (t) => `<span class="type-power is-${(t.powerType || 'unknown').toLowerCase()}">${t.powerType ?? '-'}</span>`;
 
 /* ---- the card, shared by both surfaces: only the actions differ ---- */
 const warnChip = (f) => (f.length
@@ -45,7 +45,7 @@ const card = ({ t, f }, actions, cls = '') => {
   const u = usage.get(t.typeRef);
   return `<div class="tp-card${f.length ? ' is-off' : ''}${cls}">
     <div class="tp-card-top"><span class="tp-ref">${esc(t.typeRef)}</span></div>
-    <div class="tp-line">${badge(t)}<span class="tp-name">${esc(t.name || '—')}</span></div>
+    <div class="tp-line">${badge(t)}<span class="tp-name">${esc(t.name || '-')}</span></div>
     <div class="tp-spec">${esc(ratingsOf(t))}<span class="tp-ch"> · ${t.nodes?.length ?? 1} out${t.ballast ? ' · ' + t.ballast + 'CH' : ''}</span></div>
     <div class="tp-foot">
       <span class="tp-use">${u ? u.count + ' × ' + zoneList(u.zones) : 'unused'}</span>
@@ -92,7 +92,7 @@ const pickerHtml = cards
 const fdCard = cards.find((c) => c.f.length > 1) ?? cards.find((c) => c.f.length);
 const faultHtml = `<div class="fd-dialog" style="box-shadow:none;border:1px solid #dbe3ee">
   <div class="fd-head"><span class="fd-ref">${esc(fdCard.t.typeRef)}</span>
-    <span class="fd-name">${esc(fdCard.t.name || '—')}</span>
+    <span class="fd-name">${esc(fdCard.t.name || '-')}</span>
     <button class="btn btn-sm btn-link ms-auto p-0">close</button></div>
   <div class="fd-states"><span><b>${esc(ratingsOf(fdCard.t))}</b> in the DesignDB</span>
     ${fdCard.spec ? `<span class="text-secondary">${esc(fdCard.spec.name)} spec page: ${fmt(fdCard.spec.maxPowerW)}W${fdCard.spec.minA != null ? ` · ${fdCard.spec.minA}–${fdCard.spec.maxA}A` : ''}${fdCard.spec.maxFvV != null ? ` · ${fdCard.spec.maxFvV}fV/out` : ''}</span>` : ''}</div>
@@ -151,10 +151,10 @@ const editor = `<div class="preset-editor" style="padding:0">
     <span class="fld-sec-note">EldoLED SoloDrive 360/A runs 0.15–1.4A</span></div>
   <div class="fld-grid">
     <label class="fld"><span class="fld-col">Parameters</span><input value="1"></label>
-    <label class="fld"><span class="fld-col">NodeMaxForwardVoltage(fV)</span><input placeholder="—">
+    <label class="fld"><span class="fld-col">NodeMaxForwardVoltage(fV)</span><input placeholder="-">
       <button class="fld-ds">use 55</button></label>
-    <label class="fld"><span class="fld-col">NodeMaxPower(W)</span><input placeholder="—"></label>
-    <label class="fld"><span class="fld-col">NodeCurrent</span><input placeholder="—"></label>
+    <label class="fld"><span class="fld-col">NodeMaxPower(W)</span><input placeholder="-"></label>
+    <label class="fld"><span class="fld-col">NodeCurrent</span><input placeholder="-"></label>
   </div>
   <div class="fld-foot">
     <button class="btn btn-sm btn-primary">Save</button>
@@ -187,7 +187,7 @@ body{padding:24px;background:#f6f8fb}
   <div class="tp-grid">${pickerHtml}</div>
 </div></div>
 
-<div class="mockhead">The same screen on its own — no Add, flagged first</div>
+<div class="mockhead">The same screen on its own - no Add, flagged first</div>
 <div class="frame"><div class="types-page">
   <div class="dp-head">
     <button class="btn btn-sm btn-outline-secondary">← Zones</button>
@@ -203,10 +203,10 @@ body{padding:24px;background:#f6f8fb}
 <div class="mockhead">The remedies, behind ⋮</div>
 <div class="frame">${menuHtml}</div>
 
-<div class="mockhead">The warning, opened — with the fixes beside the reason</div>
+<div class="mockhead">The warning, opened - with the fixes beside the reason</div>
 ${faultHtml}
 
-<div class="mockhead">✎ — the card opens to every ElementTypes field</div>
+<div class="mockhead">✎ - the card opens to every ElementTypes field</div>
 <div class="frame"><div class="types-page"><div class="tp-grid"><div class="tp-card is-editing">
   <div class="tp-card-top"><span class="tp-ref">ET-CCR-D-1050-1CH-01</span></div>
   <div class="tp-line"><span class="type-power is-cc">CC</span>
@@ -218,7 +218,7 @@ ${faultHtml}
   ${editor}
 </div></div></div></div>
 
-<div class="mockhead">New type — filters, then the shortlist they leave</div>
+<div class="mockhead">New type - filters, then the shortlist they leave</div>
 ${dialogHtml}
 </body></html>`;
 fs.writeFileSync(new URL('./driver-types.html', import.meta.url), html);
@@ -253,7 +253,7 @@ const estHtml = `<!doctype html><html><head><meta charset="utf-8"><title>Driver 
 <style>body{padding:24px;background:#f6f8fb}.frame{background:#fff;border:1px solid #dbe3ee;border-radius:10px;overflow:hidden}
 .mockhead{font:600 12px/1.4 system-ui;letter-spacing:.08em;text-transform:uppercase;color:#94a3b8;margin:0 0 8px}</style>
 </head><body>
-<div class="mockhead">Estimate — Positions only, no cables and no drivers</div>
+<div class="mockhead">Estimate - Positions only, no cables and no drivers</div>
 <div class="frame"><div class="container-fluid py-3 drivers-page">
   <div class="dp-head">
     <h5 class="mb-0">Driver estimate</h5>
@@ -275,11 +275,11 @@ const estHtml = `<!doctype html><html><head><meta charset="utf-8"><title>Driver 
         <span class="dp-count">${z.drivers} driver${z.drivers === 1 ? '' : 's'}</span></div>
       ${z.lines.map((l) => `<div class="dp-ref">
         <span class="dp-ref-id">${l.count} × ${esc(l.typeRef)}</span>
-        <span class="dp-ref-spec">${esc(l.positionTypes?.join(', ') || '—')} · ${f1(l.qty)} UoM · ${l.perDriver} per driver${l.perNode ? ` · ${l.perNode} per output` : ''}</span>
+        <span class="dp-ref-spec">${esc(l.positionTypes?.join(', ') || '-')} · ${f1(l.qty)} UoM · ${l.perDriver} per driver${l.perNode ? ` · ${l.perNode} per output` : ''}</span>
         <span class="dp-ref-use">${l.limit} limited</span>
-        <span class="dp-ref-use">${esc(l.controlGroup || '—')}</span></div>`).join('')}
+        <span class="dp-ref-use">${esc(l.controlGroup || '-')}</span></div>`).join('')}
       ${z.unmatched.map((u) => `<div class="dp-ref is-off"><span class="dp-ref-id">${f1(u.qty)} UoM</span>
-        <span class="dp-fault">${esc(u.reason ?? 'no type in the library can take these')} — ${esc(u.key)}</span></div>`).join('')}
+        <span class="dp-fault">${esc(u.reason ?? 'no type in the library can take these')} - ${esc(u.key)}</span></div>`).join('')}
     </div>`).join('')}</div>
 </div></div>
 </body></html>`;

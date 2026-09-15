@@ -17,9 +17,9 @@ export default function TypeCard({ t, faults, usage, onWarn, children, below, cl
       </div>
       <div className="tp-line">
         <span className={`type-power ${t.powerType ? `is-${t.powerType.toLowerCase()}` : 'is-unknown'}`}>
-          {t.powerType ?? '—'}
+          {t.powerType ?? '-'}
         </span>
-        <span className="tp-name" title={t.name || ''}>{t.name || '—'}</span>
+        <span className="tp-name" title={t.name || ''}>{t.name || '-'}</span>
       </div>
       <div className="tp-spec">
         {ratingsOf(t)}

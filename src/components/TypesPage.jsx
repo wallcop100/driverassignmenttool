@@ -11,8 +11,8 @@ import TypeCard from './TypeCard.jsx';
 
 // The design's driver ElementTypes, one card each. Two jobs, one screen: reached
 // from a hub it adds a driver to it, reached on its own it is the catalogue to
-// audit and correct. They were two pages for a while, which was worth doing —
-// it is what forced the card — but once both drew the same card in the same grid
+// audit and correct. They were two pages for a while, which was worth doing - 
+// it is what forced the card - but once both drew the same card in the same grid
 // the only difference left was one button, and a page is too much to carry for
 // a button.
 
@@ -34,14 +34,14 @@ export default function TypesPage({ state, dispatch, zone }) {
   // of the V4.6 attributes, and the fix is the same few rows for the whole job.
   // Judged on the types this job actually places: a library of parts nobody has
   // used is not what needs filling in. Judged on what the DesignDB says, too, so
-  // it stays true while you fill them in — the offer goes once it is patched and
+  // it stays true while you fill them in - the offer goes once it is patched and
   // the host sends the data back.
   const inUse = useMemo(() => driverTypes(model), [model]);
   const unset = inUse.filter((t) => statedAttributes(t) === 0).length;
   const onboarding = needsSetup(model);
 
   // ':' is banned inside a node name. Correcting it is a rename, so it is safe
-  // to do for the whole job at once — and it has to be, because a node written
+  // to do for the whole job at once - and it has to be, because a node written
   // that way is referenced from hubs this session never opens.
   const banned = useMemo(() => bannedNodes(model), [model]);
 
@@ -107,7 +107,7 @@ export default function TypesPage({ state, dispatch, zone }) {
         </button>
         <h5 className="mb-0">{zone ? `Add a driver to ${zone}` : 'Driver types'}</h5>
         {/* Where the list came from. Embedded, the host posts the whole project's
-            type library alongside this hub's drivers — so if this says the hub's
+            type library alongside this hub's drivers - so if this says the hub's
             own count, the library did not arrive and that is the thing to chase. */}
         <span className="text-secondary small">
           {model.inventory.length} type{model.inventory.length === 1 ? '' : 's'}
@@ -271,7 +271,7 @@ function TypeRow(props) {
           </button>
         )}
         {/* the ref and the name disagree about the current, so neither is
-            taken on trust — choosing one corrects the Name, never the Ref */}
+            taken on trust - choosing one corrects the Name, never the Ref */}
         {opts.length > 1 && opts.map((o) => (
           <button key={o.from} onClick={() => apply('fill', o.a)}>
             Set CurrentRange to {o.a}A <em>per the {o.from}</em>
@@ -288,7 +288,7 @@ function TypeRow(props) {
         )}
       </Menu>
       {/* the one thing that differs between arriving from a hub and arriving
-          on your own — not enough to be a second page */}
+          on your own - not enough to be a second page */}
       {zone && (
         <button className="btn btn-sm btn-primary tp-add" onClick={() => {
           dispatch({ type: 'ADD_DRIVER', typeRef: t.typeRef, zone });

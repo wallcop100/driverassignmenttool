@@ -1,30 +1,26 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { PARTS, resolveSpec } from '../engine.js';
+import * as api from '../api.js';
 import { effectiveDrivers } from '../state.js';
 import * as hl from '../hubLayout.js';
 import * as draw from '../core/draw.js';
+import { formatParams } from '../core/params.js';
+import { hubPatch } from '../drivers/hubPatch.js';
 
-// Composing one PSU hub, drawn the way 5642600A draws it: hatched cabinet walls,
-// equipment as labelled blocks with the drivers rounded, Feed Provision hatched
-// at the bottom, dimensions called out on the outside.
+// Composing one PSU hub, drawn the way 5642600A draws it: equipment as plain
+// labelled blocks with the drivers rounded, cable trunking hatched, Feed
+// Provision hatched, dimensions called out on the outside.
 //
 // A bay is a stack, so dragging reorders rather than positions: two blocks
-// cannot overlap and the gap between neighbours is always exactly the clearance
-// they carry. The millimetres fall out of the sequence.
+// cannot overlap and the gap between neighbours is always the clearance they
+// carry. The millimetres fall out of the sequence.
 //
-// The unit is a module, not a rectangle — a PSU across the top, the driver
-// bottom left, its junction boxes stacked bottom right — because that is what
-// the drawings put in a bay.
-
-const SCALE = 0.36;
-const px = (n) => n * SCALE;
-// The trunking band is the side clearance, not an extra wall: see hubLayout.
+// Everything that belongs to a bay is set on that bay, from the menu above it:
+// its width, what it must fit in, whether it carries Feed Provision, whether its
+// bounding lines are drawn, and whether it stands apart as its own piece of
+// joinery. A hub is not always two identical bays.
 
 const JBOX = (n) => ({ kind: 'jbox', label: 'JUNCTION BOX', size: [80, 35, 40], ref: `jb${n}` });
-
-// Lettering a block, the way the drawings letter it: it has to fit inside the
-// box. Shrink to a floor, then trim — never run past the edge, which is what
-// made every label overflow its rectangle.
 
 // How many junction boxes a driver brings before anybody edits it. A constant
 // voltage run is broken out at a box per output, so a 4-output CV driver arrives
@@ -36,31 +32,49 @@ export function defaultJboxes(spec, type) {
   return spec?.outputs ?? type?.nodes?.length ?? type?.outputs ?? 1;
 }
 
-// A driver, its supply and its junction boxes, as one module.
-function moduleFor(driver, jboxes) {
+const composite = (parts) => (parts.some((p) => p.kind === 'driver' && p.size)
+  ? hl.composite(parts.filter((p) => p.size)) : null);
+
+// A driver, its supply and its junction boxes, as one module. A size the
+// ElementType already states wins over a datasheet figure: it is the design's
+// own, and patching it back unchanged is the point.
+function moduleFor(driver, jboxes, stated = {}) {
   const spec = resolveSpec(driver.name || driver.typeName || driver.typeRef);
   const part = spec?.driver ?? spec ?? null;
   const supply = spec?.supply ?? null;
-  const parts = [
-    { kind: 'driver', label: part?.code ?? part?.name ?? driver.typeRef, size: part?.sizeMm ?? null,
-      full: part?.name ?? driver.typeRef },
-    ...(supply ? [{ kind: 'psu', label: supply.code ?? supply.name, size: supply.sizeMm ?? null,
-      full: supply.name }] : []),
-    ...Array.from({ length: jboxes ?? defaultJboxes(spec, driver) }, (_, n) => JBOX(n)),
-  ];
+  const own = stated[driver.typeRef] ?? null;
+  const n = jboxes ?? defaultJboxes(spec, driver);
+  const parts = own
+    ? [{ kind: 'driver', label: part?.code ?? driver.typeRef, size: own,
+      full: `${driver.typeRef}, sized from its ElementType` }]
+    : [
+      { kind: 'driver', label: part?.code ?? part?.name ?? driver.typeRef, size: part?.sizeMm ?? null,
+        full: part?.name ?? driver.typeRef },
+      ...(supply ? [{ kind: 'psu', label: supply.code ?? supply.name, size: supply.sizeMm ?? null,
+        full: supply.name }] : []),
+    ];
+  parts.push(...Array.from({ length: n }, (_, i) => JBOX(i)));
   const built = composite(parts);
   return {
     ref: driver.ref,
+    typeRef: driver.typeRef,
     label: driver.typeRef,
     kind: 'module',
-    jboxes: jboxes ?? defaultJboxes(spec, driver),
+    jboxes: n,
+    sizedBy: own ? 'type' : 'datasheet',
     missing: parts.filter((p) => !p.size).map((p) => p.full ?? p.label),
     size: built?.size ?? null,
     parts: built?.parts ?? [],
   };
 }
-const composite = (parts) => (parts.some((p) => p.kind === 'driver' && p.size)
-  ? hl.composite(parts.filter((p) => p.size)) : null);
+
+const bayDefaults = (feed = false) => ({
+  width: null, feed, bounds: false, target: { w: '', h: '' }, separate: false, ref: '',
+});
+
+// px per mm. The drawing used to be fixed at 0.36, which is small on a screen.
+const ZOOM_MIN = 0.25;
+const ZOOM_MAX = 1.5;
 
 export default function HubLayoutLab({ state, zone = null, onBack = null }) {
   const { model, addedDrivers } = state;
@@ -68,24 +82,40 @@ export default function HubLayoutLab({ state, zone = null, onBack = null }) {
     () => effectiveDrivers(model, addedDrivers, state.deletedDrivers),
     [model, addedDrivers, state.deletedDrivers],
   );
+  // sizes the workbook's ElementTypes already state
+  const stated = useMemo(() => api.typeSizes(), [model]);
   const hubs = model.zones;
-  // opened from a hub's page, start on that hub
   const [hub, setHub] = useState(hubs.includes(zone) ? zone : hubs[0] ?? null);
   const [st, setSt] = useState({});
   const [sel, setSel] = useState([]);
   const [drag, setDrag] = useState(null);
-  const [sizes, setSizes] = useState({});     // label -> [w,h] typed in here
+  const [sizes, setSizes] = useState({});
   const [hist, setHist] = useState({ undo: [], redo: [] });
-  const [bounds, setBounds] = useState(false);   // the purple clearance envelope
-  const bayEls = useRef({});
+  const [scale, setScale] = useState(0.55);
+  const [menu, setMenu] = useState(null);         // bay index whose menu is open
+  const [copied, setCopied] = useState(false);
+  const svgEls = useRef({});
+  const menuEl = useRef(null);
+  const px = (n) => n * scale;
 
   const cur = st[hub] ?? null;
 
   useEffect(() => {
     if (!hub || st[hub]) return;
-    const items = drivers.filter((d) => d.zone === hub).map((d) => moduleFor(d, null));
-    setSt((s) => ({ ...s, [hub]: { bays: [items], width: null, target: { w: '', h: '' }, feed: true, separate: [] } }));
-  }, [hub, drivers, st]);
+    const items = drivers.filter((d) => d.zone === hub).map((d) => moduleFor(d, null, stated));
+    setSt((s) => ({ ...s, [hub]: { bays: [items], opts: [bayDefaults(true)] } }));
+  }, [hub, drivers, st, stated]);
+
+  // a bay menu closes when you click anywhere outside it
+  useEffect(() => {
+    if (menu == null) return undefined;
+    const onDoc = (e) => {
+      if (menuEl.current?.contains(e.target) || e.target.closest?.('.hub-baytab')) return;
+      setMenu(null);
+    };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [menu]);
 
   const edit = (next) => {
     setHist((h) => ({ undo: [...h.undo, cur], redo: [] }));
@@ -104,38 +134,29 @@ export default function HubLayoutLab({ state, zone = null, onBack = null }) {
 
   if (!cur) return <div className="container py-4 text-secondary">No hubs in this data.</div>;
 
-  // apply any sizes typed in, then rebuild the modules that depend on them
+  const opt = (b) => cur.opts[b] ?? bayDefaults();
+  const setOpt = (b, patch) => edit({ opts: cur.opts.map((o, i) => (i === b ? { ...o, ...patch } : o)) });
+  const widthOf = (b) => (opt(b).width > 0 ? opt(b).width : hl.BAY_WIDTH);
+  const withFeed = (items, b) => (opt(b).feed
+    ? [hl.feedItem(widthOf(b) - hl.TRUNK * 2, 105), ...items] : items);
+  const separate = cur.opts.map((o, i) => (o.separate ? i : null)).filter((i) => i != null);
+
   const applySizes = (items) => items.map((i) => {
     const d = drivers.find((x) => x.ref === i.ref);
     if (!d) return i;
-    const m = moduleFor(d, i.jboxes);
-    const patched = m.parts.length ? m : i;
-    return { ...patched, jboxes: i.jboxes };
+    const m = moduleFor(d, i.jboxes, stated);
+    return m.parts.length ? { ...m, rot: i.rot } : i;
   });
 
-  const bayOuter = cur.width != null ? cur.width / Math.max(1, cur.bays.length) : hl.BAY_WIDTH;
-  const inner = bayOuter - hl.TRUNK * 2;
-  const withFeed = (items, b) => (cur.feed && b === cur.bays.length - 1
-    ? [hl.feedItem(inner, 105), ...items] : items);
-  const drawn = cur.bays.map(withFeed);
-  // joined bays share their centre, so the hub is narrower than bays x width
-  const joinedCount = cur.bays.length - cur.separate.length;
-  const ext = hl.extent(drawn, {
-    slotWidth: bayOuter, width: cur.width,
-    joined: joinedCount > 1,
-  });
-  const fit = hl.fitsIn(ext, cur.target);
+  // the whole hub, for the header and the patch
+  const allBays = cur.bays.map(withFeed);
+  const allWidths = cur.bays.map((_, b) => widthOf(b));
+  const ext = hl.extent(allBays, { widths: allWidths });
   const missing = [...new Set(cur.bays.flat().flatMap((i) => i.missing ?? []))];
 
   const toggle = (ref, add) => setSel((c) => (add
     ? (c.includes(ref) ? c.filter((r) => r !== ref) : [...c, ref])
     : (c.includes(ref) && c.length === 1 ? [] : [ref])));
-
-  const boardY = (b, clientY) => {
-    const el = bayEls.current[b];
-    if (!el) return 0;
-    return (el.getBoundingClientRect().bottom - clientY) / SCALE;
-  };
 
   const onDrop = () => {
     if (drag?.overBay != null) edit({ bays: hl.moveItem(cur.bays, drag.ref, drag.overBay, drag.atIndex) });
@@ -146,9 +167,42 @@ export default function HubLayoutLab({ state, zone = null, onBack = null }) {
     bays: cur.bays.map((b) => b.map((i) => {
       if (!sel.includes(i.ref)) return i;
       const d = drivers.find((x) => x.ref === i.ref);
-      return d ? moduleFor(d, n) : i;
+      return d ? { ...moduleFor(d, n, stated), rot: i.rot } : i;
     })),
   });
+
+  const addBay = () => edit({ bays: hl.addBay(cur.bays), opts: [...cur.opts, bayDefaults()] });
+  const removeBay = () => edit({ bays: hl.removeBay(cur.bays), opts: cur.opts.slice(0, -1) });
+  const splitSelected = () => {
+    edit({ bays: hl.splitToBay(cur.bays, sel), opts: [...cur.opts, bayDefaults()] });
+    setSel([]);
+  };
+
+  // ---- the patch --------------------------------------------------------------
+  // Positions in each bay, the hub's size, any separated bay as its own Element,
+  // and every driver type's size merged into its ElementType. A size the type
+  // already states comes back unchanged, so the patch leaves it as it was.
+  const copyPatch = async () => {
+    const ctx = state.context;
+    const container = ctx?.hubRef
+      ? { ref: ctx.hubRef, name: hub, contextType: ctx.hubContextType ?? 'Position' }
+      : { name: hub };
+    const wrapperRefs = Object.fromEntries(cur.opts
+      .map((o, i) => [i, o.separate && o.ref.trim() ? o.ref.trim() : null])
+      .filter(([, r]) => r));
+    const saved = hl.save(allBays, { container, separate, widths: allWidths, wrapperRefs });
+    const seen = new Map();
+    for (const d of drivers.filter((x) => x.zone === hub)) {
+      if (seen.has(d.typeRef)) continue;
+      const size = moduleFor(d, 0, stated).size;
+      if (!size?.[0] || !size?.[1]) continue;
+      seen.set(d.typeRef, formatParams({ size: [size[0], size[1], size[2] > 0 ? size[2] : null] }));
+    }
+    const typeSizes = [...seen].map(([ref, size]) => ({ ref, size }));
+    await api.copyPatch(hubPatch({ saved, hub: container.ref ? container : null, typeSizes }));
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1800);
+  };
 
   return (
     <div className="container-fluid py-3 hub-lab" onMouseUp={onDrop} onMouseLeave={() => setDrag(null)}>
@@ -160,20 +214,25 @@ export default function HubLayoutLab({ state, zone = null, onBack = null }) {
           </button>
         )}
         <select className="form-select form-select-sm" style={{ width: 'auto' }} value={hub}
-          onChange={(e) => { setHub(e.target.value); setSel([]); setHist({ undo: [], redo: [] }); }}>
+          onChange={(e) => { setHub(e.target.value); setSel([]); setMenu(null); setHist({ undo: [], redo: [] }); }}>
           {hubs.map((z) => <option key={z} value={z}>{z}</option>)}
         </select>
         <h5 className="mb-0 hub-dim">{ext.w} × {ext.h} × {hl.DEPTH_MM}mm</h5>
-        {(cur.target.w || cur.target.h) && (
-          <span className={`hub-verdict ${fit.fits ? 'is-ok' : 'is-over'}`}>
-            {fit.fits ? 'fits' : `${Math.max(fit.overW ?? 0, fit.overH ?? 0)}mm over`}
-          </span>
-        )}
+        <span className="hub-zoom" title="Zoom">
+          <button onClick={() => setScale((z) => Math.max(ZOOM_MIN, +(z - 0.1).toFixed(2)))} aria-label="Zoom out">-</button>
+          <span>{Math.round((scale / 0.36) * 100)}%</span>
+          <button onClick={() => setScale((z) => Math.min(ZOOM_MAX, +(z + 0.1).toFixed(2)))} aria-label="Zoom in">+</button>
+        </span>
         <span className="ms-auto d-flex align-items-center gap-2">
           <button className="btn btn-sm btn-outline-secondary" disabled={!hist.undo.length} onClick={undo}
             title="Undo"><span className="material-icons small-icon align-middle">undo</span></button>
           <button className="btn btn-sm btn-outline-secondary" disabled={!hist.redo.length} onClick={redo}
             title="Redo"><span className="material-icons small-icon align-middle">redo</span></button>
+          <button className="btn btn-sm btn-primary" onClick={copyPatch}
+            title="Copy an ExcelScript patch: driver positions, the hub's size, separated bays and each driver type's size">
+            <span className="material-icons small-icon align-middle">{copied ? 'check' : 'content_copy'}</span>
+            {copied ? ' Copied' : ' Copy patch'}
+          </button>
           <span className="badge text-bg-warning">lab</span>
         </span>
       </div>
@@ -208,67 +267,111 @@ export default function HubLayoutLab({ state, zone = null, onBack = null }) {
       )}
 
       <div className="hub-sheets">
-        {hl.sheets(cur.bays.length, cur.separate).map((sheet, si) => {
-          // Joined bays are one cabinet with a divider, not two boxes side by
-          // side: they share the gap between them, so the centre is 50 and not
-          // the 100 they would make bringing 50 each.
+        {hl.sheets(cur.bays.length, separate).map((sheet, si) => {
+          // Joined bays are one cabinet with a divider: they share the gap
+          // between them, so the centre is 50 and not 100.
           const bays = sheet.slots.map((b) => withFeed(cur.bays[b], b));
-          const pitch = hl.pitchOf(bayOuter, true);
-          const sheetExt = hl.extent(bays, { slotWidth: bayOuter, joined: true });
+          const widths = sheet.slots.map((b) => widthOf(b));
+          const lopts = { widths };
+          const off = hl.offsetsOf(bays.length, lopts);
+          const sheetExt = hl.extent(bays, lopts);
           const H = px(Math.max(sheetExt.h, 150));
           const W = px(sheetExt.w);
-          const placed = hl.placements(bays, { slotWidth: bayOuter, joined: true });
-          // the trunking is a property of a ROW, not of a part: one band down
-          // each side of an upright run, one across the ends of a turned one
+          const placed = hl.placements(bays, lopts);
+          // the trunking is a property of a ROW: down each side of an upright
+          // run, across the ends of a turned one
           const rows = bays.flatMap((items, local) =>
-            hl.packBay(items, bayOuter).map((r) => ({ ...r, x0: local * hl.pitchOf(bayOuter, true) })));
+            hl.packBay(items, widths[local]).map((r) => ({ ...r, x0: off[local], bw: widths[local] })));
+          const LEFT = 44;
           return (
             <div key={si} className="hub-sheet">
               <div className="hub-sheet-head">
                 <b>{hub}{sheet.separate ? `-${sheet.slots[0] + 1}` : ''}</b>
                 <span>{sheetExt.w} × {Math.max(sheetExt.h, 0)} × {hl.DEPTH_MM}mm</span>
-                {sheet.slots.map((b) => (
-                  <label key={b} title="Its own sheet, its own dimensions — still the same hub">
-                    <input type="checkbox" checked={cur.separate.includes(b)} onChange={() => edit({
-                      separate: cur.separate.includes(b)
-                        ? cur.separate.filter((x) => x !== b) : [...cur.separate, b],
-                    })} />bay {b + 1} separate
-                  </label>
-                ))}
               </div>
-              <svg className="hub-svg" width={W + 56} height={H + 34}
-                ref={(el) => { bayEls.current[`s${si}`] = el; }}
+
+              {/* one tab over each bay, carrying that bay's own settings */}
+              <div className="hub-baybar" style={{ width: W + LEFT + 16 }}>
+                {sheet.slots.map((b, local) => {
+                  const o = opt(b);
+                  const bayExt = { w: widths[local], h: hl.bayHeight(bays[local], widths[local]) };
+                  const verdict = (o.target.w || o.target.h) ? hl.fitsIn(bayExt, o.target) : null;
+                  return (
+                    <div key={b} className="hub-baytab" style={{ left: LEFT + px(off[local]), width: px(widths[local]) }}>
+                      <span className="hub-baytab-name">bay {b + 1} · {widths[local]}</span>
+                      {verdict && (
+                        <span className={`hub-verdict ${verdict.fits ? 'is-ok' : 'is-over'}`}>
+                          {verdict.fits ? 'fits' : `${Math.max(verdict.overW ?? 0, verdict.overH ?? 0)} over`}
+                        </span>
+                      )}
+                      <button type="button" className="kebab-btn" title={`Bay ${b + 1} options`}
+                        onClick={() => setMenu(menu === b ? null : b)}>
+                        <span className="material-icons small-icon">more_vert</span>
+                      </button>
+                      {menu === b && (
+                        <div className="hub-baymenu" ref={menuEl}>
+                          <b>Bay {b + 1}</b>
+                          <label className="hub-mrow">
+                            <span>Width</span>
+                            <input type="number" step="5" placeholder={String(hl.BAY_WIDTH)} value={o.width ?? ''}
+                              onChange={(e) => setOpt(b, { width: e.target.value === '' ? null : +e.target.value })} />mm
+                          </label>
+                          <label className="hub-mrow">
+                            <span>Must fit in</span>
+                            <input type="number" placeholder="w" value={o.target.w}
+                              onChange={(e) => setOpt(b, { target: { ...o.target, w: e.target.value } })} />×
+                            <input type="number" placeholder="h" value={o.target.h}
+                              onChange={(e) => setOpt(b, { target: { ...o.target, h: e.target.value } })} />
+                          </label>
+                          <label><input type="checkbox" checked={o.feed}
+                            onChange={() => setOpt(b, { feed: !o.feed })} /> Feed provision</label>
+                          <label><input type="checkbox" checked={o.bounds}
+                            onChange={() => setOpt(b, { bounds: !o.bounds })} /> Bounding lines</label>
+                          <label title="Its own sheet, its own dimensions and its own Element. Still the same hub.">
+                            <input type="checkbox" checked={o.separate}
+                              onChange={() => setOpt(b, { separate: !o.separate })} /> Separate
+                          </label>
+                          {o.separate && (
+                            <label className="hub-mrow">
+                              <span>Element Ref</span>
+                              <input type="text" placeholder="allocate" value={o.ref}
+                                onChange={(e) => setOpt(b, { ref: e.target.value })} style={{ width: 96 }} />
+                            </label>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              <svg className="hub-svg" width={W + LEFT + 16} height={H + 64}
+                ref={(el) => { svgEls.current[`s${si}`] = el; }}
                 onMouseMove={(e) => {
                   if (!drag) return;
-                  const r = bayEls.current[`s${si}`].getBoundingClientRect();
-                  const bx = (e.clientX - r.left - 40) / SCALE;
-                  const local = Math.max(0, Math.min(sheet.slots.length - 1, Math.floor(bx / pitch)));
-                  const y = (r.bottom - 24 - e.clientY) / SCALE;
-                  setDrag({ ...drag, overBay: sheet.slots[local], atIndex: hl.dropIndex(bays[local], y, { slotWidth: bayOuter }) });
+                  const r = svgEls.current[`s${si}`].getBoundingClientRect();
+                  const mmX = (e.clientX - r.left - LEFT) / scale;
+                  let local = off.findIndex((o0, i) => mmX >= o0 && mmX < o0 + widths[i]);
+                  if (local < 0) local = mmX < 0 ? 0 : bays.length - 1;
+                  const y = (r.top + 10 + H - e.clientY) / scale;
+                  setDrag({ ...drag, overBay: sheet.slots[local],
+                    atIndex: hl.dropIndex(bays[local], y, { slotWidth: widths[local] }) });
                 }}>
                 <defs>
                   <pattern id={`hatch-${si}`} width="6" height="6" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
                     <line x1="0" y1="0" x2="0" y2="6" stroke="#9aa5b1" strokeWidth="1.2" />
                   </pattern>
                 </defs>
-                <g transform="translate(40,10)">
+                <g transform={`translate(${LEFT},10)`}>
                   <rect x="0" y="0" width={W} height={H} fill="#fff" stroke="#16212e" strokeWidth="2" />
-                  {/* Cable trunking, per zone. A run of upright drivers has it
-                      down both sides; a turned row has it above and below and
-                      takes the full bay width instead — which is how HUB-A gets
-                      four DualDrives wall to wall over a 280 column. */}
                   {rows.map((r, n) => {
                     const t = px(hl.TRUNK);
                     const yTop = H - px(r.y + r.h);
                     const bands = r.hatched
-                      ? [[px(r.x0), yTop, px(bayOuter), t],
-                        [px(r.x0), H - px(r.y) - t, px(bayOuter), t]]
-                      : [[px(r.x0), yTop, t, px(r.h)],
-                        [px(r.x0 + bayOuter) - t, yTop, t, px(r.h)]];
+                      ? [[px(r.x0), yTop, px(r.bw), t], [px(r.x0), H - px(r.y) - t, px(r.bw), t]]
+                      : [[px(r.x0), yTop, t, px(r.h)], [px(r.x0 + r.bw) - t, yTop, t, px(r.h)]];
                     return bands.map(([bx, by, bw, bh], k) => (
-                      // no outline: the bands of one zone abut the next, and a
-                      // stroke on each turns a continuous run of trunking into a
-                      // ladder of ruled-off boxes
+                      // no outline, so a run of trunking reads as one band
                       <rect key={`r${n}-${k}`} x={bx} y={by} width={bw} height={bh}
                         fill={`url(#hatch-${si})`} stroke="none" />
                     ));
@@ -279,7 +382,8 @@ export default function HubLayoutLab({ state, zone = null, onBack = null }) {
                     const x = px(p.x);
                     const isFeed = p.kind === 'feed';
                     return (
-                      <g key={p.ref} className={`hub-g ${sel.includes(p.ref) ? 'is-sel' : ''} ${drag?.ref === p.ref ? 'is-dragging' : ''}`}
+                      <g key={`${p.ref}-${p.slot}`}
+                        className={`hub-g ${sel.includes(p.ref) ? 'is-sel' : ''} ${drag?.ref === p.ref ? 'is-dragging' : ''}`}
                         onMouseDown={(e) => {
                           if (isFeed) return;
                           toggle(p.ref, e.shiftKey || e.metaKey || e.ctrlKey);
@@ -290,20 +394,14 @@ export default function HubLayoutLab({ state, zone = null, onBack = null }) {
                             <rect x={x} y={y} width={px(p.size[0])} height={px(p.size[1])}
                               fill={`url(#hatch-${si})`} stroke="#16212e" />
                             <text x={x + px(p.size[0]) / 2} y={y + px(p.size[1]) / 2 + 3}
-                              className="hub-t" textAnchor="middle" fontSize="8">Feed Provision</text>
+                              className="hub-t" textAnchor="middle" fontSize={Math.max(7, 22 * scale)}>Feed Provision</text>
                           </>
                         ) : (() => {
-                          // A turned module turns as one: its parts, its
-                          // lettering and its corners all come with it, rather
-                          // than the outer box swapping while the inside stays
-                          // put — which is what tore it apart before.
+                          // a turned module turns as one: its parts and its
+                          // lettering come with it
                           const body = p.rot === 90 ? [p.size[1], p.size[0]] : p.size;
                           const parts = p.parts?.length ? p.parts
                             : [{ kind: 'driver', label: p.label, size: body, at: [0, 0] }];
-                          // rotate(-90) sends (u,v) to (v,-u), so the group has
-                          // to be dropped by the body's LENGTH first — dropping
-                          // it by the width put a turned block half its length
-                          // too high, over whatever sat above it.
                           const frame = p.rot === 90
                             ? `translate(${x},${y + px(body[0])}) rotate(-90)`
                             : `translate(${x},${y})`;
@@ -314,34 +412,31 @@ export default function HubLayoutLab({ state, zone = null, onBack = null }) {
                                 const sy = px(body[1]) - px(sub.at[1]) - px(sub.size[1]);
                                 const w = px(sub.size[0]);
                                 const h2 = px(sub.size[1]);
-                                // The 101676 idiom: filled by what the part is,
-                                // lettered across if it fits and turned if it
-                                // does not — which is the Panduit case, and what
-                                // the old shrink-and-ellipsise got wrong.
-                                const fill = draw.fillFor(sub.kind);
-                                const ink = draw.inkFor(fill);
+                                // plain blocks, as the space drawings are: no fill
+                                // by class here, only the lettering placed to fit
                                 const t = draw.labelPlan(sub.label,
-                                  draw.subLabel(sub.ref, sub.size[0]), w, h2,
-                                  { base: 9, min: 5 });
+                                  // a junction box's "jb0" is the drawing's own
+                                  // bookkeeping, not an Element: size only
+                                  draw.subLabel(sub.kind === 'jbox' ? null : sub.ref, sub.size[0]), w, h2,
+                                  { base: Math.max(7, 25 * scale), min: 5 });
                                 const cx = sx + w / 2;
                                 const cy = sy + h2 / 2;
                                 return (
                                   <g key={n}>
                                     <rect x={sx} y={sy} width={w} height={h2}
                                       rx={sub.kind === 'driver' ? 4 : 0}
-                                      fill={fill} stroke={draw.STROKE} strokeWidth="1.1" />
+                                      fill="#fff" stroke={draw.STROKE} strokeWidth="1.1" />
                                     {t.mode === 'across' && (
-                                      <text className="hub-t" fill={ink} fontSize={t.size}
+                                      <text className="hub-t" fill="#111" fontSize={t.size}
                                         x={cx} y={t.sub ? cy - 1 : cy + t.size / 3}
                                         textAnchor="middle">{sub.label}</text>
                                     )}
                                     {t.mode === 'across' && t.sub && (
-                                      <text className="hub-t" fill={ink} fontSize={t.size * 0.78}
-                                        x={cx} y={cy + t.size} textAnchor="middle"
-                                        opacity="0.85">{t.sub}</text>
+                                      <text className="hub-t" fill="#475569" fontSize={t.size * 0.78}
+                                        x={cx} y={cy + t.size} textAnchor="middle">{t.sub}</text>
                                     )}
                                     {t.mode === 'turned' && (
-                                      <text className="hub-t" fill={ink} fontSize={t.size}
+                                      <text className="hub-t" fill="#111" fontSize={t.size}
                                         x={cx} y={cy} textAnchor="middle"
                                         transform={`rotate(-90,${cx},${cy})`}>{sub.label}</text>
                                     )}
@@ -356,7 +451,7 @@ export default function HubLayoutLab({ state, zone = null, onBack = null }) {
                     );
                   })}
 
-                  {bounds && placed.filter((p) => p.kind !== 'feed').map((p) => {
+                  {placed.filter((p) => p.kind !== 'feed' && opt(sheet.slots[p.slot]).bounds).map((p) => {
                     const y = H - px(p.y) - px(p.size[1]);
                     const x = px(p.x);
                     const cx = px(p.clear?.x ?? hl.CLEAR_X);
@@ -373,22 +468,40 @@ export default function HubLayoutLab({ state, zone = null, onBack = null }) {
 
                   {drag?.overBay != null && sheet.slots.includes(drag.overBay) && (() => {
                     const local = sheet.slots.indexOf(drag.overBay);
-                    const upto = hl.dropY(bays[local], drag.atIndex, bayOuter);
-                    return <line className="hub-drop" x1={px(local * pitch) + 2}
-                      x2={px(local * pitch + bayOuter) - 2} y1={H - px(upto)} y2={H - px(upto)} />;
+                    const upto = hl.dropY(bays[local], drag.atIndex, widths[local]);
+                    return <line className="hub-drop" x1={px(off[local]) + 2}
+                      x2={px(off[local] + widths[local]) - 2} y1={H - px(upto)} y2={H - px(upto)} />;
                   })()}
 
+                  {/* dimensions: height on the left, each bay's width under it,
+                      and the overall width under that when there is more than one */}
                   <g className="hub-dimline">
                     <line x1="-14" y1="0" x2="-14" y2={H} />
                     <line x1="-18" y1="0" x2="-10" y2="0" />
                     <line x1="-18" y1={H} x2="-10" y2={H} />
-                    <text x="-20" y={H / 2} textAnchor="middle" transform={`rotate(-90,-20,${H / 2})`}>
+                    <text x="-22" y={H / 2} textAnchor="middle" transform={`rotate(-90,-22,${H / 2})`}>
                       {Math.max(sheetExt.h, 0)}
                     </text>
-                    <line x1="0" y1={H + 12} x2={W} y2={H + 12} />
-                    <line x1="0" y1={H + 8} x2="0" y2={H + 16} />
-                    <line x1={W} y1={H + 8} x2={W} y2={H + 16} />
-                    <text x={W / 2} y={H + 26} textAnchor="middle">{sheetExt.w}</text>
+                    {bays.map((_, local) => {
+                      const x0 = px(off[local]);
+                      const x1 = px(off[local] + widths[local]);
+                      return (
+                        <g key={local}>
+                          <line x1={x0} y1={H + 12} x2={x1} y2={H + 12} />
+                          <line x1={x0} y1={H + 8} x2={x0} y2={H + 16} />
+                          <line x1={x1} y1={H + 8} x2={x1} y2={H + 16} />
+                          <text x={(x0 + x1) / 2} y={H + 26} textAnchor="middle">{widths[local]}</text>
+                        </g>
+                      );
+                    })}
+                    {bays.length > 1 && (
+                      <>
+                        <line x1="0" y1={H + 36} x2={W} y2={H + 36} />
+                        <line x1="0" y1={H + 32} x2="0" y2={H + 40} />
+                        <line x1={W} y1={H + 32} x2={W} y2={H + 40} />
+                        <text x={W / 2} y={H + 50} textAnchor="middle">{sheetExt.w}</text>
+                      </>
+                    )}
                   </g>
                 </g>
               </svg>
@@ -400,34 +513,10 @@ export default function HubLayoutLab({ state, zone = null, onBack = null }) {
       <div className="hub-controls">
         <span className="hub-bays">
           bays
-          <button disabled={cur.bays.length <= 1} onClick={() => edit({ bays: hl.removeBay(cur.bays), separate: [] })}>−</button>
+          <button disabled={cur.bays.length <= 1} onClick={removeBay}>−</button>
           {cur.bays.length}
-          <button onClick={() => edit({ bays: hl.addBay(cur.bays) })}>+</button>
+          <button onClick={addBay}>+</button>
         </span>
-        <label className="fld hub-fit">
-          <span className="fld-col">total width</span>
-          <span className="fld-box">
-            <input type="number" step="5" style={{ width: 74 }}
-              placeholder={String(Math.round(hl.BAY_WIDTH * cur.bays.length))} value={cur.width ?? ''}
-              onChange={(e) => edit({ width: e.target.value === '' ? null : +e.target.value })} />mm
-          </span>
-        </label>
-        <label className="fld hub-fit">
-          <span className="fld-col">must fit in</span>
-          <span className="fld-box">
-            <input type="number" style={{ width: 64 }} placeholder="w" value={cur.target.w}
-              onChange={(e) => edit({ target: { ...cur.target, w: e.target.value } })} />×
-            <input type="number" style={{ width: 64 }} placeholder="h" value={cur.target.h}
-              onChange={(e) => edit({ target: { ...cur.target, h: e.target.value } })} />
-          </span>
-        </label>
-        <label className="hub-check">
-          <input type="checkbox" checked={cur.feed} onChange={() => edit({ feed: !cur.feed })} />feed provision
-        </label>
-        <label className="hub-check">
-          <input type="checkbox" checked={bounds} onChange={() => setBounds(!bounds)} />
-          bounding lines
-        </label>
         <button className="btn btn-sm btn-link p-0" onClick={() => edit({ bays: hl.rebalance(cur.bays) })}>
           Auto-arrange
         </button>
@@ -435,9 +524,7 @@ export default function HubLayoutLab({ state, zone = null, onBack = null }) {
           <>
             <span className="hub-bays">
               junction boxes
-              {/* the count starts at one per output on CV and none on CC, and is
-                  reduced from there — a run is often broken out fewer times than
-                  the driver has outputs */}
+              {/* one per output on CV and none on CC to start, reduced from there */}
               <button onClick={() => setJboxes(null)} title="Back to one per output on CV, none on CC">auto</button>
               {[0, 1, 2, 3, 4].map((n) => (
                 <button key={n} onClick={() => setJboxes(n)}>{n}</button>
@@ -448,8 +535,7 @@ export default function HubLayoutLab({ state, zone = null, onBack = null }) {
               title="Stand it on its side, as HUB-A does across its top zone">
               Rotate 90°
             </button>
-            <button className="btn btn-sm btn-outline-primary"
-              onClick={() => { edit({ bays: hl.splitToBay(cur.bays, sel) }); setSel([]); }}>
+            <button className="btn btn-sm btn-outline-primary" onClick={splitSelected}>
               Split {sel.length} into a new bay
             </button>
           </>

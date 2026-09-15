@@ -14,7 +14,7 @@ export const drivers = makeDomain({
   storagePrefix: 'driverassignmenttool',
 
   // One bar: watts against MaxPower(W). A type with no MaxPower has no bar to
-  // draw and no capacity to check — `cap: null` says so rather than drawing an
+  // draw and no capacity to check - `cap: null` says so rather than drawing an
   // empty one, and the screen turns it into a sentence.
   capacities: (driver, { assignments, links } = {}) => {
     const load = driverLoad(driver, assignments ?? {}, links ?? {});
@@ -27,20 +27,18 @@ export const drivers = makeDomain({
     }];
   },
 
-  // Two bars per output, and which watt cap binds is not obvious: a node's own
-  // NodeMaxPower(W) if the type states one, otherwise the driver total, which is
-  // the real limit and is SHARED across the outputs. Most types state only a
-  // forward voltage, so without the fallback an output showed an fV bar and
-  // nothing at all for watts.
+  // A watt bar belongs where the maximum it measures belongs. When the type
+  // states a NodeMaxPower(W) the limit is the output's own, so the bar is on the
+  // output. When it does not, the only limit is the driver total, which already
+  // has its bar on the driver - repeating it on every output drew the same shared
+  // figure several times and made it look like each output had that much to
+  // itself. Forward voltage is always per output, so the fV bar stays there.
   slotCapacities: (driver, node, { watts = 0, fv = 0, ghostWatts = null, ghostFv = null } = {}) => {
     const out = [];
-    const wCap = node.maxLoadW ?? driver.maxPowerW;
-    if (wCap != null) {
+    if (node.maxLoadW != null) {
       out.push({
-        label: null, used: watts, cap: wCap, unit: 'W', projected: ghostWatts,
-        title: node.maxLoadW != null
-          ? `NodeMaxPower(W) for ${node.name}`
-          : `Watts on the driver total, shared across all ${driver.nodes.length} outputs`,
+        label: null, used: watts, cap: node.maxLoadW, unit: 'W', projected: ghostWatts,
+        title: `NodeMaxPower(W) for ${node.name}`,
       });
     }
     if (node.maxFvV != null) {
@@ -49,7 +47,7 @@ export const drivers = makeDomain({
     return out;
   },
 
-  // CC 0.35A / CV 24V — the one thing a designer checks first.
+  // CC 0.35A / CV 24V - the one thing a designer checks first.
   badge: (driver) => ({
     kind: driver.powerType ?? 'unknown',
     text: `${driver.powerType ?? '?'}${
@@ -77,7 +75,7 @@ export const drivers = makeDomain({
 
   slotsOf: (type) => type?.nodes?.map((n) => n.name) ?? [],
 
-  // A hub the host sends with no cables — only a requirement assessment — is the
+  // A hub the host sends with no cables - only a requirement assessment - is the
   // tender case, and lands on the estimate rather than a tray.
   parseInit: (msg, types) => (msg.assessment && !msg.links?.trim()
     ? api.parseEstimate(msg.assessment, types)

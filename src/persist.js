@@ -4,7 +4,7 @@
 // read each other's saved work.
 let PREFIX = 'driverassignmenttool.session.v1';
 
-// Standalone: one slot. Embedded: one slot per hub, per set, per branch —
+// Standalone: one slot. Embedded: one slot per hub, per set, per branch - 
 // the host posts hub by hub into the same iframe, so a single constant key
 // would have every hub overwrite the last.
 //
@@ -18,7 +18,7 @@ export function setStoragePrefix(p) {
   key = PREFIX;
   typesKey = `${PREFIX}.types`;
 }
-let scope = null; // { branchId, systemSetId } — set only when embedded
+let scope = null; // { branchId, systemSetId } - set only when embedded
 
 const parse = (k) => {
   const [, branchId, systemSetId, hubRef] = k.split(':');
@@ -39,7 +39,7 @@ const typeKeys = () => {
 
 // systemSetIds are sequential within a branch, so anything below the one the
 // host just sent is superseded and can go. This is the only eviction that runs
-// in normal operation — it keeps storage bounded without guessing.
+// in normal operation - it keeps storage bounded without guessing.
 function evictSupersededSets(branchId, systemSetId) {
   if (!Number.isFinite(systemSetId)) return; // non-numeric: can't order, don't delete
   for (const k of [...allKeys(), ...typeKeys()]) {
@@ -55,7 +55,7 @@ export function setSessionKey(branchId, systemSetId, hubRef) {
   key = `${PREFIX}:${branchId ?? ''}:${systemSetId ?? ''}:${hubRef ?? ''}`;
   // An ElementType is the project's, not the hub's. The host opens one hub per
   // frame, so a correction made in one hub would otherwise have to be made again
-  // in every other hub that uses the type — and the patch would then carry the
+  // in every other hub that uses the type - and the patch would then carry the
   // same edit several times over. Types get their own slot, per branch+set.
   typesKey = `${PREFIX}.types:${branchId ?? ''}:${systemSetId ?? ''}`;
   scope = { branchId: String(branchId ?? ''), systemSetId: Number(systemSetId) };
@@ -63,7 +63,7 @@ export function setSessionKey(branchId, systemSetId, hubRef) {
 }
 
 // The type corrections made anywhere in this set. Keyed by typeRef, so the last
-// edit of a type wins — which is what you want when the same type is corrected
+// edit of a type wins - which is what you want when the same type is corrected
 // from two hubs.
 export function loadTypes() {
   try {
@@ -75,7 +75,7 @@ export function saveTypes(presets) {
   try {
     if (!presets || !Object.keys(presets).length) localStorage.removeItem(typesKey);
     else localStorage.setItem(typesKey, JSON.stringify(presets));
-  } catch { /* quota, or storage disabled — the hub slot still has them */ }
+  } catch { /* quota, or storage disabled - the hub slot still has them */ }
 }
 
 // Every saved hub in the current branch+set, current one first. This is what
@@ -114,7 +114,7 @@ export function saveSession(state) {
   try {
     localStorage.setItem(key, payload);
   } catch {
-    // quota exceeded, or storage disabled entirely — third-party iframe storage
+    // quota exceeded, or storage disabled entirely - third-party iframe storage
     // is partitioned in Chrome and blocked outright under Safari ITP / Firefox
     // strict, so these guards degrade this to "no resume" rather than a throw.
     //

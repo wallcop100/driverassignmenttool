@@ -93,7 +93,7 @@ test('SET_PREFS merges label config', () => {
 });
 
 test('severityOf: FAIL > MISMATCH > WARN > none, regardless of node/link scoping', () => {
-  // CC/CV type, voltage, and mA current checks always carry node+link — a naive
+  // CC/CV type, voltage, and mA current checks always carry node+link - a naive
   // filter that drops scoped flags (the DriverBin bug) must not affect this.
   assert.equal(severityOf([]), null);
   assert.equal(severityOf([{ level: 'WARN', node: 'OP.1' }]), 'WARN');
@@ -146,7 +146,7 @@ test('INIT without a view falls back to the landing page (standalone unchanged)'
   assert.equal(s.context, null);
 });
 
-test('diffRows counts changed nodes — the number reported to the host as dat:dirty', () => {
+test('diffRows counts changed nodes - the number reported to the host as dat:dirty', () => {
   let s = init();
   assert.equal(diffRows(s).length, 0);                 // baseline is not dirty
   s = reducer(s, { type: 'MOVE_MANY', linkRefs: ['X1'], toKey: 'D|OP.2' });
@@ -155,7 +155,7 @@ test('diffRows counts changed nodes — the number reported to the host as dat:d
   assert.equal(diffRows(s).length, 0);
 });
 
-test('RESTORE pins the view when told to — an embedded resume must not leave the hub', () => {
+test('RESTORE pins the view when told to - an embedded resume must not leave the hub', () => {
   const here = { page: 'zone', zone: 'HUB-B1' };
   const elsewhere = { page: 'zone', zone: 'HUB-D' };
   const s = reducer(initialState, { type: 'INIT', model, view: here });
@@ -166,7 +166,7 @@ test('RESTORE pins the view when told to — an embedded resume must not leave t
   assert.deepEqual(reducer(s, { type: 'RESTORE', saved }).view, elsewhere);
 });
 
-test('the review lists cables, not driver nodes — the shape LinksMap is patched in', () => {
+test('the review lists cables, not driver nodes - the shape LinksMap is patched in', () => {
   const model = {
     baseline: {
       'D1|OP.1': { toEntityType: 'Link', refs: ['L1', 'L2'] },
@@ -182,7 +182,7 @@ test('the review lists cables, not driver nodes — the shape LinksMap is patche
     },
     addedDrivers: [], presets: {},
   };
-  // one cable moved — one row, naming where it was and where it is
+  // one cable moved - one row, naming where it was and where it is
   assert.deepEqual(st.linkDiffRows(state), [
     { ref: 'L2', from: 'D1|OP.1', to: 'D2|OP.1', isNew: false },
   ]);
@@ -208,7 +208,7 @@ test('a corrected driver type counts as a change the host should hear about', ()
     addedDrivers: [], presets: {},
   };
   assert.equal(st.changeCount(clean), 0);
-  // nothing moved, but a type was rewritten — the patch has work to do
+  // nothing moved, but a type was rewritten - the patch has work to do
   const edited = { ...clean, presets: { 'ET-X': { typeRef: 'ET-X', maxPowerW: 30 } } };
   assert.equal(st.linkDiffRows(edited).length, 0);
   assert.equal(st.changeCount(edited), 1);
@@ -229,7 +229,7 @@ test('removing an added driver forgets it; removing a real one marks it deleted'
     addedDrivers: [{ ref: 'E5000X', typeRef: 'T', zone: 'Z' }],
   };
 
-  // added here, so it never reached the workbook — nothing to delete
+  // added here, so it never reached the workbook - nothing to delete
   const gone = reducer(base, { type: 'REMOVE_DRIVER', ref: 'E5000X' });
   assert.deepEqual(gone.addedDrivers, []);
   assert.deepEqual(gone.deletedDrivers, []);
@@ -265,7 +265,7 @@ test('correcting a banned node name renames it and keeps every cable on it', () 
     type: 'FIX_NODE_SYNTAX',
     types: [{ typeRef: 'T-DT8', nodeNames: ['OP.1-2'] }],
   });
-  // the key is re-spelled and the cables come with it — a rename, not a move
+  // the key is re-spelled and the cables come with it - a rename, not a move
   assert.ok(!('E1|OP.1:2' in fixed.assignments));
   assert.deepEqual(fixed.assignments['E1|OP.1-2'].refs, ['X1', 'X2']);
   // one node still, and every rating left exactly as the DesignDB has it

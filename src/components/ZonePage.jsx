@@ -51,7 +51,7 @@ export default function ZonePage({ state, dispatch, zone, onResetToCurrentSet })
   const zoneDrivers = effectiveDrivers(model, addedDrivers, state.deletedDrivers)
     .filter((d) => d.zone === zone);
   // "N issues" popup: every actionable (FAIL/MISMATCH) flag belonging to a driver
-  // in this zone — always shown regardless of the info-warnings toggle above.
+  // in this zone - always shown regardless of the info-warnings toggle above.
   const zoneDriverRefs = useMemo(() => new Set(zoneDrivers.map((d) => d.ref)), [zoneDrivers]);
   const zoneIssues = useMemo(() => flags
     .filter((f) => zoneDriverRefs.has(f.driver) && (f.level === 'FAIL' || f.level === 'MISMATCH'))
@@ -86,10 +86,10 @@ export default function ZonePage({ state, dispatch, zone, onResetToCurrentSet })
   };
 
   const confirmDistribute = async () => {
-    const refs = mainTray.filter((l) => (l.controlGroup || '—') === state.distributeGroup).map((l) => l.ref);
+    const refs = mainTray.filter((l) => (l.controlGroup || '-') === state.distributeGroup).map((l) => l.ref);
     const { placements, unplaced } = await api.distribute(assignments, addedDrivers, refs, state.distributeNodes);
     dispatch({ type: 'DISTRIBUTE', placements });
-    setDistNote(unplaced.length ? `${unplaced.length} cable${unplaced.length > 1 ? 's' : ''} didn't fit — still in the tray.` : null);
+    setDistNote(unplaced.length ? `${unplaced.length} cable${unplaced.length > 1 ? 's' : ''} didn't fit - still in the tray.` : null);
   };
 
   const cablesPending = zoneDrivers.reduce((n, d) => n + d.nodes.reduce((m, node) => {
@@ -123,7 +123,7 @@ export default function ZonePage({ state, dispatch, zone, onResetToCurrentSet })
         )}
         <span className="zone-dot" style={{ background: accent }} />
         <h5 className="mb-0">{zone}</h5>
-        {/* completion, tray and drivers-needed used to live only on Landing —
+        {/* completion, tray and drivers-needed used to live only on Landing - 
             which an embedded, single-hub user never sees. Same numbers, same copy. */}
         <Tooltip content="Cables assigned to a driver node">
           <span className="fw-semibold text-secondary">
@@ -139,7 +139,7 @@ export default function ZonePage({ state, dispatch, zone, onResetToCurrentSet })
           </Tooltip>
         )}
         {orphans.length > 0 && (
-          <Tooltip content="Fingerprint clusters with no eligible node — drivers needed">
+          <Tooltip content="Fingerprint clusters with no eligible node - drivers needed">
             <span className="badge badge-warn">{orphans.length} need</span>
           </Tooltip>
         )}
@@ -165,8 +165,8 @@ export default function ZonePage({ state, dispatch, zone, onResetToCurrentSet })
             assigning, not drawing. Present only where the subject has a space. */}
         {domain.spaceLayout && (
           <button type="button" className="space-link"
-            title="Hub space layout (test)"
-            aria-label="Open the hub space layout"
+            title={`${domain.terms.group[0].toUpperCase()}${domain.terms.group.slice(1)} layout`}
+            aria-label={`Open the ${domain.terms.group} layout`}
             onClick={() => dispatch({ type: 'SET_VIEW', view: { page: 'layout', zone } })}>
             <span className="material-icons">straighten</span>
           </button>
@@ -191,7 +191,7 @@ export default function ZonePage({ state, dispatch, zone, onResetToCurrentSet })
         <button className="btn btn-sm btn-primary" data-tour="review" onClick={() => setShowReview(true)}>
           Review{pendingCount > 0 && <span className="badge text-bg-light ms-1">{pendingCount}</span>}
         </button>
-        {/* embedded, resume is silent — this is the only way back to the data the
+        {/* embedded, resume is silent - this is the only way back to the data the
             host posted, so it stays visible rather than hiding behind a menu */}
         {onResetToCurrentSet && (
           <button className="btn btn-sm btn-outline-secondary ms-auto"
@@ -253,7 +253,7 @@ export default function ZonePage({ state, dispatch, zone, onResetToCurrentSet })
               <div className="fw-semibold mb-1">No drivers in {zone} yet</div>
               <p className="text-secondary small mb-3">
                 {allTray.length
-                  ? `${allTray.length} cable${allTray.length > 1 ? 's' : ''} waiting — size the drivers from their load and forward voltage.`
+                  ? `${allTray.length} cable${allTray.length > 1 ? 's' : ''} waiting - size the drivers from their load and forward voltage.`
                   : 'Add a driver to start assigning cables.'}
               </p>
               <button className="btn btn-lg btn-primary"

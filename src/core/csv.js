@@ -2,7 +2,7 @@
 //
 // The DataJoin export format has quoted fields, embedded commas and BOM headers
 // that a hand-written split(',') mishandles, so PapaParse earns its place here.
-// Which CSVs a tool expects is the tool's business — `detectKind` stays with the
+// Which CSVs a tool expects is the tool's business - `detectKind` stays with the
 // driver tool, because only its standalone entry sniffs dropped files. The LCP
 // tool is reached from its overlay, which pushes named payloads.
 import Papa from 'papaparse';

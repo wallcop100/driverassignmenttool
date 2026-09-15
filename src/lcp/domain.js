@@ -1,7 +1,7 @@
 // The LCP tool's answers to core/domain.js.
 //
 // A module's capacity is not a wattage. It is how many of its declared terminals
-// are taken, which is a count — so the bars read "3/8 ways", not "136.8/180W".
+// are taken, which is a count - so the bars read "3/8 ways", not "136.8/180W".
 import { makeDomain } from '../core/domain.js';
 import { slotKey } from '../core/nodes.js';
 import { buildModel } from './parse.js';
@@ -44,7 +44,7 @@ export function moduleKind(typeRef) {
   return 'unknown';
 }
 
-// A module in a way that is not its kind. Reported, never prevented — the
+// A module in a way that is not its kind. Reported, never prevented - the
 // inference is a convention, not a schema fact, and fighting a drop over a guess
 // is worse than flagging one.
 export function slotFault(module, slotName) {
@@ -52,8 +52,8 @@ export function slotFault(module, slotName) {
   const got = slotKind(slotName);
   if (want === 'unknown' || !got.certain || want === got.kind) return null;
   return `${module.typeRef} reads as a ${SLOT_KINDS[want].label}, and ${slotName} is a `
-    + `${SLOT_KINDS[got.kind].label}. Slot kind is inferred from the name — nothing in the `
-    + 'schema records it — so check this rather than trust it.';
+    + `${SLOT_KINDS[got.kind].label}. Slot kind is inferred from the name - nothing in the `
+    + 'schema records it - so check this rather than trust it.';
 }
 
 // ---- control intent (page 139894) -----------------------------------------
@@ -98,7 +98,7 @@ export function controlFaults(links) {
 // and a Cresnet branch are both "a terminal", and almost nothing true of one is
 // true of the other.
 //
-//   POWER   L1/N1 on a DIN-1DIMU4 — one line and neutral, one piece of copper,
+//   POWER   L1/N1 on a DIN-1DIMU4 - one line and neutral, one piece of copper,
 //           one circuit. Everything landed on it is the same circuit, so a
 //           double termination must share its Link_ControlDetails.
 //
@@ -106,7 +106,7 @@ export function controlFaults(links) {
 //           segment that MANY devices sit on. Keypads, shade controls and
 //           anything else legitimately coexist here, and separate daisy chains
 //           landing on one branch is normal wiring, not a fault. What limits it
-//           is device count, power budget and cable length — never uniformity.
+//           is device count, power budget and cable length - never uniformity.
 //
 // The tell is the name. `L1/N1` is a line/neutral pair; `L1` on its own is a
 // link. Where it cannot be told, nothing is checked.
@@ -155,7 +155,7 @@ export function terminalKind(node, module) {
 // ---- what a bus segment actually takes ------------------------------------
 // REFERENCE ONLY. None of these is a count of cables, and a cable run landing on
 // a terminal is not a device on the segment: one run can carry a whole daisy
-// chain of keypads, and a DALI loop's 64 is CONTROL GEAR downstream — ballasts —
+// chain of keypads, and a DALI loop's 64 is CONTROL GEAR downstream - ballasts - 
 // a property of the fittings, not of the wiring at the panel.
 //
 // So these are shown beside a terminal as context and are never checked against
@@ -164,7 +164,7 @@ export function terminalKind(node, module) {
 //
 //   Cresnet  ~20 devices and 75 W (3.13 A at 24 V) per ISOLATED segment, 914 m
 //   QS       99 devices and a PDU budget per link, 610 m
-//   DALI     64 ballasts and 16 control groups per LOOP — see loopFaults
+//   DALI     64 ballasts and 16 control groups per LOOP - see loopFaults
 export const BUS_LIMITS = {
   Cresnet: { devices: 20, watts: 75, amps: 3.13, volts: 24, metres: 914,
     source: 'Crestron DIN-HUB spec sheet' },
@@ -182,8 +182,8 @@ export const BUS_LIMITS = {
 // not one per run:
 //
 //   X504505 "15.1B"   100 ends = 50 from + 50 to,  TopologyNotesText "Loop"
-//                     distinct `to` ends: 1        — the module output
-//                     distinct ends total: 51      — 50 fittings + the module
+//                     distinct `to` ends: 1 - the module output
+//                     distinct ends total: 51 - 50 fittings + the module
 //
 // So the link converges on a single module output and fans out to the fittings
 // on the loop, and its Name is the loop's identity: panel.module + output
@@ -191,7 +191,7 @@ export const BUS_LIMITS = {
 // DALI-PWR-230VAC (230 V and the DALI pair together) or DALI-DATA for data only.
 //
 // Two consequences for this tool:
-//   * a DALI module output normally carries exactly ONE link — the loop
+//   * a DALI module output normally carries exactly ONE link - the loop
 //   * the number worth checking is the fittings ON that loop, which lives in the
 //     link's ends, not in how many cables reach the panel. The host has to count
 //     it; the payload here carries one panel.
@@ -199,14 +199,14 @@ export const DALI_LOOP_TYPES = /^DALI(-|$)/i;
 
 // ---- what a DALI loop takes, per LOOP --------------------------------------
 // DJ 101269 "Intermediate Ballast Count Check" is the authority, and it counts
-// two things per Link_ControlDetails — never per terminal:
+// two things per Link_ControlDetails - never per terminal:
 //
 //   ballasts  SUM(BallastCountPerUoM x Quantity) over the DALI positions on the
 //             loop, plus the driver Elements where the position is fed by a
 //             secondary power ref. The tool is sent none of that, so it reports
 //             a ballast count only when the host supplies one.
 //   groups    COUNT(DISTINCT ControlGroupText) on the loop, EXCLUDING rows whose
-//             group name equals the loop name — a group named after its own loop
+//             group name equals the loop name - a group named after its own loop
 //             is not a separate group.
 //
 // A loop spans the whole design: several terminals, several modules, several
@@ -225,11 +225,11 @@ export function loopFaults(model) {
   for (const [loop, e] of byLoop) {
     if (e.groups.size > DALI_MAX_GROUPS) {
       out.push({ level: 'FAIL', loop,
-        message: `${loop} has ${e.groups.size} control groups — a DALI loop takes ${DALI_MAX_GROUPS} (DJ 101269).` });
+        message: `${loop} has ${e.groups.size} control groups - a DALI loop takes ${DALI_MAX_GROUPS} (DJ 101269).` });
     }
     if (e.sawBallasts && e.ballasts > BUS_LIMITS.DALI.devices) {
       out.push({ level: 'WARN', loop,
-        message: `${loop} carries ${e.ballasts} ballasts — past the ${BUS_LIMITS.DALI.devices} DALI `
+        message: `${loop} carries ${e.ballasts} ballasts - past the ${BUS_LIMITS.DALI.devices} DALI `
           + 'addresses (0-63). Counted from what the host sent; DJ 101269 is the authority.' });
     }
   }
@@ -237,8 +237,8 @@ export function loopFaults(model) {
 }
 
 // ---- a power output is one circuit ----------------------------------------
-// Only for POWER terminals. Two cables may share a dimmer channel — a normal
-// double termination — but only if they are the same circuit, because they are
+// Only for POWER terminals. Two cables may share a dimmer channel - a normal
+// double termination - but only if they are the same circuit, because they are
 // on the same copper and will always dim together whatever the programming says.
 //
 // This is NOT applied to a bus: keypads, shade controls and separate daisy
@@ -261,7 +261,7 @@ export function terminalLoopFaults(model, assignments) {
       out.push({
         level: 'FAIL', driver: ref, node,
         message: `${node} carries ${loops.size} circuits (${[...loops].join(', ')}). `
-          + 'A dimmer channel is one line and neutral, so everything on it switches together — '
+          + 'A dimmer channel is one line and neutral, so everything on it switches together - '
           + 'a double termination has to share its Link_ControlDetails.',
       });
     }
@@ -272,7 +272,7 @@ export function terminalLoopFaults(model, assignments) {
 // ---- output limits ---------------------------------------------------------
 // A phase module can be inside every one of its four channel limits and still be
 // over its shared module total. Both are checked, the way a driver's node cap and
-// driver total already are. Power terminals only — a bus carries no load.
+// driver total already are. Power terminals only - a bus carries no load.
 export function outputFaults(model, assignments) {
   const byRef = new Map((model?.links ?? []).map((l) => [l.ref, l]));
   const watts = (refs) => (refs ?? []).reduce((n, r) => n + (byRef.get(r)?.loadW ?? 0), 0);
@@ -280,7 +280,7 @@ export function outputFaults(model, assignments) {
   for (const mod of model?.drivers ?? []) {
     const spec = matchModule(mod.typeRef, mod.name);
     if (!spec) continue;
-    (mod.nodes ?? []).forEach((node, i) => {
+    outputsOf(mod).forEach((node, i) => {
       if (terminalKind(node, mod).kind !== 'power') return;
       const w = watts(assignments?.[`${mod.ref}|${node.name}`]?.refs);
       if (!w) return;
@@ -289,15 +289,44 @@ export function outputFaults(model, assignments) {
       // whichever the maker actually states, and say which it was.
       if (lim.w != null && w > lim.w) {
         out.push({ level: 'FAIL', driver: mod.ref, node: node.name,
-          message: `${node.name} carries ${w}W — ${spec.make} ${spec.model} channel ${i + 1} takes ${lim.w}W of LED (${lim.a}A).` });
+          message: `${node.name} carries ${w}W - ${spec.make} ${spec.model} channel ${i + 1} takes ${lim.w}W of LED (${lim.a}A).` });
       } else if (lim.w == null && lim.a != null && w / MAINS_V > lim.a) {
         out.push({ level: 'FAIL', driver: mod.ref, node: node.name,
-          message: `${node.name} carries ${w}W (${(w / MAINS_V).toFixed(1)}A) — `
+          message: `${node.name} carries ${w}W (${(w / MAINS_V).toFixed(1)}A) - `
             + `${spec.make} ${spec.model} channel ${i + 1} takes ${lim.a}A.` });
       }
     });
   }
   return out;
+}
+
+// ---- outputs, not terminals ----------------------------------------------
+// A module declares every terminal it has, and not all of them are outputs. A
+// Crestron DIN-1DIMU4 is {<L1/N1,<L2/N2,<L3/N3,<L4/N4,>NET}: four dimmed outputs
+// and the Cresnet connection it hangs off. Counting all five called a 4-channel
+// phase module a 5-way one. The upstream side is the network, link, host, power
+// or mains terminal, or anything marked '>' (in).
+const UPSTREAM_RE = /^(NET|NETHOST|NETPWR\w*|NET\.MASTER|CRESNET|LINK|QS|QSLINK\d*|ETH\w*|LAN|PWR\d*|\d+V)$/i;
+export const isUpstream = (node) => node?.dir === '>' || UPSTREAM_RE.test(String(node?.name ?? '').trim());
+
+// The outputs of a module, in its own order. A module with nothing but upstream
+// terminals (a processor) keeps all of them, so it still reads as something.
+export function outputsOf(mod) {
+  const nodes = mod?.nodes ?? [];
+  const outs = nodes.filter((n) => !isUpstream(n));
+  return outs.length ? outs : nodes;
+}
+
+// Ballasts on the loops landed at one terminal. The host sends the LOOP's total
+// on every cable row of that loop, so it is taken once per loop, never summed
+// per cable: two cables on the same loop are the same 54 ballasts, not 108.
+export function terminalBallasts(links) {
+  const perLoop = new Map();
+  for (const l of links ?? []) {
+    if (l?.ballasts == null) continue;
+    perLoop.set(l.loop ?? l.ref, Number(l.ballasts) || 0);
+  }
+  return perLoop.size ? [...perLoop.values()].reduce((a, b) => a + b, 0) : null;
 }
 
 export const lcp = makeDomain({
@@ -309,19 +338,21 @@ export const lcp = makeDomain({
   // Ways taken against ways declared. A module whose type has no terminal recipe
   // has no capacity to check, which is a sentence rather than an empty bar.
   capacities: (mod, { assignments, links } = {}) => {
-    // terminals OCCUPIED, not cables landed. On a power module the two coincide;
-    // on a bus they do not — three runs on two DALI loops is two ways used, not
-    // three, and counting cables made a full module read as overflowing.
-    const used = (mod.nodes ?? []).filter(
+    // outputs OCCUPIED, not cables landed and not every terminal declared: three
+    // runs on two DALI loops is two outputs used, and a phase module's NET is not
+    // one of its four outputs.
+    const outs = outputsOf(mod);
+    const used = outs.filter(
       (node) => (assignments?.[`${mod.ref}|${node.name}`]?.refs?.length ?? 0) > 0).length;
     const spec = matchModule(mod.typeRef, mod.name);
     const bars = [{
-      label: 'terminals',
+      label: 'outputs',
       used,
-      cap: mod.nodes?.length ? mod.nodes.length : null,
-      unit: ' ways',
-      title: mod.nodes?.length
-        ? `${mod.nodes.length} terminals declared on ${mod.typeRef}`
+      cap: outs.length ? outs.length : null,
+      unit: '',
+      title: outs.length
+        ? `${outs.length} outputs on ${mod.typeRef}${outs.length < (mod.nodes?.length ?? 0)
+          ? ` (${mod.nodes.length - outs.length} network or power terminal${mod.nodes.length - outs.length === 1 ? '' : 's'} not counted)` : ''}`
         : `${mod.typeRef} declares no terminal recipe, so nothing can land on it`,
     }];
     // A phase module's four zones SHARE one 10 A module total. Being inside
@@ -334,7 +365,7 @@ export const lcp = makeDomain({
       const amps = all.reduce((n, r) => n + ((at(r)?.loadW ?? 0) / MAINS_V), 0);
       bars.push({
         label: 'module total', used: +amps.toFixed(2), cap: spec.totalA, unit: 'A',
-        title: `${spec.model} — the zones share one ${spec.totalA}A module total`,
+        title: `${spec.model} - the zones share one ${spec.totalA}A module total`,
       });
     }
     return bars;
@@ -342,24 +373,26 @@ export const lcp = makeDomain({
 
   // One cable per terminal is the normal case, so the per-terminal bar is a
   // count too and anything above one is worth seeing.
-  slotCapacities: (mod, node, { count = 0, watts = 0, index = 0, devices = null } = {}) => {
+  slotCapacities: (mod, node, { count = 0, watts = 0, links = [] } = {}) => {
     const t = terminalKind(node, mod);
-    // A bus is not "one cable per terminal" — many devices share it, so the bar
+    // A bus is not "one cable per terminal" - many devices share it, so the bar
     // is the segment's device allowance, not a 1.
     if (t.kind === 'bus') {
       const lim = BUS_LIMITS[t.bus] ?? {};
-      // A DALI loop's fitting count is a real gauge against 64 — but only the
+      // A DALI loop's fitting count is a real gauge against 64 - but only the
       // host can count it, because the loop's ends run across the whole design
       // and this tool is sent one panel.
-      if (t.bus === 'DALI' && devices != null) {
+      const ballasts = t.bus === 'DALI' ? terminalBallasts(links) : null;
+      if (ballasts != null) {
+        const devices = ballasts;
         return [{ label: null, used: devices, cap: lim.devices, unit: ' ballasts',
           title: `${devices} ballasts on this loop. 64 is the DALI address limit `
-            + '(0-63), not a house rule — DJ 101269 reports the count without a threshold.' }];
+            + '(0-63), not a house rule - DJ 101269 reports the count without a threshold.' }];
       }
       // No cap: a run is not a device, and a DALI loop's 64 is ballasts
       // downstream. The segment's allowance is context, not a bar to fill.
       return [{ label: null, used: count, cap: null, unit: count === 1 ? ' run' : ' runs',
-        title: `${t.bus} — ${t.bus === 'DALI'
+        title: `${t.bus} - ${t.bus === 'DALI'
           ? `${lim.devices} ballasts and ${lim.groups} control groups per loop`
           : `${lim.devices} devices per segment`} (${lim.source}). `
           + 'Runs landing here are a different quantity.' }];
@@ -367,6 +400,8 @@ export const lcp = makeDomain({
     const bars = [{ label: null, used: count, cap: 1, unit: '',
       title: `${node.name}${node.detail ? ` (${node.detail})` : ''}` }];
     const spec = matchModule(mod.typeRef, mod.name);
+    // the limit is per output INDEX among the outputs, not among every terminal
+    const index = Math.max(0, outputsOf(mod).findIndex((n) => n.name === node.name));
     const lim = outputLimit(spec, index);
     // zone 1 is not zone 2: the limit is per output INDEX, not per module
     if (lim.w != null) {
@@ -394,7 +429,7 @@ export const lcp = makeDomain({
   binLayout: 'column',
 
   // Link_ControlDetails, not ControlGroup. A panel terminal is a circuit or a
-  // bus segment, and both are defined by the loop — the ControlGroup says
+  // bus segment, and both are defined by the loop - the ControlGroup says
   // nothing about what may share a piece of copper.
   groupOf: (link) => link?.loop ?? null,
   groupLabel: 'Link_ControlDetails',
@@ -417,6 +452,8 @@ export const lcp = makeDomain({
   // the same fact twice. A terminal detail (DL1) is worth showing instead.
   slotSummary: (mod, node) => node.detail ?? null,
   setupNotice: () => false,
+  // a panel's modules are arranged into its ways, which is its layout
+  spaceLayout: true,
 
   slotsOf: (type) => (type?.nodes ?? []).map((n) => n.name),
 

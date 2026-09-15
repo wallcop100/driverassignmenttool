@@ -28,16 +28,13 @@ test('the driver total is one bar, and no MaxPower means no bar to draw', () => 
   assert.equal(none.cap, null, 'a null cap is a sentence, not an empty bar');
 });
 
-test('an output with no NodeMaxPower falls back to the driver total', () => {
-  // most types state only a forward voltage; without the fallback an output
-  // showed an fV bar and nothing at all for watts
-  const node = { name: 'OP.1', maxFvV: 48 };
-  const caps = drivers.slotCapacities(D(), node, { watts: 90, fv: 12 });
-  assert.deepEqual(caps.map((c) => c.unit), ['W', 'fV']);
-  assert.equal(caps[0].cap, 180, 'the driver total binds');
-  assert.match(caps[0].title, /shared across all 2 outputs/);
+test('a watt bar sits on the output only when the output has its own maximum', () => {
+  // no NodeMaxPower(W): the driver total is the only limit and it already has a
+  // bar on the driver, so the output shows forward voltage and no watts bar
+  const shared = drivers.slotCapacities(D(), { name: 'OP.1', maxFvV: 48 }, { watts: 90, fv: 12 });
+  assert.deepEqual(shared.map((c) => c.unit), ['fV']);
 
-  // and its own cap wins when the type states one
+  // its own cap: the bar is on the output
   const own = drivers.slotCapacities(D(), { name: 'OP.1', maxLoadW: 60 }, {});
   assert.equal(own[0].cap, 60);
   assert.match(own[0].title, /NodeMaxPower\(W\) for OP\.1/);
@@ -57,9 +54,9 @@ test('a bigger driver is drawn bigger, and an undetermined one is not', () => {
   assert.ok(drivers.widthOf(D({ maxPowerW: 9999 })) <= 560, 'and never off the screen');
 });
 
-test('only a subject with a physical space offers the space layout', async () => {
+test('a hub and a panel each offer their own layout; the neutral contract offers none', async () => {
   const { default: lcp } = await import('../../src/lcp/domain.js');
   assert.equal(NEUTRAL.spaceLayout, false, 'off unless a tool says otherwise');
   assert.equal(drivers.spaceLayout, true, 'a PSU hub is a space to lay out');
-  assert.equal(lcp.spaceLayout, false, 'a panel\'s arrangement is its ways, already on screen');
+  assert.equal(lcp.spaceLayout, true, 'a panel\'s modules are arranged into its ways');
 });

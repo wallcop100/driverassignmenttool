@@ -168,7 +168,7 @@ test('detectKind identifies each file by header', { skip: !hasSamples && 'sample
 });
 
 test('backwards compatible: extra columns ok, only signature required', () => {
-  // future columns present, plus only essential form columns — must still parse
+  // future columns present, plus only essential form columns - must still parse
   const form = 'ElementRef,Node,ToEntityRefs,FutureCol\r\n"E1","OP.1","","x"\r\n';
   const links = 'LinkRef,PullZone,Whatever\r\n"X1","Z","y"\r\n';
   const m = engine.buildModel(form, links);
@@ -180,7 +180,7 @@ test('backwards compatible: extra columns ok, only signature required', () => {
 test('CC cable without current data produces no CurrentMatch warning', { skip: !hasSamples && 'sample-data absent' }, () => {
   const m = load();
   const a = clone(m.baseline);
-  // E50019 is a CC driver; the sample CC links carry no current — expect no CurrentMatch flag
+  // E50019 is a CC driver; the sample CC links carry no current - expect no CurrentMatch flag
   const flags = engine.validate(m, a, []).filter((f) => f.check === 'CurrentMatch' && f.driver === 'E50019');
   assert.deepEqual(flags, []);
 });
@@ -202,7 +202,7 @@ test('distributeGroup spreads capacity-aware and reports overflow', { skip: !has
     assert.ok(fv <= 55, `node ${key} fV ${fv}`);
   }
   assert.ok(placed.reduce((s, r) => s + (linkOf(r).loadW ?? 0), 0) <= 50);
-  // capacity genuinely binds here (35fV cables, 55fV nodes) — some placed, some overflow
+  // capacity genuinely binds here (35fV cables, 55fV nodes) - some placed, some overflow
   assert.ok(placed.length > 0 && unplaced.length > 0, `placed ${placed.length}, unplaced ${unplaced.length}`);
 });
 
@@ -267,7 +267,7 @@ test('several hubs merge into one script with one main()', () => {
 
 test('parseDriverRestrictions tolerates spacing and case around the separator', () => {
   // A whitespace difference used to yield powerType:null, which reads as
-  // "type undeclared" and makes the driver match nothing in the inventory —
+  // "type undeclared" and makes the driver match nothing in the inventory - 
   // surfacing as "N x CV-24V nowhere to go / no matching driver type".
   for (const v of ['180W | 24V', '180W|24V', '180W  |  24V', '180W | 24v', '180W | 24 V', '180 W | 24V']) {
     const r = engine.parseDriverRestrictions(v);
@@ -382,7 +382,7 @@ test('links-only model: no drivers, library is the inventory, export still works
   assert.equal(engine.validate(m, a, added).filter((f) => f.level === 'FAIL').length, 0);
 });
 
-test('an empty form CSV is the same as none — the overlay sends a blank block', () => {
+test('an empty form CSV is the same as none - the overlay sends a blank block', () => {
   const m = engine.buildModel('', GF_HEAD + gfLinks(2) + '\n', GF_TYPES);
   assert.deepEqual(m.drivers, []);
   assert.deepEqual(m.inventory.map((t) => t.typeRef), ['T100']);
@@ -406,7 +406,7 @@ test('planDrivers sizes from load, and the margin costs a driver', () => {
 });
 
 test('planDrivers sizes from forward voltage when fV is the binding limit', () => {
-  // 4 × 5W cables (20W — one driver on load alone) but 30fV each against a 55fV
+  // 4 × 5W cables (20W - one driver on load alone) but 30fV each against a 55fV
   // node: only one fits per node, so it takes two 2CH drivers.
   const body = [...Array(4)].map((_, i) => `L${i + 1},HUB-G,5,0.35,30,CC,CG1`).join('\n');
   const p = engine.planDrivers(gfModel(body), {}, [], 'HUB-G', { margin: 0.05 });
@@ -500,7 +500,7 @@ test('reordering a row back to its baseline set is not a change', () => {
 test('a type that declares nothing is not a sizing candidate', () => {
   // "185W" alone: no CC/CV, no current, no node fV. It passes every
   // compatibility test by default and its blank limits read as infinite, so it
-  // used to win every bucket — the biggest driver with no fV ceiling.
+  // used to win every bucket - the biggest driver with no fV ceiling.
   const lib = `${GF_TYPES}TBIG,185W,,1\n`;
   const m = engine.buildModel(null, GF_HEAD + gfLinks(5) + '\n', lib);
   const p = engine.planDrivers(m, {}, [], 'HUB-G');
@@ -521,7 +521,7 @@ test('an emergency type loses a tie to an ordinary one', () => {
 });
 
 test('forward voltage alone can drive the count on real-shaped ratings', () => {
-  // 5 × 11.8W/35fV cables: 59W fits one 50W... no — but fV is the tighter one,
+  // 5 × 11.8W/35fV cables: 59W fits one 50W... no - but fV is the tighter one,
   // 55fV a node means one cable per node, so it takes three 2CH drivers.
   const lib = 'ElementTypeRef,Driver Restrictions,Node Restrictions,Channels\nT-CC,50W | 0.3A,55fV,2\n';
   const body = [...Array(5)].map((_, i) => `L${i + 1},HUB-G,11.8,0.3,35,CC,CG1`).join('\n');
@@ -621,7 +621,7 @@ test('presets nobody uses are not patched, and no presets means the old script e
   assert.equal(engine.generatePatchScript(m, {}, [], []), engine.generatePatchScript(m, {}, []));
 });
 
-test('a preset keeps the type\'s own node names — Parameters must not rename outputs', () => {
+test('a preset keeps the type\'s own node names - Parameters must not rename outputs', () => {
   const lib = 'ElementTypeRef,Node,Driver Restrictions,Node Restrictions\n'
     + 'T-ODD,A,50W | 0.35A,55fV\nT-ODD,B,50W | 0.35A,55fV\n';
   const m = engine.buildModel(null, GF_HEAD + gfLinks(2) + '\n', lib,
@@ -695,7 +695,7 @@ test('nextTypeRef honours a stock stem', () => {
   );
 });
 
-test('mA notation parses as amps — a unit variation is not missing data', () => {
+test('mA notation parses as amps - a unit variation is not missing data', () => {
   for (const raw of ['50W | 350mA', '50W|350 mA', '50W | 350MA']) {
     assert.deepEqual(engine.parseDriverRestrictions(raw),
       { powerType: 'CC', maxPowerW: 50, currentA: 0.35, outputVoltageV: null }, raw);
@@ -750,7 +750,7 @@ test('an assessment row is a quantity of fittings, not a cable', () => {
 
 test('the count is fV per output, as page 135910 teaches it', () => {
   // 55fV a node at 12V a fitting is 4 per output, 8 on a 2-output driver,
-  // so 40 fittings need 5 drivers — whatever the wattage says.
+  // so 40 fittings need 5 drivers - whatever the wattage says.
   const m = engine.buildEstimate(ASSESS_HEAD + DL40, EST_TYPES);
   const [z] = engine.estimate(m, { margin: 0 });
   assert.equal(z.lines.length, 1);
@@ -760,7 +760,7 @@ test('the count is fV per output, as page 135910 teaches it', () => {
   assert.equal(z.lines[0].limit, 'fV');
   assert.equal(z.drivers, 5);
 
-  // 5% margin takes a node to 52.25fV, still 4 fittings — the count holds
+  // 5% margin takes a node to 52.25fV, still 4 fittings - the count holds
   assert.equal(engine.estimate(m, { margin: 0.05 })[0].lines[0].count, 5);
   // 20% takes it to 44fV, so 3 per output and 7 drivers
   const tight = engine.estimate(m, { margin: 0.2 })[0].lines[0];
@@ -859,7 +859,7 @@ test('a type library may state the ElementTypes columns instead of the composed 
   assert.equal(a.controlType, 'DALI');
 
   // the composed form is order-dependent and loses the rating to a driver-level
-  // fV — which is exactly why the explicit columns are preferred
+  // fV - which is exactly why the explicit columns are preferred
   const bad = engine.parseTypes('ElementTypeRef,Driver Restrictions,Channels\nET-X,50W | 55fV | 0.35A,2\n')[0];
   assert.equal(bad.powerType, null);
   assert.equal(bad.maxPowerW, 50);
@@ -874,7 +874,7 @@ test('the estimate ranks types by ITS count, not by watts', () => {
   // Two 35fV fittings on a 55fV node need two outputs: 35 + 35 is 70, over the
   // node. So a 2CH part holds the pair on one driver and a 1CH part of the same
   // wattage needs two. Ranking on watts prefers the 1CH (less wasted capacity)
-  // and doubles the estimate — real data at P50446 went 12 drivers instead of 7.
+  // and doubles the estimate - real data at P50446 went 12 drivers instead of 7.
   const types = 'ElementTypeRef,ElementTypeName,MaxPower(W),CurrentRange,NodeMaxForwardVoltage(fV),Channels\n'
     + 'ET-1CH,SoloDrive,30,0.3,55,1\n'
     + 'ET-2CH,DualDrive,50,0.3,55,2\n';
@@ -935,7 +935,7 @@ test('preferring a single output never reaches for an emergency driver', () => {
 });
 
 test('a preset on an existing type keeps what the DesignDB said', () => {
-  // The library states 185W and nothing else — the type the audit found. A
+  // The library states 185W and nothing else - the type the audit found. A
   // preset supplies the real ratings, and both have to survive: sizing needs
   // the preset, and the page must be able to show the design's own numbers
   // rather than quietly showing ours in their place.
@@ -970,7 +970,7 @@ test('an invented type has no DesignDB side', () => {
 
 test('the DesignDB snapshot is taken before a preset rewrites the drivers', () => {
   // buildInventory reads the ratings back off the driver rows, so a snapshot
-  // taken after applyPresets would record our numbers as the design's — the
+  // taken after applyPresets would record our numbers as the design's - the
   // exact confusion the split exists to prevent.
   const form = 'Pullzone,ElementRef,ElementTypeRef,Driver Restrictions,Node,ToEntityType,ToEntityRefs\n'
     + 'HUB-G,E1,ET-BIG,185W,OP.1,,\n';
@@ -1025,7 +1025,7 @@ test('Elements.ContextRef takes the hub Position Ref, not its label', () => {
   assert.match(withCtx, /"contextRef":"P8110"/);
   assert.ok(!withCtx.includes('CHECK ContextRef'));
 
-  // Standalone, only the label was ever known — say so rather than pretend.
+  // Standalone, only the label was ever known - say so rather than pretend.
   const without = engine.generatePatchScript(m, a, added, []);
   assert.match(without, /"contextRef":"CSB"/);
   assert.match(without, /CHECK ContextRef: CSB is the hub label, not its Position Ref/);
@@ -1080,7 +1080,7 @@ test('an OMIT cascades into LinksMap, sparing the cables this patch moves', () =
     addedDrivers: [], presets: [], deletedDrivers: ['E1'],
     context: { hubRef: 'P3238', hubLabel: 'HUB-G' },
   }]);
-  // the Element goes, and so does anything still pointing at it — which is how a
+  // the Element goes, and so does anything still pointing at it - which is how a
   // driver's mains feed and control link get cleaned up, since this tool never
   // sees them
   assert.match(script, /col_X_ToLinkEndContextRef\]\) === ref/);
@@ -1147,7 +1147,7 @@ test('the patch creates the V4.6 columns a pre-4.6 workbook has not got', () => 
 });
 
 test('a DT8 tuneable white driver is one node carrying two channels', () => {
-  // {<OP.1-2}, not {<OP.1,<OP.2} — two channels driving one strip, one address.
+  // {<OP.1-2}, not {<OP.1,<OP.2} - two channels driving one strip, one address.
   // A hyphen, never a colon: ':' is spoken for elsewhere in Parameters syntax.
   const spec = engine.resolveSpec('EldoLED LIN-200D-D2Z2C2 & Meanwell HLG-185-24');
   assert.equal(spec.name, 'EldoLED LinearDrive 200D-D2Z2C + Meanwell HLG-185-24');
@@ -1218,7 +1218,7 @@ test('the mA in a CC ref is found wherever the project puts it', () => {
 });
 
 test('control gear is not a driver type, however the host sends it', () => {
-  // the library filter lets a Crestron DIN module through — it has '<' nodes —
+  // the library filter lets a Crestron DIN module through - it has '<' nodes - 
   // but its nodes are DALI B 1 / CRESNET, not LED outputs
   const types = 'ElementTypeRef,Node,Driver Restrictions,ElementTypeName\n'
     + 'ET-CCR-D-1CH-500-01,OP.01,,EldoLED - SoloDrive 360/A\n'
@@ -1262,7 +1262,7 @@ test('a ref and a name that disagree about the current are asked about, not gues
 
 test('a driver type with no Parameters at all is still a driver to fill in', () => {
   // branch 10568: every driver type has an empty Parameters column, which is
-  // exactly what onboarding exists to fix — so they must not be filtered out
+  // exactly what onboarding exists to fix - so they must not be filtered out
   const types = 'ElementTypeRef,ElementTypeName,Channels\n'
     + 'ET-CVR-D-24-2CH-01,"EldoLED - LinDrive 220D & Meanwell - HLG-185-24",1\n';
   const m = engine.buildModel(null, GF_HEAD + gfLinks(1) + '\n', types);

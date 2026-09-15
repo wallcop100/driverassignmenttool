@@ -1,8 +1,8 @@
 import { canFill, canReplace, currentOptions, fixPreset, fmt, ratingsOf } from '../typeFaults.js';
 
 // What is wrong with a type, at a size you can read. This was a title="" tooltip,
-// which meant the full sentence — the one that says whether the datasheet match
-// might itself be wrong — appeared for as long as the mouse stayed still and
+// which meant the full sentence - the one that says whether the datasheet match
+// might itself be wrong - appeared for as long as the mouse stayed still and
 // could not be read at your own pace, let alone acted on.
 //
 // The remedies live here too. A warning you can only look at is a nag; the fix
@@ -17,7 +17,7 @@ export default function FaultDialog({ t, spec, faults, onClose, onFix }) {
       <div className="fd-dialog" role="dialog" aria-label="What to check">
         <div className="fd-head">
           <span className="fd-ref">{t.typeRef}</span>
-          <span className="fd-name">{t.name || '—'}</span>
+          <span className="fd-name">{t.name || '-'}</span>
           <button className="btn btn-sm btn-link ms-auto p-0" onClick={onClose}>close</button>
         </div>
 
@@ -51,7 +51,7 @@ export default function FaultDialog({ t, spec, faults, onClose, onFix }) {
               Use the spec page ({fmt(spec.maxPowerW)}W)
             </button>
           )}
-          {/* ref and name disagree about the current — pick one; the Name is
+          {/* ref and name disagree about the current - pick one; the Name is
               corrected to match and the Ref is left alone */}
           {onFix && opts.length > 1 && opts.map((o) => (
             <button key={o.from} className="btn btn-sm btn-outline-secondary"

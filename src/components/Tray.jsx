@@ -50,7 +50,7 @@ export default function Tray({ trayLinks, provisionLinks, state, dispatch, focus
   });
 
   const byGroup = {};
-  for (const l of shown) (byGroup[domain.groupOf(l) || '—'] ??= []).push(l);
+  for (const l of shown) (byGroup[domain.groupOf(l) || '-'] ??= []).push(l);
   const blocks = (links) => links.map((l) => (
     <Block key={l.ref} link={l} dispatch={dispatch} groups={groups} selected={state.selectedLinks.includes(l.ref)} />
   ));
@@ -95,14 +95,14 @@ export default function Tray({ trayLinks, provisionLinks, state, dispatch, focus
       {focusActive && (
         <div className="mode-banner" onClick={(e) => e.stopPropagation()}>
           <span className="material-icons small-icon align-middle">filter_alt</span>
-          Filling node — only links that fit.
+          Filling node - only links that fit.
           <button className="btn btn-link btn-sm p-0 ms-1" onClick={() => dispatch({ type: 'FOCUS_NODE', key: null })}>exit</button>
         </div>
       )}
       {state.distributeGroup && (
         <div className="mode-banner" onClick={(e) => e.stopPropagation()}>
           <span className="material-icons small-icon align-middle">call_split</span>
-          Distributing <b className="mx-1">{state.distributeGroup}</b> — click nodes to mark ({state.distributeNodes.length} marked).
+          Distributing <b className="mx-1">{state.distributeGroup}</b> - click nodes to mark ({state.distributeNodes.length} marked).
           <button className="btn btn-primary btn-sm py-0 ms-2" disabled={!state.distributeNodes.length}
             onClick={onConfirmDistribute}>Confirm</button>
           <button className="btn btn-link btn-sm p-0 ms-1"
@@ -115,7 +115,7 @@ export default function Tray({ trayLinks, provisionLinks, state, dispatch, focus
       {Object.entries(byGroup).sort().map(([name, gl]) => {
         const isOpen = !collapsed.has(name);
         const { w, t } = groupSummary(gl);
-        const color = cgColor(name === '—' ? null : name, groups);
+        const color = cgColor(name === '-' ? null : name, groups);
         return (
           <div key={name} className={`tg ${state.distributeGroup === name ? 'is-selected' : ''}`}
             onClick={(e) => e.stopPropagation()}>

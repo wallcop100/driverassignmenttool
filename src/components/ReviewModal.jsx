@@ -24,7 +24,7 @@ export default function ReviewModal({ state, dispatch, onClose }) {
 
   // Drivers this session invented. They are appended to Elements under one
   // literal placeholder Ref, so every one of them needs a real Ref writing in
-  // before the workbook is committed — which is a thing to say here, once, not
+  // before the workbook is committed - which is a thing to say here, once, not
   // a flag to stamp on each row.
   const added = state.addedDrivers ?? [];
   const deleted = (state.deletedDrivers ?? [])
@@ -48,7 +48,7 @@ export default function ReviewModal({ state, dispatch, onClose }) {
     }
   };
 
-  // copy/paste, not a download — the script is pasted straight into the
+  // copy/paste, not a download - the script is pasted straight into the
   // Office Scripts / ExcelScript code editor, no file to save or import.
   // (embedded, api.copyPatch hands it to the host instead; the clipboard is
   // not reliably ours inside an iframe)
@@ -102,7 +102,7 @@ export default function ReviewModal({ state, dispatch, onClose }) {
                         <td className="fw-semibold rv-ref">{t.typeRef}</td>
                         <td className="text-secondary">
                           {t.invented
-                            ? 'new type — the patch adds the row'
+                            ? 'new type - the patch adds the row'
                             : 'the patch overwrites the ratings on this row'}
                           {t.drivers > 0 && ` · used by ${t.drivers} driver${t.drivers > 1 ? 's' : ''} here`}
                         </td>
@@ -246,7 +246,7 @@ export default function ReviewModal({ state, dispatch, onClose }) {
           </div>
           <div className="modal-footer">
             <button className="btn btn-outline-secondary" onClick={onClose}>Close</button>
-            {/* Embedded, the patch is the only output — the CSV round-trip needs
+            {/* Embedded, the patch is the only output - the CSV round-trip needs
                 a file the host cannot ingest in this format. */}
             {embedded && otherHubs > 0 && (
               <button className="btn btn-outline-primary" onClick={doPatchAll}
@@ -257,7 +257,7 @@ export default function ReviewModal({ state, dispatch, onClose }) {
             )}
             <button className={`btn ${embedded ? 'btn-primary' : 'btn-outline-secondary'}`}
               onClick={doPatch} disabled={!rows.length && !provisional.length}
-              title="Copy an ExcelScript patch for LinksMap.FromLinkEndContext* (changed rows only) — paste it into the Office Scripts code editor">
+              title="Copy an ExcelScript patch for LinksMap.FromLinkEndContext* (changed rows only) - paste it into the Office Scripts code editor">
               <span className="material-icons small-icon align-middle">{patchCopied ? 'check' : 'content_copy'}</span>
               {patchCopied ? 'Copied!' : embedded ? 'Patch this hub' : 'Copy Patch Script'}
             </button>

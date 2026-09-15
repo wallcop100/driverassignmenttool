@@ -1,4 +1,4 @@
-// The LCP tool's entry. Same App, same core, a different subject — the domain
+// The LCP tool's entry. Same App, same core, a different subject - the domain
 // pack and the message/storage prefixes are the whole difference.
 import 'bootstrap/dist/css/bootstrap.min.css';
 import 'material-icons/iconfont/material-icons.css';

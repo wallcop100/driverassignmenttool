@@ -6,7 +6,7 @@
 // its four zone limits and still be over its 10 A module total.
 //
 // The per-zone figures are NOT uniform. On the LQSE-4A5-230-D, zone 1 takes
-// nearly twice what zones 2-4 take — so a limit is per zone INDEX, not per
+// nearly twice what zones 2-4 take - so a limit is per zone INDEX, not per
 // module. Getting that wrong passes an overload on zone 2.
 //
 // Load type matters too: the same zone is 250 W of LED or 800 W of
@@ -25,7 +25,7 @@ export const MODULES = [
     make: 'Lutron', model: 'LQSE-4A5-230-D',
     name: 'PRO LED+ phase adaptive, 4 zone',
     re: /4a5|lqse-4a/i, kind: 'phase', outputs: 4,
-    // zone 1 first, then 2-4 — the per-zone figures are NOT uniform
+    // zone 1 first, then 2-4 - the per-zone figures are NOT uniform
     perOutputA: [1.7, 1.0, 1.0, 1.0],
     perOutputW: [400, 250, 250, 250],
     perOutputWResistive: [1200, 800, 800, 800],
@@ -72,7 +72,7 @@ export const MODULES = [
   {
     make: 'Crestron', model: 'DIN-2MC2', name: 'DIN rail motor control, 2 channel',
     re: /2mc2/i, kind: 'motor', outputs: 2,
-    // rated by motor size (1/2 HP), not by a channel current — nothing claimed
+    // rated by motor size (1/2 HP), not by a channel current - nothing claimed
     perOutputA: null, perOutputW: null, totalA: null, source: null,
   },
   {
@@ -82,7 +82,7 @@ export const MODULES = [
   },
 ];
 
-// Who made it. Only the Name carries this — the ref says what the module DOES.
+// Who made it. Only the Name carries this - the ref says what the module DOES.
 const MAKES = [[/lutron/i, 'Lutron'], [/crestron/i, 'Crestron']];
 export const makerOf = (typeRef, name) => {
   const hay = `${name ?? ''} ${typeRef ?? ''}`;
@@ -90,7 +90,7 @@ export const makerOf = (typeRef, name) => {
 };
 
 // 1 DIN module is 17.5mm (page 139763). Lutron quote their 12-module case as
-// 216mm, i.e. 18mm each — the difference is the case, not the pitch.
+// 216mm, i.e. 18mm each - the difference is the case, not the pitch.
 export const DIN_MM = 17.5;
 
 // A module is only matched within its own manufacturer. An unknown maker gets

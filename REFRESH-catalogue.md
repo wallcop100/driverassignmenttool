@@ -23,11 +23,11 @@ Mapping into the catalogue:
 | Spec page | Catalogue | DesignDB column |
 |---|---|---|
 | Wattage | `maxPowerW` | `MaxPower(W)` |
-| Voltage (CC) — **top of the range** | `maxFvV` | `NodeMaxForwardVoltage(fV)` |
+| Voltage (CC) - **top of the range** | `maxFvV` | `NodeMaxForwardVoltage(fV)` |
 | Voltage (CV) | `outputV` | `OutputVoltage(V)` |
 | Current | `minA` / `maxA` | `CurrentRange` picks one value in the range |
 | Outputs | `outputs` | `Parameters` `{<OP.1,…}` |
-| Addresses | `addresses` | `BallastCountPerUoM` — the `nCH` in a ref |
+| Addresses | `addresses` | `BallastCountPerUoM` - the `nCH` in a ref |
 | Protocol | `controlType` | `ControlType` |
 
 `psuLimitW` is for DC/DC drivers whose page says "may be limited to NNNW if using
@@ -41,7 +41,7 @@ Technology*, is the master. The copies agree today; nothing enforces that, so if
 they disagree, 123 wins and the difference is worth reporting.
 
 **Add aliases from the data, not from the page.** DesignDB names parts by product
-code — `SLO560S3`, `DL0560S3`, and `SL0240A3` with a zero for the letter O. Find
+code - `SLO560S3`, `DL0560S3`, and `SL0240A3` with a zero for the letter O. Find
 them with:
 
     SELECT DISTINCT Name FROM SystemSetElementTypes

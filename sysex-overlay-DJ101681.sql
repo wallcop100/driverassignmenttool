@@ -1,5 +1,5 @@
 -- SysEx Overlay - Lighting Interactive Driver Assignment --
--- V1.6 -- (live in DJ 101681 as revision 64)
+-- V1.7 -- (DJ 101681: V1.7 live as revision 68; adds Parameters to the type library)
 
 --SQL HEADER--
 DECLARE @Container_TypeRef AS varchar(max) = 'PSU.HUB';   -- comma separated list of PSU-HUB Types
@@ -75,7 +75,7 @@ DECLARE @EntityTypeFilter AS varchar(max) = @Container_TypeRef;
    dat:types protocol (EMBEDDING.md §4a). The tool joins on ElementTypeRef and
    fills Driver Restrictions / Node Restrictions from this library wherever the
    per-hub CSV leaves them blank. One row per type+node so node-level limits are
-   preserved. Sent once before dat:init — postMessage preserves order.
+   preserved. Sent once before dat:init - postMessage preserves order.
 
    Sourced from #ElementTypes, not from the drivers in use. That is what lets a
    page with NO drivers anywhere - a tender design - still have parts to size
@@ -99,7 +99,7 @@ DECLARE @EntityTypeFilter AS varchar(max) = @Container_TypeRef;
    composed string for older hosts. */
 DECLARE @TypesCsv varchar(max);
 SELECT @TypesCsv = '"ElementTypeRef","ElementTypeName","MaxPower(W)","CurrentRange","OutputVoltage(V)",'
-+ '"NodeMaxPower(W)","NodeMaxForwardVoltage(fV)","NodeCurrent","ControlType","BallastCountPerUoM","Channels"'
++ '"NodeMaxPower(W)","NodeMaxForwardVoltage(fV)","NodeCurrent","ControlType","BallastCountPerUoM","Channels","Parameters"'
 + @NL + STRING_AGG(CONVERT(varchar(max),
     '"'+REPLACE(ISNULL(t.Ref,''),'"','""')+'",'
   + '"'+REPLACE(ISNULL(t.Name,''),'"','""')+'",'
@@ -111,11 +111,15 @@ SELECT @TypesCsv = '"ElementTypeRef","ElementTypeName","MaxPower(W)","CurrentRan
   + '"'+REPLACE(ISNULL(CONVERT(varchar(max),t.NodeCurrent),''),'"','""')+'",'
   + '"'+REPLACE(ISNULL(CONVERT(varchar(max),t.ControlType),''),'"','""')+'",'
   + '"'+REPLACE(ISNULL(CONVERT(varchar(max),t.BallastCountPerUoM),''),'"','""')+'",'
-  + '"'+CONVERT(varchar(10),t.Channels)+'"'
+  + '"'+CONVERT(varchar(10),t.Channels)+'",'
+  -- The whole Parameters cell. The space layout reads the [w,h,d] a type already
+  -- states from it, so a size somebody has written into the workbook is drawn
+  -- and patched back unchanged instead of being replaced by a datasheet figure.
+  + '"'+REPLACE(ISNULL(t.Parameters,''),'"','""')+'"'
   ), @NL) WITHIN GROUP (ORDER BY t.Ref)
 FROM (SELECT Ref, Name, [MaxPower(W)], CurrentRange, [OutputVoltage(V)],
              [NodeMaxPower(W)], [NodeMaxForwardVoltage(fV)], NodeCurrent,
-             ControlType, BallastCountPerUoM,
+             ControlType, BallastCountPerUoM, Parameters,
              CASE WHEN ISNULL(Parameters,'') LIKE '%<%'
                     THEN LEN(Parameters) - LEN(REPLACE(Parameters,'<',''))
                   -- no direction markers: every comma separated entry is a node

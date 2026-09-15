@@ -1,7 +1,7 @@
 // Parameter Syntax (Kaizen page 100966), as code.
 //
-// One field carries several flavours — {nodes}, <discrete spaces>, [size] and
-// [[capacity]] — and they share the column: the live AV type ET-UNICA-8M-4K8
+// One field carries several flavours - {nodes}, <discrete spaces>, [size] and
+// [[capacity]] - and they share the column: the live AV type ET-UNICA-8M-4K8
 // holds '[,,1U]{>ETH.01,...}'. Each flavour is claimed by its brackets and the
 // rest is left exactly as it was, which is what lets a patch MERGE rather than
 // overwrite: a driver type's {<OP.1,<OP.2} has to survive a size being written
@@ -36,7 +36,7 @@ export const asMm = (n) => (n == null ? '' : `${+Number(n).toFixed(1)}mm`);
 // [[capacity]], and they share the column: ET-UNICA-8M-4K8 holds
 // '[,,1U]{>ETH.01,...}'. Each flavour is claimed by its brackets and the rest is
 // left exactly as it was, which is what lets the patch merge rather than
-// overwrite — a driver type's {<OP.1,<OP.2} has to survive a size being written
+// overwrite - a driver type's {<OP.1,<OP.2} has to survive a size being written
 // beside it.
 export function parseParams(str) {
   const s = String(str ?? '');
@@ -73,7 +73,7 @@ function triple(body) {
 
 const tripleStr = (t) => (t ?? []).slice(0, 3).map((n) => (n == null ? '' : asMm(n))).join(',');
 
-// Back to one string, size first then nodes — the order ET-UNICA-8M-4K8 uses.
+// Back to one string, size first then nodes - the order ET-UNICA-8M-4K8 uses.
 export function formatParams(p) {
   const bits = [];
   if (p.capacity) bits.push(`[[${tripleStr(p.capacity)}]]`);

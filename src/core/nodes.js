@@ -3,7 +3,7 @@
 //
 // A colon is banned in a node name. `{<OP.1:2}` was being written to mean one
 // node carrying two outputs; the correct form is `{<OP.1-2}`. The same rule
-// applies to a panel module's terminals — `{<A:B}` is as wrong as `{<OP.1:2}` —
+// applies to a panel module's terminals - `{<A:B}` is as wrong as `{<OP.1:2}` - 
 // so the rule belongs here and not beside the drivers.
 export const BANNED_NODE = /:/;
 
@@ -29,10 +29,10 @@ export function bannedNodes(model) {
 //                              <> a through node
 //
 // Direction and the bracketed detail are stripped off the NAME, because the name
-// is the key a link end is written against — `{<A(DL1)}` on the type and `{A}`
+// is the key a link end is written against - `{<A(DL1)}` on the type and `{A}`
 // on the link end are the same terminal.
 // Direction is documented as a PREFIX on page 100966, and the estate writes it
-// both ways: ET-MOD-AP4 on branch 10328 holds `{>LAN,NET<>,<24(24V Input)}` —
+// both ways: ET-MOD-AP4 on branch 10328 holds `{>LAN,NET<>,<24(24V Input)}` - 
 // LAN prefixed, NET suffixed, in the same recipe. Taking only the prefix left a
 // terminal called "NET<>" that no link end could ever match.
 const NODE_RE = /^(<>|>|<)?\s*([^()<>]*?)\s*(<>|>|<)?\s*(?:\(([^)]*)\))?$/;

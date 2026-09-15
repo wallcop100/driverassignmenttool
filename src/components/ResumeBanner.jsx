@@ -1,5 +1,5 @@
 // Offered on the import screen (standalone) and over the live zone page
-// (embedded) — a flaky iframe should never leave the user staring at a blocking
+// (embedded) - a flaky iframe should never leave the user staring at a blocking
 // prompt, so the host's fresh data loads underneath and this just sits on top.
 //
 // Dismissal is the caller's business, not local state: while an offer is

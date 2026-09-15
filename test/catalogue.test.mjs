@@ -1,5 +1,5 @@
 // Matching real ElementTypeName values. Every name below is live data from the
-// current commit of a lighting branch — including the typos, because those are
+// current commit of a lighting branch - including the typos, because those are
 // what the matcher exists to survive.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -36,7 +36,7 @@ const LIVE = [
   ['EldoLED - SoloDrive  360/A', 'EldoLED SoloDrive 360/A', 7],     // double space
   ['EldoLED - SOLODrive 360/A, set to 500mA', 'EldoLED SoloDrive 360/A', 7],
   ['EldoLED - SLO560S3 - 260mA', 'EldoLED SoloDrive 560/A', 6],
-  ['EldoLED EcoDrive 367/A', null, 6],              // a different part — no spec page for it
+  ['EldoLED EcoDrive 367/A', null, 6],              // a different part - no spec page for it
   ['EldoLED - EcoDrive 240/A', 'EldoLED EcoDrive 240/A', 1],
   ['Eldoled DUALdrive 20MA-E2Z0C', 'EldoLED DualDrive 20MA-E2Z0C', 6],
   ['EldoLED LinearDrive 220D', 'EldoLED LinearDrive 220D', 6],

@@ -3,6 +3,7 @@ import * as api from './api.js';
 import { DomainProvider } from './core/domain.js';
 import driversDomain from './drivers/domain.js';
 import HubLayoutLab from './components/HubLayoutLab.jsx';
+import PanelLayout from './lcp/PanelLayout.jsx';
 import TypesPage from './components/TypesPage.jsx';
 import EstimatePage from './components/EstimatePage.jsx';
 import ImportScreen from './components/ImportScreen.jsx';
@@ -21,7 +22,7 @@ const embedded = embed.isEmbedded();
 // Read once at module load, so nothing in the app can navigate into one.
 const lab = window.__DAT_LAB__ ?? new URLSearchParams(window.location.search).get('lab');
 
-// `domain` is the tool's own subject — which words, which capacities, which
+// `domain` is the tool's own subject - which words, which capacities, which
 // rules. It defaults to the driver pack so the standalone entry needs no change;
 // the LCP entry passes its own.
 export default function App({ domain = driversDomain }) {
@@ -33,7 +34,7 @@ export default function App({ domain = driversDomain }) {
   const [notice, setNotice] = useState(null);
   const [fatal, setFatal] = useState(null);
 
-  // Standalone keeps the ask-first banner. Embedded resumes silently — the frame
+  // Standalone keeps the ask-first banner. Embedded resumes silently - the frame
   // is flaky by nature, so coming back to your own work is the expected outcome,
   // not a question. "Reset to current set" in the toolbar is the way out.
   const resume = () => {
@@ -50,7 +51,7 @@ export default function App({ domain = driversDomain }) {
     if (!fresh.current) return;
     clearSession();
     // The hub's work goes; the set's type corrections are not this hub's to
-    // discard — other hubs are relying on them.
+    // discard - other hubs are relying on them.
     dispatch({ type: 'INIT', ...fresh.current, presets: loadTypes() });
   };
 
@@ -63,7 +64,7 @@ export default function App({ domain = driversDomain }) {
   const payload = useRef(null);            // last {form, links}, for a types rebuild
 
   // Embed mode: the host posts both CSVs in over postMessage. Announce readiness
-  // only after mount — iframe.onload fires well before React is listening.
+  // only after mount - iframe.onload fires well before React is listening.
   useEffect(() => {
     if (!embedded) return;
     const off = embed.onInit((msg, error) => {
@@ -71,14 +72,14 @@ export default function App({ domain = driversDomain }) {
       try {
         payload.current = { form: msg.form, links: msg.links, assessment: msg.assessment,
           modules: msg.modules };
-        // What the payload MEANS is the domain's business — the two tools are
+        // What the payload MEANS is the domain's business - the two tools are
         // sent different things by different overlays.
         const model = domain.parseInit(msg, types.current);
         const focus = msg.focusZone;
-        // No match is a legitimate state — a hub with no drivers yet is exactly
+        // No match is a legitimate state - a hub with no drivers yet is exactly
         // what this tool exists to fix. Land on the list with a notice instead.
         const matched = focus && model.zones.includes(focus);
-        if (focus && !matched) setNotice(`${focus} isn't in the data the host sent — showing everything it did send.`);
+        if (focus && !matched) setNotice(`${focus} isn't in the data the host sent - showing everything it did send.`);
         setSessionKey(msg.context?.branchId, msg.context?.systemSetId, msg.context?.hubRef);
         const init = {
           model,
@@ -98,19 +99,19 @@ export default function App({ domain = driversDomain }) {
         }
       } catch (e) {
         // a bad re-init when we already have working data is a notice, not a
-        // wipe — don't take the user's zone away from them
+        // wipe - don't take the user's zone away from them
         if (hasModel.current) setNotice(e.message); else setFatal(e.message);
         embed.sendError(e.message);
       }
     },
     // dat:types normally lands just before dat:init. If it arrives late the only
     // way to fold it in is to rebuild, so do that ONLY while the model is still
-    // pristine — rebuilding would otherwise discard the user's work.
+    // pristine - rebuilding would otherwise discard the user's work.
     (typesText) => {
       types.current = typesText;
       if (!hasModel.current || !payload.current) return;
       if (diffRows(stateRef.current).length) {
-        setNotice('Driver type definitions arrived after your changes — reopen this hub to apply them.');
+        setNotice('Driver type definitions arrived after your changes - reopen this hub to apply them.');
         return;
       }
       const p = payload.current;
@@ -126,7 +127,7 @@ export default function App({ domain = driversDomain }) {
   }, []);
 
   // A preset changes what the catalogue says a type is, so the model is rebuilt
-  // from the CSVs api.js kept. Assignments and added drivers are untouched —
+  // from the CSVs api.js kept. Assignments and added drivers are untouched - 
   // they key on refs, not on model identity.
   useEffect(() => {
     if (!model) return;
@@ -161,7 +162,7 @@ export default function App({ domain = driversDomain }) {
     dispatch({ type: 'SET_SUGGESTIONS', suggestions: intersectionSuggestions(selectedLinks, state.eligibility) });
   }, [selectedLinks, state.eligibility]);
 
-  // autosave the whole session (#3) — this already observes every mutation, so
+  // autosave the whole session (#3) - this already observes every mutation, so
   // it is also where the host gets told the change count (no reducer side effects).
   //
   useEffect(() => {
@@ -192,7 +193,7 @@ export default function App({ domain = driversDomain }) {
 
   let screen;
   if (!model && embedded) {
-    // A silent blank iframe is the worst failure mode — it looks identical to a
+    // A silent blank iframe is the worst failure mode - it looks identical to a
     // broken host. Always say which of the two we are.
     screen = (
       <div className="container d-flex justify-content-center align-items-center min-vh-100">
@@ -211,7 +212,9 @@ export default function App({ domain = driversDomain }) {
     // the hub page is the only place an embedded user can reach it from - and
     // from there it opens on that hub and goes back to it.
     const fromHub = state.view.page === 'layout';
-    screen = <HubLayoutLab state={state} dispatch={dispatch}
+    // a hub lays out space; a panel lays out ways
+    const Layout = domain.id === 'lcp' ? PanelLayout : HubLayoutLab;
+    screen = <Layout state={state} dispatch={dispatch}
       zone={fromHub ? state.view.zone : null}
       onBack={fromHub
         ? () => dispatch({ type: 'SET_VIEW', view: { page: 'zone', zone: state.view.zone } })

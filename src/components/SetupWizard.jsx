@@ -32,8 +32,8 @@ const stepFor = (t) => {
 
 export default function SetupWizard({ model, presets, dispatch, onClose, only }) {
   // Only the types this walk is about. From the types page that is the ones in
-  // use — a library of forty parts nobody has placed is not what you came to
-  // fill in — and the caller says so rather than the wizard guessing.
+  // use - a library of forty parts nobody has placed is not what you came to
+  // fill in - and the caller says so rather than the wizard guessing.
   const inventory = useMemo(
     () => (only ? model.inventory.filter((t) => only.has(t.typeRef)) : model.inventory),
     [model.inventory, only],
@@ -130,7 +130,7 @@ export default function SetupWizard({ model, presets, dispatch, onClose, only })
         <div className="sw-body">
           <div className="sw-head">
             <span className="tp-ref">{step.t.typeRef}</span>
-            <span className="tp-name">{step.t.name || '—'}</span>
+            <span className="tp-name">{step.t.name || '-'}</span>
             {presets[key] && <span className="tp-dot">filled in</span>}
           </div>
 
@@ -197,7 +197,7 @@ export default function SetupWizard({ model, presets, dispatch, onClose, only })
                       ].map(([col, v]) => (
                         <tr key={col} className={v == null || v === '' ? 'sw-blank' : undefined}>
                           <td className="sw-col">{col}</td>
-                          <td className="sw-val">{v == null || v === '' ? '—' : fmt(v) ?? v}</td>
+                          <td className="sw-val">{v == null || v === '' ? '-' : fmt(v) ?? v}</td>
                         </tr>
                       ))}
                     </tbody>

@@ -73,7 +73,7 @@ export default function Landing({ state, dispatch }) {
               <span className="text-secondary small flex-grow-1">
                 {+z.units.toFixed(1)} units · no cables yet
               </span>
-              <Tooltip content="No links and no drivers — sized from its Positions (DJ 100053)">
+              <Tooltip content="No links and no drivers - sized from its Positions (DJ 100053)">
                 <span className="badge badge-tray flex-shrink-0">estimate</span>
               </Tooltip>
             </button>
@@ -102,7 +102,7 @@ export default function Landing({ state, dispatch }) {
               </Tooltip>
             )}
             {z.orphans > 0 && (
-              <Tooltip content="Fingerprint clusters with no eligible node — drivers needed">
+              <Tooltip content="Fingerprint clusters with no eligible node - drivers needed">
                 <span className="badge badge-warn flex-shrink-0">{z.orphans} need</span>
               </Tooltip>
             )}

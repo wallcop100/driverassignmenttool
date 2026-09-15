@@ -31,7 +31,7 @@ test('<1> and <01> are the same slot, and <1.1> folds onto slot 1', () => {
   assert.ok(sameSlot('08', '8'));
   assert.ok(sameSlot('1.1', '1'), 'dot syntax groups');
   assert.ok(sameSlot('P.1', 'P1'), 'and a dotted power way is the same power way');
-  // sub-ways GROUP onto their way — 08a and 08b are both in way 08, which is
+  // sub-ways GROUP onto their way - 08a and 08b are both in way 08, which is
   // 101676's "several modules in one position, laid side by side"
   assert.ok(sameSlot('08a', '08'));
   assert.ok(sameSlot('08a', '08b'), 'both belong to way 08');
@@ -69,7 +69,7 @@ test('direction is read whichever side of the name it is written', () => {
   // ET-MOD-AP4 writes both in one recipe
   const ap4 = parseNodeList('{>LAN,NET<>,<24(24V Input)}');
   assert.equal(ap4[0].dir, '>', 'prefixed');
-  assert.equal(ap4[1].dir, '<>', 'suffixed — a through node');
+  assert.equal(ap4[1].dir, '<>', 'suffixed - a through node');
   assert.equal(ap4[1].name, 'NET', 'and the name is not "NET<>"');
   assert.equal(ap4[2].detail, '24V Input');
   // a detail may carry punctuation and spaces

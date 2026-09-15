@@ -3,11 +3,11 @@
 //
 // A container holds numbered slots; a slot holds a stack of items laid out in
 // rows. That is a PSU hub holding bays of drivers, and it is equally a lighting
-// control panel holding DIN slots of modules — the DesignDB models both with the
+// control panel holding DIN slots of modules - the DesignDB models both with the
 // same `<discrete spaces>` on the parent type and `<n>` on the child.
 //
-// Nothing here knows which. The numbers that make a hub a hub — clearance,
-// trunking width, the 380mm house bay — are options with defaults, supplied by
+// Nothing here knows which. The numbers that make a hub a hub - clearance,
+// trunking width, the 380mm house bay - are options with defaults, supplied by
 // whichever tool is calling. Every edit is a pure transform of a layout, so
 // `node --test` covers it with no DOM.
 //
@@ -77,18 +77,37 @@ export function footprint(item) {
 // separate pieces of joinery and keep their own full clearance.
 export const pitchOf = (slotWidth, joined = true) => (joined ? slotWidth - CLEAR_X : slotWidth);
 
+// Each slot's own width: widths[i] where one is given, else slotWidth. A hub is
+// not always two identical bays - a 500 beside a 380 is ordinary joinery.
+export const widthAt = (i, { slotWidth = SLOT_WIDTH, widths = null } = {}) =>
+  (widths?.[i] > 0 ? widths[i] : slotWidth);
+
+// Where each slot starts across the container. Joined slots share the 50mm
+// between them, so each starts one clearance before the previous one ended.
+// With every width equal this is slot x pitch, which is what it replaced.
+export function offsetsOf(count, opts = {}) {
+  const joined = opts.joined ?? true;
+  const out = [];
+  let x = 0;
+  for (let i = 0; i < count; i += 1) {
+    out.push(x);
+    x += widthAt(i, opts) - (joined ? CLEAR_X : 0);
+  }
+  return out;
+}
+
 // The width a slot has to fill, between the two trunking bands.
 export const innerWidth = (slotWidth = SLOT_WIDTH) => slotWidth - 2 * TRUNK;
 
 // Lay one slot out bottom-up in rows. Anything narrow enough sits BESIDE what is
-// already on the row rather than starting its own — which is what the CAD does
+// already on the row rather than starting its own - which is what the CAD does
 // with four turned DualDrives across the top of HUB-A, and what a pure stack
 // could never draw. A row closes when the next part will not fit the width.
 //
 // The 50mm clearance IS the cable trunking, and it turns with the part. So a row
 // of upright parts carries the trunking down its two SIDES, and is inset 50 from
 // each wall to leave room for it; a row of turned parts carries it ABOVE and
-// BELOW instead, which frees the full slot width — which is exactly why HUB-A's
+// BELOW instead, which frees the full slot width - which is exactly why HUB-A's
 // four turned drivers run wall to wall while the upright run below them sits in
 // a 280 column. Drawing it per part rather than per row is what chopped the
 // bands into floating ghosts.
@@ -129,15 +148,15 @@ export function packSlot(items, slotWidth = SLOT_WIDTH) {
 
 // slots: [[item, …], …] bottom-up. Returns every item with the coordinates the
 // patch writes, measured from the bottom-left of the container as the schema means it.
-export function placements(slots, { slotWidth = SLOT_WIDTH, joined = true } = {}) {
-  const pitch = pitchOf(slotWidth, joined);
+export function placements(slots, opts = {}) {
+  const off = offsetsOf(slots.length, opts);
   const out = [];
   slots.forEach((items, slot) => {
-    for (const row of packSlot(items, slotWidth)) {
+    for (const row of packSlot(items, widthAt(slot, opts))) {
       for (const a of row.at) {
         out.push({
           ...a.item, slot, size: a.size, clear: a.clear,
-          x: slot * pitch + row.inset + a.x, y: row.y + a.y,
+          x: off[slot] + row.inset + a.x, y: row.y + a.y,
         });
       }
     }
@@ -153,11 +172,15 @@ export const slotHeight = (items, slotWidth = SLOT_WIDTH) =>
 // The W x H the drawing exists to state, with the clearance inside the cabinet.
 // Width is the slots: HUB-A holds a 210mm SoloDrive and is drawn 380 wide, because
 // a slot is as wide as a slot whether or not anything fills it.
-export function extent(slots, { slotWidth = SLOT_WIDTH, width = null, joined = true } = {}) {
+export function extent(slots, opts = {}) {
+  const { width = null, joined = true } = opts;
   const n = Math.max(1, slots.length);
+  let w = 0;
+  for (let i = 0; i < n; i += 1) w += widthAt(i, opts);
+  if (joined) w -= (n - 1) * CLEAR_X;
   return {
-    w: Math.round(width ?? (n * slotWidth - (joined ? (n - 1) * CLEAR_X : 0))),
-    h: Math.max(0, ...slots.map((b) => slotHeight(b, slotWidth))),
+    w: Math.round(width ?? w),
+    h: Math.max(0, ...slots.map((b, i) => slotHeight(b, widthAt(i, opts)))),
   };
 }
 
@@ -178,7 +201,7 @@ export function fitsIn(ext, target) {
 
 // Where a drop lands: the slot under the pointer, and the index the item slots
 // into judged by the midpoints of what is already there. Nothing overlaps
-// because nothing is positioned — it takes a place in the order.
+// because nothing is positioned - it takes a place in the order.
 export function dropIndex(items, y, { slotWidth = SLOT_WIDTH } = {}) {
   const rows = packSlot(items, slotWidth);
   let i = 0;
@@ -265,7 +288,7 @@ export function rebalance(slots) {
 //
 //   which slot       Elements.ContextParameters   <2>          discrete space
 //   where in it     Elements.ContextParameters   [50mm,25mm,] continuous space
-//   which container       Elements.ContextRef          —            handled by the patch
+//   which container       Elements.ContextRef - handled by the patch
 //   how big a part  ElementTypes.Parameters      [153mm,50mm,23mm]
 //   how big the container the container row's Parameters     [[380mm,1035mm,150mm]]
 //   how many slots   the container row's Parameters     <1,2>
@@ -278,7 +301,7 @@ export function rebalance(slots) {
 // contexted into it gets. Guessing it wrong points the whole container at a row that
 // does not exist.
 //
-// Turned 90 is the gap: the page says so itself, twice, in grey — "(future
+// Turned 90 is the gap: the page says so itself, twice, in grey - "(future
 // addition: rotational origin translation)". The documented way round it is the
 // line above it: "Parameters recorded on the entity will override any
 // information recorded at type level". So a turned driver carries its own
@@ -307,7 +330,7 @@ export function contextType(container) {
 //   109303              104 on the Position,            580 on an Element
 //
 // Where a driver sits on an Element, that Element is an ET-PSU-ENC-* enclosure
-// contexted into the container Position — and on set 108908 218 container Positions carry ONE
+// contexted into the container Position - and on set 108908 218 container Positions carry ONE
 // enclosure while 27 carry TWO, named #72.1 and #72.2 under container #72. That is the
 // H1/H2 split, already modelled. The two can even be different enclosure types
 // (#71.1 is -V5, #71.2 is -V1), which is how B1 and B2 come out different sizes.
@@ -320,13 +343,13 @@ export function contextType(container) {
 export const slotLabel = (container, i) => `${container?.name ?? container?.ref ?? '#hub'}.${i + 1}`;
 
 // A slot split out of its container becomes a wrapper Element of its own. What
-// TYPE that wrapper is, is the calling tool's business — the driver tool has one
+// TYPE that wrapper is, is the calling tool's business - the driver tool has one
 // generic PSU enclosure type; a panel may not split at all. Core never invents
 // one: `opts.wrapperType` or nothing.
 
 // One Element's fields. `parameters` is null unless the part is turned, because
 // an upright one has nothing to say that its type does not. `contextType` is
-// what the part is contexted INTO — a separated slot's enclosure Element, or the
+// what the part is contexted INTO - a separated slot's enclosure Element, or the
 // container itself.
 export function saveItem(placed, parent = null, { local = false } = {}) {
   const size = placed.size ?? null;                 // as placed, already turned
@@ -346,17 +369,18 @@ export function saveItem(placed, parent = null, { local = false } = {}) {
 }
 
 // What a container row says: how big it came out, and which slots it still holds
-// directly. A slot that has been separated is no longer one of them — it is an
+// directly. A slot that has been separated is no longer one of them - it is an
 // enclosure Element of its own, and says its own size.
 // What the container row says, for the slots it still holds ITSELF. A slot split out to
-// an Element takes its parameters with it — two rows both claiming to state the
+// an Element takes its parameters with it - two rows both claiming to state the
 // same slot's size is how a drawing and a database stop agreeing. So when every
 // slot has been separated the container states nothing, and the patch must CLEAR what
 // is already on the row rather than leave a stale capacity behind.
 export const saveContainer = (slots, opts = {}) => {
   const own = slots.map((_, i) => i).filter((i) => !(opts.separate ?? []).includes(i));
   if (!own.length) return '';
-  const ext = extent(own.map((i) => slots[i]), opts);
+  // the sub-list is re-indexed, so its widths have to travel with it
+  const ext = extent(own.map((i) => slots[i]), { ...opts, widths: own.map((i) => widthAt(i, opts)) });
   return formatParams({
     capacity: [ext.w, ext.h, opts.depth ?? DEPTH_MM],
     spaces: own.map((i) => i + 1).join(','),
@@ -366,7 +390,7 @@ export const saveContainer = (slots, opts = {}) => {
 export function save(slots, opts = {}) {
   const container = opts.container ?? null;
   const separate = opts.separate ?? [];
-  const pitch = pitchOf(opts.slotWidth ?? SLOT_WIDTH, true);
+  const off = offsetsOf(slots.length, opts);
 
   // A separated slot becomes an ET-PSU-ENC-* Element under the container Position, the
   // way #72.1 and #72.2 sit under #72 on set 108908. Its Ref is the workbook's to
@@ -380,8 +404,8 @@ export function save(slots, opts = {}) {
     contextRef: container?.ref ?? null,
     parameters: formatParams({
       capacity: [
-        extent([slots[i]], opts).w,
-        slotHeight(slots[i], opts.slotWidth ?? SLOT_WIDTH),
+        extent([slots[i]], { ...opts, widths: [widthAt(i, opts)] }).w,
+        slotHeight(slots[i], widthAt(i, opts)),
         opts.depth ?? DEPTH_MM,
       ],
       spaces: '1',
@@ -393,9 +417,9 @@ export function save(slots, opts = {}) {
   const elements = placements(slots, opts).map((p) => {
     const owner = byBay.get(p.slot);
     // contexted into its slot Element when that slot stands alone, into the container
-    // when it does not — and a slot-local coordinate follows its parent
+    // when it does not - and a slot-local coordinate follows its parent
     return owner
-      ? saveItem({ ...p, bayX: p.slot * pitch }, { ref: owner.ref, contextType: 'Element' }, { local: true })
+      ? saveItem({ ...p, bayX: off[p.slot] }, { ref: owner.ref, contextType: 'Element' }, { local: true })
       : saveItem(p, container);
   });
 
@@ -414,7 +438,7 @@ export function save(slots, opts = {}) {
   };
 }
 
-// And back. `byRef` supplies each part as the model holds it — crucially its
+// And back. `byRef` supplies each part as the model holds it - crucially its
 // UNTURNED size, which is what the type states; comparing the saved as-placed
 // size against it is how the rotation is recovered.
 //
@@ -428,7 +452,7 @@ export function load({ container, slots: slotRows = [], elements }, byRef, opts 
   const held = parseParams(params).spaces?.split(',').map(Number).filter(Boolean) ?? [];
   // the container's own slots plus the ones that were separated out into Elements
   const count = Math.max(1, ...held, ...slotRows.map((b) => b.slot + 1), 1);
-  const pitch = pitchOf(opts.slotWidth ?? SLOT_WIDTH, true);
+  const off = offsetsOf(count, opts);
   const ownerOf = new Map(slotRows.filter((b) => b.ref).map((b) => [b.ref, b]));
   const slots = Array.from({ length: count }, () => []);
   const rows = elements
@@ -441,7 +465,7 @@ export function load({ container, slots: slotRows = [], elements }, byRef, opts 
       const owner = e.contextRef ? ownerOf.get(e.contextRef) : null;
       const slot = owner ? owner.slot : Math.max(0, (Number(cp.spaces) || 1) - 1);
       const [rawX, y] = cp.size ?? [0, 0];
-      const x = (rawX ?? 0) + (owner ? owner.slot * pitch : 0);
+      const x = (rawX ?? 0) + (owner ? off[owner.slot] : 0);
       // turned iff the Element states a size and it is its type's, swapped
       const own = parseParams(e.parameters ?? '').size;
       const turned = !!own && !!item.size

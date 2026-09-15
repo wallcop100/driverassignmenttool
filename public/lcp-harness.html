@@ -12,7 +12,7 @@ document.getElementById('f').src =
 
 // Real data. Toggle with ?set=109311 for the Crestron panel that has nothing
 // slotted, or the default: branch 10328 set 108962, a Lutron QSX panel where the
-// arrangement is already done — several modules share one position, slots are
+// arrangement is already done - several modules share one position, slots are
 // grouped (<3.1>), and the module types declare real widths.
 const WHICH = new URLSearchParams(location.search).get('set') ?? '109287';
 const REV = WHICH === '109311';
@@ -47,7 +47,7 @@ ET-MOD-AP4,Access point,"{>LAN,NET<>,<24(24V Input)}"
 ET-MOD-CENCN2,Crestron CEN-CN2,"{>LAN,<NET.1,<NET.2}"
 ET-Panduit,Panduit trunking,"[15mm,,]"`;
 
-const LINKS_LUTRON = `LinkRef,LinkName,PanelRef,ToElementRef,ToNode,ControlGroup,Loop,ControlType,LoadW,Devices
+const LINKS_LUTRON = `LinkRef,LinkName,PanelRef,ToElementRef,ToNode,ControlGroup,Loop,ControlType,LoadW,Ballasts
 L4001,Hall DALI loop,E40001,E41501,A,HALL,DA1,DALI,
 L4002,Lounge DALI loop,E40001,E41501,B,LOUNGE,DA2,DALI,
 L4003,Kitchen DALI loop,E40001,E41502,A,KITCHEN,DA3,DALI,
@@ -75,14 +75,14 @@ ET-MOD-MOTOR,Motor module,"{<M1,<M2,<M3,<M4}"
 ET-PROCESSOR-C,Crestron processor,"{>NET,>PWR}"
 ET-PS-CRESTRON,Crestron PSU,"{<OP.1,<OP.2}"`;
 
-const LINKS_CRESTRON = `LinkRef,LinkName,PanelRef,ToElementRef,ToNode,ControlGroup,Loop,ControlType,LoadW,Devices
+const LINKS_CRESTRON = `LinkRef,LinkName,PanelRef,ToElementRef,ToNode,ControlGroup,Loop,ControlType,LoadW,Ballasts
 C001,Lounge cove,E08001,E08002,A,LOUNGE,L1,DALI,180
 C002,Hall downlights,E08001,E08002,B,HALL,L1,DALI,140
 C005,Dining feature,E08001,E08004,01,DINING,L4,PHASE,380
 C006,Dining wall,E08001,E08004,02,DINING,L4,PHASE,300
 C007,Snug,E08001,E08004,02,SNUG,L5,PHASE,120`;
 
-// project 5294, branch 10358 "Part 2/3 - LSC + S", set 109287 —
+// project 5294, branch 10358 "Part 2/3 - LSC + S", set 109287 - 
 // the SAME panel E08001 as 109311, but with the arrangement done: every module
 // carries its way, and 01.a / 01.b are two DALI modules sharing way 01.
 const MODULES_HANS = `ElementRef,ElementTypeRef,ElementName,PanelRef,PanelName,PanelTypeRef,PanelParameters,ContextParameters
@@ -114,7 +114,7 @@ ET-PS-CRESTRON,Crestron - DIN-PWS60,"{<PWR24}"
 ET-LANDINGBOARD,Future Automation - QS-WLB,"{<QSLink1,<QSLink2}"`;
 
 // Real link ends off 109287. Note NET B: three different loops land on it.
-const LINKS_HANS = `LinkRef,LinkName,PanelRef,ToElementRef,ToNode,ControlGroup,Loop,ControlType,LoadW,Devices
+const LINKS_HANS = `LinkRef,LinkName,PanelRef,ToElementRef,ToNode,ControlGroup,Loop,ControlType,LoadW,Ballasts
 X000212,Snug pendants,E08001,E08006,L1/N1,SNUG,SW-1,LOCAL,900,
 X000213,Plant room,E08001,E08006,L2/N2,PLANT,SW-1,LOCAL,2600,
 X000214,Store,E08001,E08006,L3/N3,STORE,SW-2,LOCAL,400,

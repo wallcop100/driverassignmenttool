@@ -14,7 +14,7 @@ is what this build speaks.
 
 The tool refuses to talk to an origin it hasn't been built to trust. Set the
 GitHub repo variable **`ALLOWED_PARENT_ORIGINS`** to the origin of the **page
-that embeds the tool** — comma-separated, no trailing slash — then redeploy:
+that embeds the tool** - comma-separated, no trailing slash - then redeploy:
 
 ```
 https://designdb.example.com,https://staging.designdb.example.com
@@ -27,7 +27,7 @@ https://designdb.example.com,https://staging.designdb.example.com
 Vite inlines the value at **build time**, so setting the variable does nothing
 until the deploy workflow runs again. Set it first, then re-run the workflow.
 
-Unset means embed mode is off — the iframe will show
+Unset means embed mode is off - the iframe will show
 *"This tool was opened without a recognised host."* If you see that message,
 this step is why.
 
@@ -44,7 +44,7 @@ this step is why.
 ```
 
 - **`/api/`** is the embed entry. The root `/` is the standalone drop-two-CSVs
-  page — don't point at it.
+  page - don't point at it.
 - **`parentOrigin`** is your own origin, URL-encoded. It solves a chicken-and-egg:
   the child sends the first message and `postMessage` needs a `targetOrigin`.
   The tool validates this against the allowlist above and then uses it as the
@@ -53,7 +53,7 @@ this step is why.
   (breakpoint at 900px collapses the header), but below ~600px wide the driver
   grid gets cramped.
 - **Sandboxing:** if you set `sandbox`, include `allow-scripts allow-same-origin`.
-  Do **not** rely on `allow-downloads` — see §6, exports come back to you instead.
+  Do **not** rely on `allow-downloads` - see §6, exports come back to you instead.
 - Don't put CSV data in the URL. It works on demo data and dies on real data.
 
 ---
@@ -61,8 +61,8 @@ this step is why.
 ## 3. Handshake
 
 ```
-child  →  dat:ready          (after React mounts — NOT iframe.onload)
-host   →  dat:types          (driver type library — optional, but send it FIRST)
+child  →  dat:ready          (after React mounts - NOT iframe.onload)
+host   →  dat:types          (driver type library - optional, but send it FIRST)
 host   →  dat:init           (the payload)
 child  →  dat:dirty          (0, then on every change)
 child  →  dat:export         (when the user exports)
@@ -83,7 +83,7 @@ window.addEventListener('message', (e) => {
 
   switch (m.type) {
     case 'dat:ready':  sendTypes(); sendInit(); break;   // types first
-    case 'dat:dirty':  unsavedChanges = m.changeCount; break;   // label only — do not block close
+    case 'dat:dirty':  unsavedChanges = m.changeCount; break;   // label only - do not block close
     case 'dat:export': receiveExport(m); break;
     case 'dat:error':  showError(m.message); break;
   }
@@ -93,7 +93,7 @@ function sendTypes() {
   frame.contentWindow.postMessage({
     type: 'dat:types',
     version: 1,
-    types: typeLibraryCsvText,   // one library for the whole page — see §4a
+    types: typeLibraryCsvText,   // one library for the whole page - see §4a
   }, CHILD_ORIGIN);
 }
 
@@ -110,11 +110,11 @@ function sendInit() {
 ```
 
 You may send `dat:init` again later (e.g. the user switches hub in your UI
-without reloading the frame) — it fully replaces the model.
+without reloading the frame) - it fully replaces the model.
 
 ---
 
-## 4. `dat:init` — the payload
+## 4. `dat:init` - the payload
 
 | Field | Type | Required | Notes |
 |---|---|---|---|
@@ -126,7 +126,7 @@ without reloading the frame) — it fully replaces the model.
 | `focusZone` | string | no | Must match the `Pullzone` column exactly |
 | `context` | object | no | See below |
 
-**`links` or `assessment` — at least one.** Which one you send says which mode
+**`links` or `assessment` - at least one.** Which one you send says which mode
 the hub is in, and the tool reaches the same conclusion independently from what
 arrives (`detectMode()`), so the two halves agree:
 
@@ -137,12 +137,12 @@ arrives (`detectMode()`), so the two halves agree:
 | `assessment`, no `links` | estimate | at tender: Positions only, nothing to assign |
 
 A `dat:init` carrying neither is dropped as `missing links CSV`. A links CSV with
-a header and no data rows is **not** an error — it means the hub has no cables,
+a header and no data rows is **not** an error - it means the hub has no cables,
 which is the estimate's case, so send the assessment alongside it or instead.
 
 ### The assessment CSV
 
-Fittings rolled up per secondary-power destination — one row per hub +
+Fittings rolled up per secondary-power destination - one row per hub +
 ControlGroup + fitting type. A row is a *quantity*, not a cable, so the tool
 divides it across drivers.
 
@@ -152,7 +152,7 @@ divides it across drivers.
 ```
 
 `Link_SecondaryPowerRef` is the PSU-HUB **Position Ref**, while `Pullzone`
-elsewhere is `COALESCE(ExtRef, Ref)` — the overlay resolves the label rather
+elsewhere is `COALESCE(ExtRef, Ref)` - the overlay resolves the label rather
 than assuming they match. `SumQuantity` may be fractional: it is the type's UoM,
 so metres for tape. Rows whose `CC/CV` is neither `CC` nor `CV` are provisions
 and are left out.
@@ -161,7 +161,7 @@ and are left out.
 
 ```js
 context: {
-  branchId:    10470,    // which branch the design belongs to — see §5
+  branchId:    10470,    // which branch the design belongs to - see §5
   systemSetId: 108835,   // point-in-time token, sequential within the branch
   hubRef:      'p50123', // opaque to the tool; passed through, never parsed
   hubLabel:    'HUB-B1', // shown in the header so the user can see which hub/set
@@ -169,12 +169,12 @@ context: {
 ```
 
 `branchId` + `systemSetId` + `hubRef` are the session key (§5). `hubLabel` is
-display only. **Send all three of the first three** — they are what makes resume
+display only. **Send all three of the first three** - they are what makes resume
 and the all-hubs patch work, and omitting any one of them degrades both.
 
 ---
 
-## 4a. `dat:types` — the driver type library
+## 4a. `dat:types` - the driver type library
 
 The per-hub export names an `ElementTypeRef` per driver but leaves
 `Driver Restrictions` blank. Without the ratings the tool treats every driver as
@@ -188,7 +188,7 @@ Send the type library once and the tool joins it on `ElementTypeRef`.
 ```
 
 **Send it before `dat:init`.** `postMessage` preserves order from a single
-source, so posting them in sequence is sufficient — there is no ack to wait for.
+source, so posting them in sequence is sufficient - there is no ack to wait for.
 Arriving after `dat:init` still works, but only while the user has made no
 changes yet; once there are edits the tool keeps them and tells the user to
 reopen the hub rather than rebuilding underneath them.
@@ -197,7 +197,7 @@ It is **optional**. Omit it and behaviour is exactly as it is today.
 
 ### Where to put it
 
-One block for the whole page, not one per hub — the library is identical for
+One block for the whole page, not one per hub - the library is identical for
 every button, so duplicating it per hub is pure page weight:
 
 ```html
@@ -216,20 +216,20 @@ Required: **`ElementTypeRef`**. Everything else is read defensively.
 | Column | Used for |
 |---|---|
 | `ElementTypeRef` | the join key against the hub rows |
-| `ElementTypeName` | which part it is — matched against the datasheet catalogue |
+| `ElementTypeName` | which part it is - matched against the datasheet catalogue |
 | `MaxPower(W)`, `CurrentRange`, `OutputVoltage(V)` | the driver's rating |
 | `NodeMaxPower(W)`, `NodeMaxForwardVoltage(fV)`, `NodeCurrent` | per-output limits |
-| `BallastCountPerUoM` | DALI addresses — the `nCH` in a ref |
+| `BallastCountPerUoM` | DALI addresses - the `nCH` in a ref |
 | `Channels` | output count, if one row per type |
 | `ControlType` | `DALI` / `PHASE` / `Local` |
-| `Driver Restrictions` | **legacy** — the composed rating, `300W \| 0.3A` (CC) or `180W \| 24V` (CV) |
-| `Node Restrictions` | **legacy** — per-node `<n>W` / `<n>fV` limits |
+| `Driver Restrictions` | **legacy** - the composed rating, `300W \| 0.3A` (CC) or `180W \| 24V` (CV) |
+| `Node Restrictions` | **legacy** - per-node `<n>W` / `<n>fV` limits |
 | `Node` | node name, if one row per type+node |
 
 **State the columns rather than composing them.** The composed
 `Driver Restrictions` string is order-dependent, and a driver-level
 `MaxForwardVoltage(fV)` landing between the watts and the rating reads as
-`50W | 55fV | 0.35A`, which parses as **CC/CV undeclared** — the type then
+`50W | 55fV | 0.35A`, which parses as **CC/CV undeclared** - the type then
 matches no cable and cannot be sized against. The explicit columns win wherever
 they are present; the composed form is still read, so an older host keeps
 working.
@@ -242,12 +242,12 @@ DualDrive 560/A.
 Two row shapes are accepted, whichever your exporter produces:
 
 ```csv
-# one row per type+node — node limits can differ per channel
+# one row per type+node - node limits can differ per channel
 ElementTypeRef,Node,Driver Restrictions,Node Restrictions
 ET-CVR-D-24-2CH-01,OP.1,180W | 24V,90W
 ET-CVR-D-24-2CH-01,OP.2,180W | 24V,90W
 
-# one row per type — nodes are generated as OP.1…OP.n
+# one row per type - nodes are generated as OP.1…OP.n
 ElementTypeRef,Channels,Driver Restrictions
 ET-CVR-D-24-2CH-01,2,180W | 24V
 
@@ -262,14 +262,14 @@ type gets one node.
 ### Two effects worth expecting
 
 1. **Add Driver lists the whole library**, not just the types the hub already
-   contains — so a hub can be given a type it does not currently have. That is
+   contains - so a hub can be given a type it does not currently have. That is
    the fix for "no matching driver type in inventory".
 2. **Validation starts doing real work.** Drivers that were "undetermined" now
    have declared capacity, so genuine overload and CC/CV mismatches will surface
    where previously everything was a benign warning. Expect new errors on
    existing designs; they were always there, just unverifiable.
 
-If a hub row *does* state its own `Driver Restrictions`, that wins — an explicit
+If a hub row *does* state its own `Driver Restrictions`, that wins - an explicit
 instance value is treated as a deliberate override, and the library only fills
 blanks. This is also why adding a library can never change how standalone data
 behaves.
@@ -279,7 +279,7 @@ behaves.
 ### `focusZone`
 
 The tool opens directly on this Pullzone. If it doesn't match any zone in the
-data, the tool lands on the zone list with a dismissible notice — it does **not**
+data, the tool lands on the zone list with a dismissible notice - it does **not**
 fail. A hub with no drivers yet is a legitimate state and fixing that is what the
 tool is for.
 
@@ -288,7 +288,7 @@ Typically you send only that hub's rows, so the model contains one zone and the
 
 ---
 
-## 5. `branchId` + `systemSetId` — resume across a flaky frame
+## 5. `branchId` + `systemSetId` - resume across a flaky frame
 
 The tool autosaves the whole working session to `localStorage`, keyed:
 
@@ -311,7 +311,7 @@ That key is the whole contract for resume:
 
 ### How to fill in `branchId`
 
-Send the id of the branch the design belongs to — whatever your system already
+Send the id of the branch the design belongs to - whatever your system already
 calls it, as a plain number or string. The tool never parses it; it only compares
 it for equality and groups sessions by it.
 
@@ -320,10 +320,10 @@ Two things depend on you sending it:
 1. **Eviction is scoped.** Without `branchId` every branch shares one namespace,
    so opening a newer set in branch A would silently wipe unsaved work in
    branch B.
-2. **The all-hubs patch.** §6 — the tool gathers every stored hub in the current
+2. **The all-hubs patch.** §6 - the tool gathers every stored hub in the current
    `branchId` + `systemSetId`. If branch is missing, that set is wrong.
 
-`systemSetId` must increase as the design data moves forward — that ordering is
+`systemSetId` must increase as the design data moves forward - that ordering is
 what the eviction relies on. A non-numeric value disables eviction (the tool
 won't guess an order and won't delete what it can't compare), but resume still
 works.
@@ -338,7 +338,7 @@ the work but keeps the user on the hub you opened them on.
 
 ---
 
-## 6. `dat:export` — getting the result back
+## 6. `dat:export` - getting the result back
 
 Chrome blocks downloads initiated from a sandboxed cross-origin iframe, sometimes
 silently, and `navigator.clipboard` needs `allow="clipboard-write"`. So embedded,
@@ -351,20 +351,20 @@ the output comes to you instead:
   content: '<the ExcelScript source>' }
 ```
 
-**Embedded, `kind` is always `'patch'`.** The CSV export is hidden in this mode —
+**Embedded, `kind` is always `'patch'`.** The CSV export is hidden in this mode - 
 that format can't be ingested back into the workbook, so offering it would only
 produce a file with nowhere to go. The standalone page still exports CSV; only
 the embedded UI drops it.
 
 The patch is an **ExcelScript / Office Scripts macro**, not data. A human pastes
 it into the Office Scripts editor and runs it against the workbook. Receiving it
-does not close that loop — surface it as copyable text, don't try to apply it.
+does not close that loop - surface it as copyable text, don't try to apply it.
 
 ### Patching every hub at once
 
 The Review dialog offers **"Patch all hubs (N)"** whenever more than one hub of
 the current `branchId` + `systemSetId` has saved work. It emits a single
-`dat:export` covering all of them — one script, one paste, rather than one per
+`dat:export` covering all of them - one script, one paste, rather than one per
 hub. Handle it exactly like the single-hub patch; only the size differs.
 
 This is read straight from the tool's own storage, which is why §5's
@@ -372,7 +372,7 @@ This is read straight from the tool's own storage, which is why §5's
 
 ---
 
-## 7. `dat:dirty` — intercepting close
+## 7. `dat:dirty` - intercepting close
 
 ```js
 { type: 'dat:dirty', version: 1, changeCount: 3 }
@@ -398,7 +398,7 @@ a blank iframe is never the failure mode. Common causes are in §9.
 ## 9. The CSV data
 
 Both are the standard DataJoin exports. Send them **as raw text**, exactly as
-exported — including the UTF-8 BOM if present, that's handled.
+exported - including the UTF-8 BOM if present, that's handled.
 
 ### Driver Assignment CSV (`form`)
 
@@ -409,7 +409,7 @@ Columns actually used:
 
 | Column | Used for |
 |---|---|
-| `Pullzone` | zone/hub grouping — must match `focusZone` |
+| `Pullzone` | zone/hub grouping - must match `focusZone` |
 | `ElementRef` | driver identity (one driver, one row per node) |
 | `Node` | node name; `ElementRef`+`Node` must be unique |
 | `ElementTypeRef` | driver type → the "add a driver" catalogue |
@@ -425,7 +425,7 @@ Required column: **`LinkRef`** (must be unique).
 
 | Column | Used for |
 |---|---|
-| `PullZone` | zone/hub grouping — note the capital Z, unlike the form CSV |
+| `PullZone` | zone/hub grouping - note the capital Z, unlike the form CSV |
 | `LinkRef` | cable identity |
 | `LinkTypeRef` | type matching |
 | `LinkSumPower(W)`, `LinkCurrent`, `LinkVoltage(V)`, `LinkForwardVoltage(Vf)` | capacity and validation |
@@ -439,7 +439,7 @@ will drift from the first, silently. The tool parses, it does not compute.
 
 ### Filtering per hub
 
-Filter both files to the hub's rows — `Pullzone` in the form CSV, `PullZone` in
+Filter both files to the hub's rows - `Pullzone` in the form CSV, `PullZone` in
 the links CSV. The tool only ever assigns a cable to a driver in the same zone,
 so sending extra zones is safe but pointless; sending a hub's links without its
 drivers just shows every cable as unassigned, which is a valid state.

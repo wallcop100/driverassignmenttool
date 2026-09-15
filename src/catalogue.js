@@ -1,4 +1,4 @@
-// Driver datasheet catalogue — static knowledge, transcribed from the Driver
+// Driver datasheet catalogue - static knowledge, transcribed from the Driver
 // Specs page group (59 pages across 5 projects; project 123 "Lighting and
 // Shading Technology" is the master and its copies are the ones used here).
 //
@@ -10,7 +10,7 @@
 // What it is FOR: the ElementTypes library states ratings for ~4% of driver
 // types, so most of the time the tool is asked to size a driver whose
 // electrical properties nobody wrote down. The type's Name almost always says
-// which part it is — "EldoLED SOLODrive 360/A at 300mA", "SLO560S3" — so the
+// which part it is - "EldoLED SOLODrive 360/A at 300mA", "SLO560S3" - so the
 // datasheet can be recovered from the name and offered to the user.
 //
 // Fields, in DesignDB terms:
@@ -19,7 +19,7 @@
 //   outputV     OutputVoltage(V)            CV only
 //   maxFvV      NodeMaxForwardVoltage(fV)   top of the datasheet voltage range
 //   outputs     Parameters {<OP.1,...}      LED outputs
-//   addresses   BallastCountPerUoM          DALI addresses — the nCH in a ref
+//   addresses   BallastCountPerUoM          DALI addresses - the nCH in a ref
 //
 // `page` records which spec page a part was read from, for the refresh in
 // REFRESH-catalogue.md. It is not linked from the UI: a page URL only resolves
@@ -42,7 +42,7 @@
 //
 // `common` marks the parts actually specified on most jobs. They are the ones
 // offered when you open the new-type dialog; the rest of the catalogue is a
-// press or a search away. Everything here is a real part — the fold is about
+// press or a search away. Everything here is a real part - the fold is about
 // what you reach for, not what is allowed.
 
 export const PARTS = [
@@ -79,7 +79,7 @@ export const PARTS = [
     kind: 'driver', controlType: 'DALI', page: 128633 },
 
   // ---- EldoLED constant voltage (LinearDrive) ----
-  // DC/DC: these have NO output voltage of their own — the PSU feeding them sets
+  // DC/DC: these have NO output voltage of their own - the PSU feeding them sets
   // the rail, and the usable wattage is whichever of the two is smaller. So a
   // 220D is 200W on a 185W supply and 80W on an 80W one, at 24V or at 12V
   // depending entirely on the supply. That pairing is the normal way a CV
@@ -88,7 +88,7 @@ export const PARTS = [
   { name: 'EldoLED LinearDrive 100/A', code: 'EldoLED LIN100A', re: /lin[a-z]*100/, powerType: 'CV', kind: 'dcdc',
     maxPowerW: 100, outputs: 4, addresses: 4, controlType: 'DALI', page: 105850 },
   // Discontinued: kept so the refs still using it resolve, but not offered when
-  // adding — the LinearDrive 200D-D2Z2D replaced it, and the 200D-D2Z2C is the
+  // adding - the LinearDrive 200D-D2Z2D replaced it, and the 200D-D2Z2C is the
   // tuneable-white part. Set `discontinued` on anything else that stops being
   // specified.
   // 153 x 50 x 23 is off the eldoLED datasheet rather than page 137217, whose
@@ -99,19 +99,19 @@ export const PARTS = [
     discontinued: true },
   { name: 'EldoLED LinearDrive 222D', code: 'EldoLED 222D', re: /lin[a-z]*222/, powerType: 'CV', kind: 'dcdc',
     maxPowerW: 192, outputs: 2, addresses: 2, controlType: 'DMX', page: 105847,
-    note: 'Spec page says "Outputs: 4" while its description says 2-channel — outputs unconfirmed' },
+    note: 'Spec page says "Outputs: 4" while its description says 2-channel - outputs unconfirmed' },
   // What the 220D became. DT6, so two outputs on two addresses as before.
   //
   // A design that writes just "LinDrive 200D" means this one: the DT6 is the
   // default of the pair and the DT8 always says so in its code. Without the
   // looser arm such a name matched no driver at all, leaving only the Meanwell
-  // in the name to match — so the type resolved to a bare supply and reported
+  // in the name to match - so the type resolved to a bare supply and reported
   // itself as ControlType Local, unswitched, with no DC/DC driver in front of it.
   { name: 'EldoLED LinearDrive 200D-D2Z2D',
     code: 'EldoLED LIN220D', re: /200d?d2z2d|lin[a-z]*200(?!d?d2z2c)/, powerType: 'CV', kind: 'dcdc',
     maxPowerW: 200, outputs: 2, addresses: 2, controlType: 'DALI', sizeMm: [153, 50, 23], page: 105745, common: true },
   // The tuneable-white one, written D2Z2C2 on the datasheet. DT8 drives a dynamic
-  // white fitting from ONE address across both channels — and, because those two
+  // white fitting from ONE address across both channels - and, because those two
   // channels drive a single strip, from ONE node: {<OP.1-2}, not {<OP.1,<OP.2}.
   // Two separately connectable outputs would be two nodes; these are not.
   // The separator is a hyphen: ':' is spoken for elsewhere in Parameters syntax
@@ -119,8 +119,8 @@ export const PARTS = [
   { name: 'EldoLED LinearDrive 200D-D2Z2C', code: 'EldoLED LIN220D-TW', re: /200d?d2z2c/, powerType: 'CV', kind: 'dcdc',
     maxPowerW: 192, outputs: 1, addresses: 1, nodeNames: ['OP.1-2'],
     controlType: 'DALI', sizeMm: [153, 50, 23], page: 106074,
-    note: 'DALI-2 DT8, dynamic white — must be on a DT8 control system, and the LightShape profile set' },
-  // 144W per output is 6A at 24V — derived from the rail, not fixed.
+    note: 'DALI-2 DT8, dynamic white - must be on a DT8 control system, and the LightShape profile set' },
+  // 144W per output is 6A at 24V - derived from the rail, not fixed.
   { name: 'EldoLED LinearDrive 720D', code: 'EldoLED LIN720D', re: /lin[a-z]*720/, powerType: 'CV', kind: 'dcdc',
     maxPowerW: 720, nodeCurrentA: 6, outputs: 4, addresses: 4,
     controlType: 'DALI', page: 105811, common: true },
@@ -174,7 +174,7 @@ export const PARTS = [
     kind: 'driver', controlType: 'Local', page: 124308, note: 'Emergency, 3 hour discharge' },
 ];
 
-// ElementTypeName is free text — "EldoLED SOLODrive 360/A at 300mA",
+// ElementTypeName is free text - "EldoLED SOLODrive 360/A at 300mA",
 // "EldoLED - SLO560S3 - 260mA", "EldoLED - LinearDrive 220D, Meanwell - HLG-185-24".
 // So: strip everything that isn't a letter or digit, lowercase, and look for a
 // part's key as a substring. Nothing here is anchored or exact.
@@ -195,8 +195,8 @@ export function matchParts(elementTypeName) {
 
 // Meanwell name their supplies HLG-{watts}-{volts}, and every one with a spec
 // page follows it: HLG-185-24 is 185W at 24V, HLG-100H-54 is 100W at 54V. Live
-// data uses plenty that have no page — HLG-185-48, HLG-480-24, HLG-600-24,
-// HLG-120-12, HLG-80-12 — and refusing to read a part number we demonstrably
+// data uses plenty that have no page - HLG-185-48, HLG-480-24, HLG-600-24,
+// HLG-120-12, HLG-80-12 - and refusing to read a part number we demonstrably
 // understand would leave most CV pairings unresolved.
 const HLG_RE = /hlg(\d{2,3})h?(\d{2})[a-z]?/;
 
@@ -214,8 +214,8 @@ export function deriveSupply(normalised) {
 
 export const matchPart = (elementTypeName) => matchParts(elementTypeName)[0] ?? null;
 
-// A CV ElementType is normally a PAIR — a DC/DC driver and the supply feeding
-// it — and neither half is the specification on its own. The supply sets the
+// A CV ElementType is normally a PAIR - a DC/DC driver and the supply feeding
+// it - and neither half is the specification on its own. The supply sets the
 // rail and caps the wattage; the driver sets the outputs, the addresses and the
 // control. This resolves a free-text name into the one effective spec.
 export function resolveSpec(elementTypeName) {

@@ -3,7 +3,7 @@ import { combine, nextTypeRef, PARTS, reachableW, resolveSpec } from '../engine.
 
 // The driver type editor, shared by the Add-driver modal and the Driver types
 // page. A preset is a rating nobody declared, supplied here and patched into the
-// workbook's ElementTypes row — so the fields are that sheet's columns, named as
+// workbook's ElementTypes row - so the fields are that sheet's columns, named as
 // they are named there. Explanations live in tooltips, not on the page.
 export function rating(t) {
   if (t.powerType === 'CC' && t.currentA != null) return `${t.currentA}A`;
@@ -32,8 +32,8 @@ export const draftFrom = (t) => ({
   invented: false,
 });
 
-// A datasheet part — or a DC/DC driver on a named supply, which is how CV is
-// normally specified here — as a draft. Blank stays blank: on the spec pages a
+// A datasheet part - or a DC/DC driver on a named supply, which is how CV is
+// normally specified here - as a draft. Blank stays blank: on the spec pages a
 // blank means "no check", and filling one in would invent a rule.
 export const draftFromPart = (driver, supply = null) => {
   const p = combine(driver, supply) ?? {};
@@ -43,7 +43,7 @@ export const draftFromPart = (driver, supply = null) => {
     name: p.name ?? '',
     powerType: p.powerType ?? 'CV',
     maxPowerW: p.maxPowerW ?? '',
-    currentA: '',                     // one ElementType per current — the user picks
+    currentA: '',                     // one ElementType per current - the user picks
     outputVoltageV: p.outputV ?? '',
     outputs: p.outputs ?? 1,
     addresses: p.addresses ?? '',
@@ -75,7 +75,7 @@ export const toPreset = (d) => ({
   invented: !!d.invented,
 });
 
-// Enough to size against — below this the planner refuses the type anyway.
+// Enough to size against - below this the planner refuses the type anyway.
 const isComplete = (d) => !!d.typeRef.trim() && numOrNull(d.maxPowerW) > 0
   && (d.powerType === 'CC' ? numOrNull(d.currentA) > 0 : numOrNull(d.outputVoltageV) > 0);
 
@@ -83,7 +83,7 @@ export default function PresetEditor({ draft, setDraft, inventory, onSave, onCan
   const set = (patch) => setDraft({ ...draft, ...patch });
   const [ownRef, setOwnRef] = useState(false);
 
-  // The datasheet for whatever the type's Name says it is — a driver, a supply,
+  // The datasheet for whatever the type's Name says it is - a driver, a supply,
   // or the pair. Names are free text, so this is a loose match and can be wrong:
   // it advises, never edits.
   const chosen = PARTS.find((p) => p.name === draft.part);
@@ -117,7 +117,7 @@ export default function PresetEditor({ draft, setDraft, inventory, onSave, onCan
   };
 
   // One field: the schema's own column name above a box that looks like a box,
-  // and — where the datasheet says otherwise — an offer you can take rather than
+  // and - where the datasheet says otherwise - an offer you can take rather than
   // a red note that only nags.
   const Field = ({ col, k, tip, step, children }) => {
     const want = spec[k];
@@ -129,7 +129,7 @@ export default function PresetEditor({ draft, setDraft, inventory, onSave, onCan
         <span className="fld-col" title={tip}>{col}</span>
         {children ?? (
           <input type="number" min="0" step={step ?? 'any'} value={draft[k]}
-            placeholder="—" onChange={(e) => set({ [k]: e.target.value })} />
+            placeholder="-" onChange={(e) => set({ [k]: e.target.value })} />
         )}
         {(off || blank) && (
           <button type="button" className="fld-ds" onClick={() => set({ [k]: want })}
@@ -175,7 +175,7 @@ export default function PresetEditor({ draft, setDraft, inventory, onSave, onCan
               ))}
             </select>
           </label>
-          {/* A DC/DC driver has no rail of its own — the supply sets the voltage
+          {/* A DC/DC driver has no rail of its own - the supply sets the voltage
               and caps the wattage, so the pair is the specification. */}
           {chosen?.kind === 'dcdc' && (
             <label>
@@ -195,7 +195,7 @@ export default function PresetEditor({ draft, setDraft, inventory, onSave, onCan
         </div>
       ) : null}
 
-      {/* The Ref is generated for a new type and fixed for an existing one — it
+      {/* The Ref is generated for a new type and fixed for an existing one - it
           is the key Elements point at, so it is never quietly rewritten. */}
       {draft.invented && (
         <label className="fld fld-ref">
@@ -223,12 +223,12 @@ export default function PresetEditor({ draft, setDraft, inventory, onSave, onCan
         </label>
         <Field col="MaxPower(W)" k="maxPowerW" tip="Total power, shared across all outputs" />
         {draft.powerType === 'CC'
-          ? <Field col="CurrentRange" k="currentA" tip="Amps — one current for the whole driver" />
+          ? <Field col="CurrentRange" k="currentA" tip="Amps - one current for the whole driver" />
           : <Field col="OutputVoltage(V)" k="outputVoltageV" tip="Volts the driver puts out" />}
-        <Field col="BallastCountPerUoM" k="addresses" tip="DALI addresses — the nCH in the Ref" step="1" />
+        <Field col="BallastCountPerUoM" k="addresses" tip="DALI addresses - the nCH in the Ref" step="1" />
         <label className="fld">
           <span className="fld-col" title="DALI, PHASE or Local">ControlType</span>
-          <input value={draft.controlType} placeholder="—"
+          <input value={draft.controlType} placeholder="-"
             onChange={(e) => set({ controlType: e.target.value })} />
         </label>
       </div>
@@ -245,7 +245,7 @@ export default function PresetEditor({ draft, setDraft, inventory, onSave, onCan
         )}
       </div>
       <div className="fld-grid">
-        <Field col="Parameters" k="outputs" tip="LED outputs — written as {<OP.1,<OP.2}" step="1" />
+        <Field col="Parameters" k="outputs" tip="LED outputs - written as {<OP.1,<OP.2}" step="1" />
         <Field col="NodeMaxForwardVoltage(fV)" k="nodeMaxFvV" tip="Per output. Usually the limit that binds" />
         <Field col="NodeMaxPower(W)" k="nodeMaxLoadW" tip="Only if an output has its own cap" />
         <Field col="NodeCurrent" k="nodeCurrentA" tip="Amps. Only if current is settable per output" />
@@ -255,7 +255,7 @@ export default function PresetEditor({ draft, setDraft, inventory, onSave, onCan
       )}
       {draft.powerType === 'CC' && numOrNull(draft.currentA) > 20 && (
         <div className="preset-warn">
-          {draft.currentA}A — amps, not mA? That would be {numOrNull(draft.currentA) / 1000}A
+          {draft.currentA}A - amps, not mA? That would be {numOrNull(draft.currentA) / 1000}A
         </div>
       )}
       {currentMisplaced && (

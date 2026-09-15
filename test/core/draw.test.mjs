@@ -54,7 +54,7 @@ test('the two scale policies stay apart', () => {
   const real = d.scaler('true', 1);
   assert.equal(real(153.6), 153.6);
   assert.equal(real(17.5), 17.5);
-  // a panel schematic clamps for legibility — 101676 says do not measure it
+  // a panel schematic clamps for legibility - 101676 says do not measure it
   const sch = d.scaler('schematic', 1);
   assert.equal(sch(17.5), d.SCHEMATIC_MIN, 'a 17.5mm DIN module stays readable');
   assert.equal(sch(900), d.SCHEMATIC_MAX, 'and a long one stays on the page');
@@ -65,4 +65,24 @@ test('the second line reads the way 101676 writes it', () => {
   assert.equal(d.subLabel('E41763', 105), 'E41763 - 105mm');
   assert.equal(d.subLabel('E41763', null), 'E41763');
   assert.equal(d.subLabel('E90214', 153.6), 'E90214 - 153.6mm');
+});
+
+test('bold lettering is measured wider, so it shrinks before it is clipped', () => {
+  // MOD-DALI-LUTRON in a 112px panel block: fits regular, must not claim to fit bold
+  const regular = d.labelPlan('MOD-DALI-LUTRON', null, 112, 56, { base: 12, min: 7 });
+  const bold = d.labelPlan('MOD-DALI-LUTRON', null, 112, 56, { base: 12, min: 7, char: d.CHAR_BOLD });
+  assert.ok(bold.mode !== 'across' || bold.size < regular.size || regular.mode !== 'across');
+  if (bold.mode === 'across') {
+    assert.ok(d.textWidth('MOD-DALI-LUTRON', bold.size, d.CHAR_BOLD) <= 112 - 8);
+  }
+});
+
+test('a real measurement, when the page has one, replaces the estimate', () => {
+  // a face twice as wide as the estimate: the plan must believe the measurement
+  const wide = (text, size) => text.length * size * 1.2;
+  const est = d.labelPlan('PROCESSOR-C', null, 110, 56, { base: 12, min: 7 });
+  const real = d.labelPlan('PROCESSOR-C', null, 110, 56, { base: 12, min: 7, measure: wide });
+  assert.equal(est.mode, 'across');
+  assert.ok(real.mode !== 'across' || wide('PROCESSOR-C', real.size) <= 110 - 8,
+    'across only at a size the measurement says fits');
 });

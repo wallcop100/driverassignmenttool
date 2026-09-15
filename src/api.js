@@ -1,7 +1,7 @@
 // Local, in-browser engine calls behind the same async surface the components
 // used when this talked to a Python sidecar. The parsed model is held here so
 // validate/eligibility/export keep their original (assignments, added) signatures.
-// The demo CSVs are bundled by Vite's ?raw, which only a bundler understands —
+// The demo CSVs are bundled by Vite's ?raw, which only a bundler understands - 
 // importing them at module scope made this whole file unloadable under plain
 // `node --test`, and so made anything that imports it untestable. They are only
 // needed when somebody actually clicks Demo, so they are fetched then.
@@ -12,6 +12,8 @@ const demo = () => Promise.all([
 ]).then((m) => m.map((x) => x.default));
 import * as embed from './embed.js';
 import * as engine from './engine.js';
+import { readCsv } from './core/csv.js';
+import { parseParams } from './core/params.js';
 
 let model = null;
 // The raw CSVs are kept so the model can be rebuilt when a driver type preset is
@@ -31,7 +33,7 @@ export function parseText(formText, linksText, typesText, assessmentText) {
 }
 
 // Returns a fresh model when the presets differ from the ones already baked in,
-// null when there is nothing to do — so the caller can dispatch unconditionally
+// null when there is nothing to do - so the caller can dispatch unconditionally
 // without looping.
 export function rebuild(presets) {
   const list = Object.values(presets || {});
@@ -120,7 +122,7 @@ export async function exportCsv(assignments, addedDrivers) {
   return engine.exportCsv(model, assignments, addedDrivers);
 }
 
-// `context` carries the host's hubRef — Elements.ContextRef needs the Position
+// `context` carries the host's hubRef - Elements.ContextRef needs the Position
 // Ref, and the CSVs only ever carry the label.
 export async function generatePatch(assignments, addedDrivers, presets, context, deletedDrivers, fixNodeSyntax) {
   return engine.generatePatchScriptMulti([{
@@ -146,7 +148,7 @@ function download(text, suggestedName, mime) {
 // Both delivery paths branch here rather than at the call sites, so the
 // components stay embed-unaware. Embedded, a Blob a.click() download is blocked
 // by Chrome in a sandboxed cross-origin iframe (sometimes silently) and
-// navigator.clipboard needs allow="clipboard-write" — so hand the text to the
+// navigator.clipboard needs allow="clipboard-write" - so hand the text to the
 // host over the return channel and let it deal with the browser.
 export async function saveCsv(text, suggestedName) {
   if (embed.isEmbedded()) {
@@ -156,11 +158,28 @@ export async function saveCsv(text, suggestedName) {
 }
 
 // The patch is an ExcelScript macro a human pastes into the Office Scripts
-// editor — standalone that means the clipboard, not a file.
+// editor - standalone that means the clipboard, not a file.
 export async function copyPatch(text) {
   if (embed.isEmbedded()) {
     return embed.send({ type: embed.topic('export'), kind: 'patch', filename: 'DriverAssignmentPatch.osts', content: text });
   }
   await navigator.clipboard.writeText(text);
   return true;
+}
+
+// The [w,h,d] each ElementType already states, from the type library the host
+// sent. A size in the workbook is the design's own and wins over a datasheet
+// figure, so the space layout draws from this first. Empty when the host sent no
+// Parameters column, which is every host before DJ 101681 V1.7.
+export function typeSizes() {
+  if (!raw?.types?.trim()) return {};
+  const { rows, fields } = readCsv(raw.types, [], 'Types', true);
+  if (!fields.includes('Parameters')) return {};
+  const out = {};
+  for (const r of rows) {
+    const size = parseParams(r.Parameters).size;
+    const ref = String(r.ElementTypeRef ?? r.Ref ?? '').trim();
+    if (ref && size?.[0] > 0 && size?.[1] > 0) out[ref] = size;
+  }
+  return out;
 }

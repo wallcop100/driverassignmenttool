@@ -1,4 +1,4 @@
-# Assignment UX — streamline & noise reduction
+# Assignment UX - streamline & noise reduction
 
 Goal: make the UI *decide-support*, not just record. Surface the constraints that
 actually rule placements in/out (CC/CV, current/voltage rating, ControlGroup) and
@@ -9,32 +9,32 @@ fits the watts". CC/CV is a trivial eyeball; CV voltage is a no-op (all 24V); CC
 current is unpopulated (derived). So ControlGroup + capacity do the narrowing.
 
 ## Backend
-- [x] `fingerprint_compatible(link, driver)` — fill-independent rule-out (CC/CV, CC current ±15%, CV voltage). `validation.py`
-- [x] `POST /eligibility {zone, assignments, addedDrivers}` → `{nodesByLink, impossibleByLink}` — one call powers #1/#3/#4/#7. `main.py`, `validation.py`
+- [x] `fingerprint_compatible(link, driver)` - fill-independent rule-out (CC/CV, CC current ±15%, CV voltage). `validation.py`
+- [x] `POST /eligibility {zone, assignments, addedDrivers}` → `{nodesByLink, impossibleByLink}` - one call powers #1/#3/#4/#7. `main.py`, `validation.py`
 
 ## Frontend features
-1. [x] **Dim the impossible** — on link-select, grey/shrink fingerprint-incompatible drivers; distinguish *impossible* (wrong type) vs *full* (right type, no room) vs *candidate* (has an eligible node). `DriverBin.jsx`
-2. [x] **ControlGroup as tray spine** — group/sort tray by ControlGroup; "place group" drops a whole group onto one chosen node. `Tray.jsx`, `state.js` (PLACE_GROUP)
-3. [x] **Fill this node** — click an empty/partial node (no link selected) → tray filters to links eligible for it. `ZonePage.jsx`, `Tray.jsx`, `DriverBin.jsx`
-4. [x] **Target count + forced moves** — per-tray-link badge of eligible node count; 0 = orphan (needs driver), 1 = forced (do first). `Tray.jsx`
-5. [x] **Actionable vs expected warnings** — split FAIL/MISMATCH (actionable) from WARN (info); collapse info by default, de-emphasize styling, separate counts. `ZonePage.jsx`, `Landing.jsx`, `Block.jsx`
-6. [x] **Mains/provision links out of the way** — LV-PROV / N/A (no powerType) links into a collapsible provision lane, hidden from the normal tray. `Tray.jsx`
-7. [x] **Suggest a driver to add** — cluster orphan links by fingerprint, recommend the matching inventory type, one-click add. `ZonePage.jsx`
+1. [x] **Dim the impossible** - on link-select, grey/shrink fingerprint-incompatible drivers; distinguish *impossible* (wrong type) vs *full* (right type, no room) vs *candidate* (has an eligible node). `DriverBin.jsx`
+2. [x] **ControlGroup as tray spine** - group/sort tray by ControlGroup; "place group" drops a whole group onto one chosen node. `Tray.jsx`, `state.js` (PLACE_GROUP)
+3. [x] **Fill this node** - click an empty/partial node (no link selected) → tray filters to links eligible for it. `ZonePage.jsx`, `Tray.jsx`, `DriverBin.jsx`
+4. [x] **Target count + forced moves** - per-tray-link badge of eligible node count; 0 = orphan (needs driver), 1 = forced (do first). `Tray.jsx`
+5. [x] **Actionable vs expected warnings** - split FAIL/MISMATCH (actionable) from WARN (info); collapse info by default, de-emphasize styling, separate counts. `ZonePage.jsx`, `Landing.jsx`, `Block.jsx`
+6. [x] **Mains/provision links out of the way** - LV-PROV / N/A (no powerType) links into a collapsible provision lane, hidden from the normal tray. `Tray.jsx`
+7. [x] **Suggest a driver to add** - cluster orphan links by fingerprint, recommend the matching inventory type, one-click add. `ZonePage.jsx`
 
 ## Verify
-- [x] pytest green (add eligibility/fingerprint tests) — later ported to node (`npm test`)
+- [x] pytest green (add eligibility/fingerprint tests) - later ported to node (`npm test`)
 - [x] live app: select a link → only candidates lit; group-place; fill-node; orphan banner adds correct driver; warnings collapsed by default
 
 ---
 
 # Workflow round 2 (2026-07-07)
 
-- [x] **#3 Session autosave + resume** — persist model + assignments + prefs to localStorage; import screen offers Resume / Start fresh (full restore, no re-upload). `src/persist.js`, `App.jsx`, `ImportScreen.jsx`, reducer RESTORE
-- [x] **#4 Zone triage dashboard** — landing sortable by problems / orphans / capacity / unassigned / name; per-zone tray + drivers-needed counts. `Landing.jsx`
-- [x] **#5 Change ledger** — Redo (toolbar + Ctrl+Shift+Z) + per-row revert-to-baseline in Review. reducer REDO / REVERT_KEY, `ReviewModal.jsx`, `ZonePage.jsx`
-- [x] **#6 Global locate search** — find any link/driver ref → jump to its zone + select. `Search.jsx` in landing + zone headers
-- [x] **#8 Multi-select bulk move** — Ctrl/⌘-click toggles a selection set; click a node moves all; best-fit = intersection. `state.js` selectedLinks, `Block.jsx`, `ZonePage.jsx`
-- [x] **NEW cable-label config** — checkbox picker of fields on the block face (default: Load + fV); persisted via prefs. `labelContext.js`, `LabelConfig.jsx` in zone header, `Block.jsx`
+- [x] **#3 Session autosave + resume** - persist model + assignments + prefs to localStorage; import screen offers Resume / Start fresh (full restore, no re-upload). `src/persist.js`, `App.jsx`, `ImportScreen.jsx`, reducer RESTORE
+- [x] **#4 Zone triage dashboard** - landing sortable by problems / orphans / capacity / unassigned / name; per-zone tray + drivers-needed counts. `Landing.jsx`
+- [x] **#5 Change ledger** - Redo (toolbar + Ctrl+Shift+Z) + per-row revert-to-baseline in Review. reducer REDO / REVERT_KEY, `ReviewModal.jsx`, `ZonePage.jsx`
+- [x] **#6 Global locate search** - find any link/driver ref → jump to its zone + select. `Search.jsx` in landing + zone headers
+- [x] **#8 Multi-select bulk move** - Ctrl/⌘-click toggles a selection set; click a node moves all; best-fit = intersection. `state.js` selectedLinks, `Block.jsx`, `ZonePage.jsx`
+- [x] **NEW cable-label config** - checkbox picker of fields on the block face (default: Load + fV); persisted via prefs. `labelContext.js`, `LabelConfig.jsx` in zone header, `Block.jsx`
 
 Defaults taken: multi-select = Ctrl/⌘-click + intersection highlight; ledger = per-row revert in Review + Redo button.
 Verify: `npm test` 17 green (7 new reducer tests in `test/state.test.mjs`); build clean; dev serves new modules.
@@ -43,15 +43,15 @@ Verify: `npm test` 17 green (7 new reducer tests in `test/state.test.mjs`); buil
 
 # Workflow round 3 (2026-07-07)
 
-- [x] **Use Demo Data** — sneaky faint dot in the import-card corner loads bundled `src/demo/{form,links}.csv` (committed, HUB-A cleared). `ImportScreen.jsx`, `api.loadDemo`
-- [x] **Demo tutorial** — lightweight 5-step card, shown when `state.demo`. `Tutorial.jsx`
-- [x] **Landing graph toggle** — Completion % (default) vs Capacity %; sort adds "least complete". `Landing.jsx`, `zoneStats.completionPct`
-- [x] **Ordered zone colours** — `zoneAccent(zone, zones)` walks a wheel-ordered palette by sorted hub name (no more hash).
-- [x] **HUB-A unassigned in demo** — generated by clearing HUB-A rows in the demo form CSV.
-- [x] **CC current optional** — dropped the "no link current data" WARN for CC.
-- [x] **"undetermined" label** — undetermined driver nodes say undetermined, not "unlimited".
-- [x] **Tray default By ControlGroup** — grouped is the default; toggle renamed.
-- [x] **Tray drill-down filters** — CC/CV plus per-mA and per-voltage optgroups; the filter also hides drivers that can't take those cables (`driverMatchesFilter`). `Tray.jsx`, `ZonePage.jsx`
-- [x] **Drag-drop + autodetect import** — one dropzone, both files at once, `detectKind` by header signature; parsing requires only signature columns so added/removed optional columns don't break old or new CSVs. `ImportScreen.jsx`, `api.parseAuto`, `engine.detectKind`
+- [x] **Use Demo Data** - sneaky faint dot in the import-card corner loads bundled `src/demo/{form,links}.csv` (committed, HUB-A cleared). `ImportScreen.jsx`, `api.loadDemo`
+- [x] **Demo tutorial** - lightweight 5-step card, shown when `state.demo`. `Tutorial.jsx`
+- [x] **Landing graph toggle** - Completion % (default) vs Capacity %; sort adds "least complete". `Landing.jsx`, `zoneStats.completionPct`
+- [x] **Ordered zone colours** - `zoneAccent(zone, zones)` walks a wheel-ordered palette by sorted hub name (no more hash).
+- [x] **HUB-A unassigned in demo** - generated by clearing HUB-A rows in the demo form CSV.
+- [x] **CC current optional** - dropped the "no link current data" WARN for CC.
+- [x] **"undetermined" label** - undetermined driver nodes say undetermined, not "unlimited".
+- [x] **Tray default By ControlGroup** - grouped is the default; toggle renamed.
+- [x] **Tray drill-down filters** - CC/CV plus per-mA and per-voltage optgroups; the filter also hides drivers that can't take those cables (`driverMatchesFilter`). `Tray.jsx`, `ZonePage.jsx`
+- [x] **Drag-drop + autodetect import** - one dropzone, both files at once, `detectKind` by header signature; parsing requires only signature columns so added/removed optional columns don't break old or new CSVs. `ImportScreen.jsx`, `api.parseAuto`, `engine.detectKind`
 
 Verify: `npm test` 21 green (+4 engine: detectKind, backwards-compat, CC-no-warn, demo HUB-A empty); build clean; dev serves all new modules.

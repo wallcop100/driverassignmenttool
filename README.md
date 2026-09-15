@@ -1,7 +1,7 @@
 # Driver Assignment Tool
 
 Driver sizing and assignment for the Lighting DesignDB secondary-power workflow.
-A **static, client-side React app** — CSV parsing, the DriverHealthCheck
+A **static, client-side React app** - CSV parsing, the DriverHealthCheck
 validation engine, sizing and export all run in the browser
 ([src/engine.js](src/engine.js)). No server, no backend. Embedded, the host is
 DJ 101681 (see [EMBEDDING.md](EMBEDDING.md) and
@@ -10,14 +10,14 @@ DJ 101681 (see [EMBEDDING.md](EMBEDDING.md) and
 ## Three modes
 
 The tool works out which one it is in from the data, not from which file you
-dropped — `detectMode()` in [src/engine.js](src/engine.js). A hub with drivers
+dropped - `detectMode()` in [src/engine.js](src/engine.js). A hub with drivers
 but no cables is refused with a message naming the file that would fix it.
 
 | | Given | It does | Output |
 |---|---|---|---|
 | **Assign** | cables + drivers | place cables on driver outputs, validate | LinksMap patch, CSV |
 | **Size** | cables, no drivers | work out the drivers, then place the cables | as above, plus the drivers |
-| **Estimate** | neither — Positions only | count the drivers from the fittings | Elements rows, CSV |
+| **Estimate** | neither - Positions only | count the drivers from the fittings | Elements rows, CSV |
 
 **Estimate** is the tender case. There are no cables to assign, so the input is
 a requirement assessment: fittings rolled up per secondary-power destination
@@ -25,7 +25,7 @@ a requirement assessment: fittings rolled up per secondary-power destination
 A row is a quantity of fittings rather than a cable, so it divides freely across
 drivers and the count is arithmetic: fittings per output is the node's forward
 voltage over one fitting's, per driver is that times the outputs, capped by
-watts. Constraints on that page make the answer deliberately looser — see
+watts. Constraints on that page make the answer deliberately looser - see
 `planFromRequirements`.
 
 ## The driver catalogue
@@ -33,7 +33,7 @@ watts. Constraints on that page make the answer deliberately looser — see
 [src/catalogue.js](src/catalogue.js) holds 34 parts transcribed from the Driver
 Specs page group. The ElementTypes library states a max power for about 4% of
 driver types, so most of the time the tool is asked to size a driver whose
-ratings nobody wrote down — but the type's `Name` almost always says which part
+ratings nobody wrote down - but the type's `Name` almost always says which part
 it is. Matching is by model token, because the names are free text
 (`LINDrive`, `SLO360/A`, `SL0240A3` with a zero for the letter O).
 [REFRESH-catalogue.md](REFRESH-catalogue.md) says how to regenerate it.
@@ -45,7 +45,7 @@ npm install
 npm run dev
 ```
 
-Drop CSVs on the import screen — the two DataJoin exports, or a Links CSV with
+Drop CSVs on the import screen - the two DataJoin exports, or a Links CSV with
 the driver type library, or a requirement assessment with the library. A
 previously exported Driver Assignment CSV can be re-imported to resume, and the
 faint dot in the card corner loads the bundled demo.
@@ -82,7 +82,7 @@ node docs/shoot.mjs      # -> docs/img/*.png
 ```
 
 Capture needs playwright, which is a **local tool, not a dependency of this
-repo** — it is not in `package.json`, because 200MB of browser has no business
+repo** - it is not in `package.json`, because 200MB of browser has no business
 in the install for a static app. Set it up where you need it:
 
 ```
@@ -101,21 +101,21 @@ limit bound it, and the constraints along the top make the answer looser.
 
 Reached from a hub, so it asks one question. The design's own types, most-used
 first, one press each. A hub with no drivers yet gets its sizing offered at the
-top. A type that needs correcting is marked, not corrected here — an audit in the
+top. A type that needs correcting is marked, not corrected here - an audit in the
 middle of an assignment is a different job.
 
 ### Driver types
 
 One card per ElementType in the design, flagged first: the reason to open this
-screen is at the top of it. The card shows what the DesignDB states — never a
+screen is at the top of it. The card shows what the DesignDB states - never a
 datasheet number in its place, so it is never unclear which side a value came
-from — with what the spec page disagrees about written underneath.
+from - with what the spec page disagrees about written underneath.
 
 The pencil expands the card to every ElementTypes column, editable in place. The
 ⋮ menu holds the remedies: **Fill blanks** adds only what the design states
 nothing for, **Use the spec page** overwrites what disagrees, and where the Ref
 and the Name disagree about the current, both are offered and the choice corrects
-the Name. The Ref is never renamed — it is the key Elements point at.
+the Name. The Ref is never renamed - it is the key Elements point at.
 
 Defining a type the design does not have yet is a set of filters over the
 datasheet catalogue (CC, ≥500mA, 2 outputs), then the shortlist they leave. The

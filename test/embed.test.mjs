@@ -9,7 +9,7 @@ test('accepts a well-formed init from the allowed origin', () => {
   assert.equal(validateInit(good, HOST, HOST).ok, true);
 });
 
-// Everything below must be DROPPED — returned as { ok: false }, never thrown.
+// Everything below must be DROPPED - returned as { ok: false }, never thrown.
 // A throw here would surface as an unhandled rejection in the message handler
 // and leave the iframe blank, which is the failure mode we are avoiding.
 for (const [name, msg, origin, allowed] of [
@@ -32,9 +32,9 @@ for (const [name, msg, origin, allowed] of [
   });
 }
 
-// A hub with no drivers yet has no Driver Assignment rows to send — links alone
+// A hub with no drivers yet has no Driver Assignment rows to send - links alone
 // is a legitimate payload (the tool sizes the drivers from the type library).
-test('accepts an init with no form CSV — the greenfield hub', () => {
+test('accepts an init with no form CSV - the greenfield hub', () => {
   assert.deepEqual(validateInit({ ...good, form: undefined }, HOST, HOST), { ok: true });
   // what the overlay actually sends: an empty <script> block, not a missing key
   assert.deepEqual(validateInit({ ...good, form: '' }, HOST, HOST), { ok: true });
@@ -46,7 +46,7 @@ test('a version mismatch is flagged for an explicit UI state, not silently ignor
   assert.match(r.reason, /99/);
 });
 
-test('an origin mismatch is not flagged — dropped silently, payload never echoed', () => {
+test('an origin mismatch is not flagged - dropped silently, payload never echoed', () => {
   const r = validateInit(good, 'https://evil.example', HOST);
   assert.equal(r.mismatch, undefined);
   assert.equal(r.reason.includes('form'), false);

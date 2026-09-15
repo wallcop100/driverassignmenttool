@@ -13,7 +13,7 @@ const pctOf = (c) => (c.cap ? Math.round((100 * c.used) / c.cap) : 0);
 function Bar({ used, cap, unit, projected, title }) {
   const pct = cap ? Math.round((100 * used) / cap) : 0;
   const over = pct > 100;
-  // A domain may hand over a figure with NO cap — a count of runs on a bus,
+  // A domain may hand over a figure with NO cap - a count of runs on a bus,
   // where the segment's allowance is a different quantity entirely. That is a
   // reading, not a gauge: no bar to fill, and no "/" with nothing after it.
   const uncapped = cap == null;
@@ -74,10 +74,10 @@ function Slot({ driver, node, state, dispatch, links, flagIndex, onNodeClick, gr
       onDrop={(e) => { e.preventDefault(); drop(e.dataTransfer.getData('text/plain')); }}
       onClick={() => onNodeClick(key)}>
       <div className="slot-header">
-        <span className="fw-semibold">{node.name || '—'}</span>
+        <span className="fw-semibold">{node.name || '-'}</span>
         {cgs.length > 1 ? (
           <Tooltip content={manyOk
-            ? `Carries ${cgs.length} ${domain.groupLabel} — a shared segment takes several by design`
+            ? `Carries ${cgs.length} ${domain.groupLabel} - a shared segment takes several by design`
             : `Serves multiple ${domain.groupLabel}: ${cgs.join(', ')}`}>
             <span className={`cg-chip ${manyOk ? 'cg-many' : 'cg-split'}`}>{cgs.join(' / ')}</span>
           </Tooltip>
@@ -99,16 +99,13 @@ function Slot({ driver, node, state, dispatch, links, flagIndex, onNodeClick, gr
         </span>
       </div>
 
-      {/* What a capacity MEANS is the domain's business — which watt cap binds
+      {/* What a capacity MEANS is the domain's business - which watt cap binds
           this output, whether a forward-voltage limit exists at all. The slot
           draws whatever bars it is handed. */}
       {domain.slotCapacities(driver, node, {
         watts: nodeWatts, fv: seriesFv,
         count: placed.length,
-        index: driver.nodes.findIndex((n) => n.name === node.name),
-        // a loop link knows how many fittings are on it, when the host says
-        devices: placed.some((l) => l.devices != null)
-          ? placed.reduce((n, l) => n + (l.devices ?? 0), 0) : null,
+        links: placed,
         ghostWatts: ghost ? nodeWatts + (dragLink.loadW ?? 0) : null,
         ghostFv: ghost ? seriesFv + (dragLink.fvV ?? 0) : null,
       }).map((c, i) => (
@@ -132,7 +129,7 @@ function Slot({ driver, node, state, dispatch, links, flagIndex, onNodeClick, gr
 }
 
 export default function DriverBin({ driver, state, dispatch, links, accent, flagIndex, onNodeClick, groups }) {
-  // ALL flags for this driver — must not filter out node/link-scoped ones, since
+  // ALL flags for this driver - must not filter out node/link-scoped ones, since
   // TypeMatch/CVVoltage/CurrentMatch (CC/CV + mA checks) always carry those.
   const driverFlags = flagIndex.byDriver.get(driver.ref) ?? [];
   const [showFlags, setShowFlags] = useState(false);
@@ -162,7 +159,7 @@ export default function DriverBin({ driver, state, dispatch, links, accent, flag
         {(driver.name || driver.typeName) && (
           <span className="bin-name" title={driver.typeName || ''}>{driver.name || driver.typeName}</span>
         )}
-        {/* added here, so not in the DesignDB yet — the same dashed-and-dotted
+        {/* added here, so not in the DesignDB yet - the same dashed-and-dotted
             language a moved cable and a corrected type use */}
         {driver.added && <span className="type-added">added</span>}
         {badge && (

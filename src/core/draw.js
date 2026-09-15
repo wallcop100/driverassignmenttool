@@ -1,7 +1,7 @@
 // The house drawing idiom, taken from DJ 101676's LCP rack detail (page 139763)
 // so a hub elevation and a panel elevation read as the same family of drawing.
 //
-// Pure decisions only — a fill, a stroke, where a label goes and how big. The
+// Pure decisions only - a fill, a stroke, where a label goes and how big. The
 // SVG itself is written by whichever component is drawing, because a hub needs
 // hatching and dimension lines that a panel does not.
 
@@ -13,14 +13,14 @@ export const FILLS = {
   signal: '#e8112d',      // DALI / control: a DALI module, a PSU feeding one
   psu: '#e8112d',
   keypad: '#7048b6',
-  passive: '#d9dee3',     // Panduit, junction boxes, trunking — no intelligence
+  passive: '#d9dee3',     // Panduit, junction boxes, trunking - no intelligence
   jbox: '#d9dee3',
   blank: '#ffffff',
 };
 
 export const STROKE = '#111';
 export const SPARE_STROKE = '#c41f4b';
-export const SPARE_LABEL = 'SPARE — DO NOT CONNECT';
+export const SPARE_LABEL = 'SPARE - DO NOT CONNECT';
 
 // White lettering on a saturated fill, near-black on a pale one.
 const PALE = new Set(['#d9dee3', '#ffffff']);
@@ -34,7 +34,7 @@ export const spareStyle = () => ({
 });
 
 // ---- scale ----------------------------------------------------------------
-// 101676 carries a CAUTION: its drawing is a SCHEMATIC — widths are clamped for
+// 101676 carries a CAUTION: its drawing is a SCHEMATIC - widths are clamped for
 // legibility and nothing may be measured off it. A hub elevation is the
 // opposite: it states a size a joiner will build to. Same idiom, two policies,
 // and they must not be confused.
@@ -49,18 +49,28 @@ export function scaler(policy = 'true', pxPerMm = 1) {
 // ---- labels ---------------------------------------------------------------
 // Helvetica-ish average glyph width as a fraction of font size. Good enough to
 // decide across-vs-turned without measuring text in a DOM.
-const CHAR = 0.55;
-export const textWidth = (text, size) => String(text ?? '').length * size * CHAR;
+// 0.55 was too narrow: at zoom, "EldoLED SL0360A" ran past its block in the
+// hub drawing and bold panel labels were cut short ("MOD-DALI-LUTI"). A mix of
+// capitals and digits in a sans face is nearer 0.6 of its size, and bold nearer
+// 0.68, so the estimate errs wide and a label shrinks or turns before it spills.
+export const CHAR = 0.6;
+export const CHAR_BOLD = 0.68;
+export const textWidth = (text, size, char = CHAR) => String(text ?? '').length * size * char;
 
 // Where a block's lettering goes. 101676 turns a label through -90 when the
-// block is too narrow for it — the 25mm Panduit case — rather than shrinking it
+// block is too narrow for it - the 25mm Panduit case - rather than shrinking it
 // to nothing or letting it run outside the box.
 //
 // Returns { mode, size, sub } where mode is 'across' | 'turned' | 'none'.
 // `sub` is the second line ("E41763 - 105mm"), dropped first when room is tight.
-export function labelPlan(label, sub, wPx, hPx, { base = 11, min = 7, pad = 8 } = {}) {
+// `measure(text, size)` is optional. Without it the width is estimated from the
+// character count, which is what runs under node and in the SVG drawings. In an
+// HTML block the page can hand over a real measurement of the real font, and
+// then no estimate can be wrong for a face nobody guessed at.
+export function labelPlan(label, sub, wPx, hPx, { base = 11, min = 7, pad = 8, char = CHAR, measure = null } = {}) {
   if (!label) return { mode: 'none', size: 0, sub: null };
-  const fits = (size, across) => textWidth(label, size) <= (across ? wPx : hPx) - pad;
+  const width = (size) => (measure ? measure(label, size) : textWidth(label, size, char));
+  const fits = (size, across) => width(size) <= (across ? wPx : hPx) - pad;
 
   for (let size = base; size >= min; size -= 0.5) {
     if (!fits(size, true)) continue;
@@ -68,7 +78,7 @@ export function labelPlan(label, sub, wPx, hPx, { base = 11, min = 7, pad = 8 } 
     const room = hPx >= size * 2 + 6;
     return { mode: 'across', size, sub: sub && room ? sub : null };
   }
-  // too narrow to read across — turn it, which is what the drawings do
+  // too narrow to read across - turn it, which is what the drawings do
   for (let size = base; size >= min; size -= 0.5) {
     if (fits(size, false) && wPx >= size + 2) return { mode: 'turned', size, sub: null };
   }

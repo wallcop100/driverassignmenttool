@@ -20,7 +20,7 @@ test('every script is one main() in a try/catch', () => {
 
 test('columns are found by header, never by number, and addable ones are added', () => {
   // `addable` marks which of `cols` may be appended to a workbook that lacks
-  // them — a pre-V4.6 book has no ContextParameters column to find at all
+  // them - a pre-V4.6 book has no ContextParameters column to find at all
   const h = patch.header('Elements', 'E', ['Ref', 'TypeRef', 'ContextParameters'],
     ['ContextParameters']);
   assert.match(h, /columnIndex\(WS_E, "Ref", false\)/);

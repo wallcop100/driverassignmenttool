@@ -1,5 +1,5 @@
 // Client-side port of the former Python sidecar (parsing + DriverHealthCheck
-// validation + export). Pure functions — the renderer owns all state. Runs in
+// validation + export). Pure functions - the renderer owns all state. Runs in
 // the browser and under node (see test/engine.test.mjs).
 import Papa from 'papaparse';
 import { readCsv, sameRefs, outRef, PLACEHOLDER_REF } from './core/csv.js';
@@ -16,21 +16,21 @@ const CURRENT_TOLERANCE = 0.10;
 
 // Tolerant of spacing and case around the separator. The strict form
 // (/(\d+)W(\s\|\s(\d+)([AV]))?/) silently produced powerType:null on "180W|24V"
-// or "180W | 24v", which reads downstream as "driver type undeclared" — the
+// or "180W | 24v", which reads downstream as "driver type undeclared" - the
 // driver then matches nothing in the inventory and its cables report "nowhere
 // to go". Exporters vary here; a whitespace difference must not look like
 // missing data.
 // mA is accepted and normalised to amps. The cells hold amps (schema page 137573)
 // and so does this app, but the ref, the datasheets and half the humans say
 // milliamps, so "50W | 350mA" turns up. It used to fail the unit group and read
-// as "driver type undeclared" — which now means the type is refused for sizing
+// as "driver type undeclared" - which now means the type is refused for sizing
 // and quietly disappears from the catalogue. Same class of bug as the spacing
 // one above: a notation difference must not look like missing data.
 const DRIVER_RE = /(?<Watts>\d+(\.\d+)?)\s*W(\s*\|\s*(?<Value>\d+(\.\d+)?)\s*(?<Unit>m?[AV]))?/i;
 const NODE_FV_RE = /(?<FV>\d+(\.\d+)?)\s*fV/i;
 const NODE_W_RE = /(?<W>\d+(\.\d+)?)\s*W/i;
 
-// Only the signature columns are required — everything else is read defensively,
+// Only the signature columns are required - everything else is read defensively,
 // so adding columns to future CSVs (or dropping optional ones) won't break old
 // or new files (backwards/forwards compatible).
 const FORM_ESSENTIAL = ['ElementRef', 'Node'];
@@ -64,7 +64,7 @@ export function detectKind(text) {
 
 // Same refs, any order. Cables come back to a node in whatever order they were
 // dropped, so an order-sensitive compare reports "changed" for a row that is
-// electrically identical to the import — and then exports and patches it.
+// electrically identical to the import - and then exports and patches it.
 
 // ---- parsing ----
 export function parseDriverRestrictions(raw) {
@@ -102,7 +102,7 @@ const channelCount = (row) => {
 };
 
 // A library may state the ElementTypes columns outright instead of the composed
-// "Driver Restrictions" string, and when it does they win — the composed form is
+// "Driver Restrictions" string, and when it does they win - the composed form is
 // order-dependent and loses the rating whenever a driver-level fV sits between
 // the watts and it:
 //
@@ -125,7 +125,7 @@ function explicitRatings(row) {
     maxPowerW,
     currentA: powerType === 'CC' ? currentA : null,
     outputVoltageV: powerType === 'CV' ? outputVoltageV : null,
-    // composed for export, where the form CSV still carries the string form —
+    // composed for export, where the form CSV still carries the string form - 
     // and composed in the order that survives a round trip
     driverRestrictions: maxPowerW == null ? ''
       : `${g(maxPowerW)}W${rating ? ` | ${rating}` : ''}`,
@@ -179,7 +179,7 @@ const composeNodeRestrictions = (n) => [
 ].filter(Boolean).join(' | ');
 
 // Fill each driver's blank ratings from its type. A value stated on the hub row
-// is an explicit override and is left alone — which is also why loading a
+// is an explicit override and is left alone - which is also why loading a
 // library can never change how existing (standalone) data behaves.
 function applyTypes(drivers, library) {
   const byType = Object.fromEntries(library.map((t) => [t.typeRef, t]));
@@ -263,11 +263,11 @@ function parseLinks(text) {
 
 // Which of the three modes the data puts us in, and why. The tool should not
 // depend on which file someone happened to drop: the circumstance is what the
-// data says — cables and drivers, cables alone, or neither.
+// data says - cables and drivers, cables alone, or neither.
 //
 //   assign      cables to place, drivers to place them on
-//   greenfield  cables, but no drivers yet — size them, then place
-//   estimate    no cables at all — count drivers from the Positions (DJ 100053)
+//   greenfield  cables, but no drivers yet - size them, then place
+//   estimate    no cables at all - count drivers from the Positions (DJ 100053)
 //
 // `reason` is written to be shown to a person, because being in the wrong mode
 // is confusing and the fix is usually another CSV.
@@ -278,13 +278,13 @@ export function detectMode({ drivers = 0, links = 0, requirements = 0 } = {}) {
       : { mode: 'greenfield', reason: `${links} cables, no drivers yet` };
   }
   if (requirements > 0) {
-    return { mode: 'estimate', reason: `no cables yet — ${requirements} requirement rows from the Positions` };
+    return { mode: 'estimate', reason: `no cables yet - ${requirements} requirement rows from the Positions` };
   }
   return {
     mode: null,
     reason: drivers > 0
-      ? 'drivers but no cables — run the Links Assignment, or DJ 100053 for a tender estimate'
-      : 'nothing to work from — drop the Links Assignment CSV, or DJ 100053 for a tender estimate',
+      ? 'drivers but no cables - run the Links Assignment, or DJ 100053 for a tender estimate'
+      : 'nothing to work from - drop the Links Assignment CSV, or DJ 100053 for a tender estimate',
   };
 }
 
@@ -296,7 +296,7 @@ export function detectMode({ drivers = 0, links = 0, requirements = 0 } = {}) {
 //
 // A row is NOT a cable: it is N fittings that happen to share a hub, a
 // ControlGroup and a fitting type. It carries the same field names a link does,
-// so fingerprintCompatible and pickType work on it unchanged — plus `qty`, and
+// so fingerprintCompatible and pickType work on it unchanged - plus `qty`, and
 // the per-unit values that make it divisible across drivers.
 const ASSESSMENT_ESSENTIAL = ['Link_SecondaryPowerRef', 'SumPower'];
 
@@ -325,7 +325,7 @@ export function parseAssessment(text) {
       positionType: s(row.PositionTypeRef),
       controlType: s(row.ControlTypeRef),
       addressCount: num(row.ControlAddressCount),
-      // per fitting — what actually has to fit on a node
+      // per fitting - what actually has to fit on a node
       wPer: loadW / qty,
       fvPer: fvV == null ? null : fvV / qty,
     });
@@ -336,7 +336,7 @@ export function parseAssessment(text) {
 
 // The catalogue as the DESIGN states it: every type the hub rows use, plus the
 // whole library. Where both describe a type the library supplies the ratings but
-// the node list is whichever is longer — the same rule buildInventory uses, so an
+// the node list is whichever is longer - the same rule buildInventory uses, so an
 // observed 2CH instance is not reduced to 1CH by a thinner library row.
 function designInventory(drivers, library) {
   const inventory = buildInventory(drivers);
@@ -372,7 +372,7 @@ const DEFAULT_FIELDNAMES = [
 ];
 const EMPTY_FORM = { drivers: [], baseline: {}, originalRows: [], fieldnames: DEFAULT_FIELDNAMES };
 
-// formText is optional: a hub can start with cables and no drivers at all — that
+// formText is optional: a hub can start with cables and no drivers at all - that
 // is the case this tool exists to fix. Without it the type library is the only
 // possible source of inventory, so it becomes required instead.
 // `assessmentText` is the third mode: Positions rolled up by DJ 100053, with no
@@ -381,18 +381,18 @@ const EMPTY_FORM = { drivers: [], baseline: {}, originalRows: [], fieldnames: DE
 export function buildModel(formText, linksText, typesText, presets, assessmentText) {
   const presetTypes = (presets || []).map(presetToType);
   if (!formText?.trim() && !typesText?.trim() && !presetTypes.length) {
-    throw new Error('No Driver Assignment CSV and no driver type library — nothing to build drivers from.');
+    throw new Error('No Driver Assignment CSV and no driver type library - nothing to build drivers from.');
   }
   const { drivers, baseline, originalRows, fieldnames } = formText?.trim() ? parseForm(formText) : EMPTY_FORM;
   const links = parseLinks(linksText);
   // A job can be part designed and part still at tender, so requirements sit
-  // beside the cables rather than instead of them — mode is per hub.
+  // beside the cables rather than instead of them - mode is per hub.
   const requirements = assessmentText?.trim() ? parseAssessment(assessmentText) : [];
   const library = typesText ? parseTypes(typesText) : [];
   if (library.length) applyTypes(drivers, library);
   // Snapshot the design's own ratings BEFORE a preset rewrites the drivers.
   // buildInventory reads them back off the driver rows, so taking it afterwards
-  // would record our own numbers as the design's — which is precisely the
+  // would record our own numbers as the design's - which is precisely the
   // confusion this exists to prevent.
   const designDB = designInventory(drivers, library);
   if (presetTypes.length) applyPresets(drivers, presetTypes);
@@ -400,17 +400,17 @@ export function buildModel(formText, linksText, typesText, presets, assessmentTe
     ...requirements.map((r) => r.zone)])].sort();
 
   // The catalogue is the whole library plus any type only seen in the hub rows,
-  // so a hub can be given a driver type it does not currently contain — the
+  // so a hub can be given a driver type it does not currently contain - the
   // per-hub payload alone could only ever offer what was already there.
   //
   // Where both describe a type, the library supplies the ratings but the node
-  // list is whichever is longer — same rule buildInventory already uses, so an
+  // list is whichever is longer - same rule buildInventory already uses, so an
   // observed 2CH instance is not reduced to 1CH by a thinner library row.
   const inventory = designInventory(drivers, library);
   // A preset overrides outright for SIZING, node list included: the channel count
   // was typed in, so a longer observed one is stale data. But what the DesignDB
   // said is kept beside it, because a preset on an existing type is a proposed
-  // change and not a fact — the page has to be able to show the design's own
+  // change and not a fact - the page has to be able to show the design's own
   // numbers rather than quietly showing ours in their place.
   for (const t of presetTypes) {
     const prior = designDB.get(t.typeRef) ?? null;
@@ -427,7 +427,7 @@ export function buildModel(formText, linksText, typesText, presets, assessmentTe
   };
 }
 
-// The estimate model. No links, no drivers, no baseline to diff against — the
+// The estimate model. No links, no drivers, no baseline to diff against - the
 // only shared ground with the other two modes is the inventory, which is where
 // the sizing gets its parts.
 export function buildEstimate(assessmentText, typesText, presets) {
@@ -435,7 +435,7 @@ export function buildEstimate(assessmentText, typesText, presets) {
   const presetTypes = (presets || []).map(presetToType);
   const library = typesText?.trim() ? parseTypes(typesText) : [];
   if (!library.length && !presetTypes.length) {
-    throw new Error('No driver type library — nothing to size the estimate against.');
+    throw new Error('No driver type library - nothing to size the estimate against.');
   }
   const inventory = new Map(library.map((t) => [t.typeRef, t]));
   for (const t of presetTypes) {
@@ -454,21 +454,21 @@ export function buildEstimate(assessmentText, typesText, presets) {
 
 // ':' is spoken for elsewhere in Parameters syntax, so it is banned inside a
 // node name (page 140180). A node written OP.1:2 means the same thing as OP.1-2
-// — one node carrying two physical outputs — so correcting it is a rename and
+// - one node carrying two physical outputs - so correcting it is a rename and
 // nothing moves: the node keeps its identity, and every cable on it stays on it.
 
 // A project that has not been onboarded to Lighting DesignDB V4.6: driver
 // ElementTypes exist, and not one of them states any of the ten attributes the
-// checks run on (page 140180). Nothing in this tool works against that — every
-// driver reads as undetermined, nothing can be sized, every check is skipped —
+// checks run on (page 140180). Nothing in this tool works against that - every
+// driver reads as undetermined, nothing can be sized, every check is skipped - 
 // and the fix is the same nine or ten rows for the whole job, so it is worth
 // saying so once and walking through them rather than flagging each type.
 //
 // ANY type stating ANY of them means someone has started, and then this is not
 // an onboarding, it is an ordinary gap for the types page to flag.
 // Only the electrical ratings count. BallastCountPerUoM and ControlType are
-// commonly already filled in on a project that has never seen V4.6 — on set
-// 109311 every driver carries BallastCountPerUoM 1 and nothing else at all —
+// commonly already filled in on a project that has never seen V4.6 - on set
+// 109311 every driver carries BallastCountPerUoM 1 and nothing else at all - 
 // and neither of them on its own makes a driver sizeable or checkable. Counting
 // them said "somebody has started" about a project where nobody had.
 export function statedAttributes(t) {
@@ -478,7 +478,7 @@ export function statedAttributes(t) {
     .filter((v) => v != null && v !== '').length;
 }
 
-// An LED driver names its outputs OP.n — "one `<`-prefixed node per LED output"
+// An LED driver names its outputs OP.n - "one `<`-prefixed node per LED output"
 // (page 140180). The library the host sends is wider than that: the same rule
 // that lets a driver through lets a Crestron DIN module through too, and its
 // nodes are DALI B 1, L1/N1, NET. Those are control gear, they have none of
@@ -487,7 +487,7 @@ export function isDriverType(t) {
   return (t?.nodes ?? []).some((n) => /^OP[.\d]/i.test(String(n.name ?? '')));
 }
 
-// The project's driver types — every one the host sent, not just the open hub's.
+// The project's driver types - every one the host sent, not just the open hub's.
 // A driver type belongs to the job, and filling it in once should settle it
 // everywhere it is used.
 export const driverTypes = (model) => (model?.inventory ?? []).filter(isDriverType);
@@ -533,7 +533,7 @@ function validateDriver(ctx, assignments, driver) {
 
   // 1. Driver Type Match
   if (driver.powerType == null) {
-    flag('WARN', 'TypeMatch', 'driver CC/CV type undeclared — type match not verified');
+    flag('WARN', 'TypeMatch', 'driver CC/CV type undeclared - type match not verified');
   } else {
     for (const [nn, links] of Object.entries(perNode)) {
       for (const l of links) {
@@ -547,11 +547,11 @@ function validateDriver(ctx, assignments, driver) {
   // 2. CV Voltage
   if (driver.powerType === 'CV') {
     if (driver.outputVoltageV == null) {
-      flag('WARN', 'CVVoltage', 'output voltage undeclared — voltage not verified');
+      flag('WARN', 'CVVoltage', 'output voltage undeclared - voltage not verified');
     } else {
       for (const [nn, links] of Object.entries(perNode)) {
         for (const l of links) {
-          if (!l.voltageV) flag('WARN', 'CVVoltage', `${l.ref} has no voltage data — voltage not verified`, nn, l.ref);
+          if (!l.voltageV) flag('WARN', 'CVVoltage', `${l.ref} has no voltage data - voltage not verified`, nn, l.ref);
           else if (Math.abs(l.voltageV - driver.outputVoltageV) > 1e-6) {
             flag('MISMATCH', 'CVVoltage', `${l.ref} is ${g(l.voltageV)}V, driver outputs ${g(driver.outputVoltageV)}V`, nn, l.ref);
           }
@@ -563,7 +563,7 @@ function validateDriver(ctx, assignments, driver) {
   // 3. Driver total wattage + 4. no-split single ref
   const total = allLinks.reduce((sum, l) => sum + (l.loadW ?? 0), 0);
   if (driver.maxPowerW == null) {
-    flag('WARN', 'TotalWattage', `MaxPower undeclared — ${g(total)}W assigned, not verified`);
+    flag('WARN', 'TotalWattage', `MaxPower undeclared - ${g(total)}W assigned, not verified`);
   } else {
     if (total > driver.maxPowerW) flag('FAIL', 'TotalWattage', `total ${g(total)}W exceeds MaxPower ${g(driver.maxPowerW)}W`);
     if (driver.nodes.length === 1) {
@@ -590,7 +590,7 @@ function validateDriver(ctx, assignments, driver) {
     const links = perNode[node.name];
     if (!links.length || node.maxFvV == null) continue;
     const known = links.map((l) => l.fvV).filter((v) => v != null);
-    if (known.length < links.length) flag('WARN', 'SeriesFV', 'forward voltage missing on some links — fV not verified', node.name);
+    if (known.length < links.length) flag('WARN', 'SeriesFV', 'forward voltage missing on some links - fV not verified', node.name);
     const sumFv = known.reduce((a, b) => a + b, 0);
     if (sumFv > node.maxFvV) flag('FAIL', 'SeriesFV', `series fV ${g(sumFv)} exceeds node max ${g(node.maxFvV)}fV`, node.name);
   }
@@ -598,14 +598,14 @@ function validateDriver(ctx, assignments, driver) {
   // 6. Current match (CC, 10% band)
   if (driver.powerType === 'CC') {
     if (driver.currentA == null) {
-      flag('WARN', 'CurrentMatch', 'current range undeclared — current not verified');
+      flag('WARN', 'CurrentMatch', 'current range undeclared - current not verified');
     } else {
       for (const [nn, links] of Object.entries(perNode)) {
         const currents = links.map((l) => l.currentA).filter((c) => c != null);
-        if (!currents.length) continue; // CC cables need not carry current data — nothing to verify
+        if (!currents.length) continue; // CC cables need not carry current data - nothing to verify
         const lo = Math.min(...currents);
         const hi = Math.max(...currents);
-        if (hi - lo > 1e-6) { flag('MISMATCH', 'CurrentMatch', `non-uniform link currents (${g(lo)}–${g(hi)}A) — mixed fixture types`, nn); continue; }
+        if (hi - lo > 1e-6) { flag('MISMATCH', 'CurrentMatch', `non-uniform link currents (${g(lo)}–${g(hi)}A) - mixed fixture types`, nn); continue; }
         const delta = Math.abs(currents[0] - driver.currentA) / driver.currentA;
         if (delta > CURRENT_TOLERANCE) flag('MISMATCH', 'CurrentMatch', `link current ${g(currents[0])}A deviates ${pct(delta)} from driver ${g(driver.currentA)}A`, nn);
         else if (delta > 0) flag('WARN', 'CurrentMatch', `link current ${g(currents[0])}A is ${pct(delta)} off ${g(driver.currentA)}A (expected input-power margin)`, nn);
@@ -676,7 +676,7 @@ export function eligibility(model, zone, assignments, added) {
 // each cable (largest first) goes to the least-loaded eligible node (water-filling),
 // respecting node watt/fV limits and the driver total, skipping incompatible nodes.
 // Returns placements per node + anything that didn't fit.
-// `margin` (0–1) is headroom kept free on every cap — a driver run at its rated
+// `margin` (0–1) is headroom kept free on every cap - a driver run at its rated
 // maximum has nothing left for the next design revision, and real parts derate.
 export function distributeGroup(model, assignments, added, linkRefs, nodeKeys, margin = 0) {
   const ctx = makeCtx(model);
@@ -778,7 +778,7 @@ export function presetToType(p) {
     // Straight from the datasheet when the preset came from the catalogue;
     // undefined on a hand-typed one, and then simply not written.
     nodeCurrentA: p.nodeCurrentA ?? null,
-    // DALI addresses, which is what a ref's nCH counts — NOT the output count.
+    // DALI addresses, which is what a ref's nCH counts - NOT the output count.
     // A SoloDrive 560/A is two outputs on one address.
     ballast: p.addresses ?? p.ballast ?? null,
     controlType: p.controlType ?? null,
@@ -788,7 +788,7 @@ export function presetToType(p) {
 }
 
 // A preset is an explicit human statement, so unlike the library it OVERWRITES
-// rather than fills blanks — including on drivers already in the hub. Patching
+// rather than fills blanks - including on drivers already in the hub. Patching
 // a type and then watching its five existing drivers keep warning would read as
 // the patch not having worked.
 function applyPresets(drivers, presetTypes) {
@@ -817,7 +817,7 @@ function applyPresets(drivers, presetTypes) {
 export { PARTS, combine, matchPart, matchParts, resolveSpec, reachableW } from './catalogue.js';
 
 // A CC part's datasheet gives a RANGE; the design picks one value out of it and
-// says so twice — in the ref (ET-CCR-D-1050-…) and in the name ("at 1050mA").
+// says so twice - in the ref (ET-CCR-D-1050-…) and in the name ("at 1050mA").
 // nextTypeRef below writes that convention; these two read it back.
 //
 // Both return amps, or null when there is nothing to read. They are deliberately
@@ -827,7 +827,7 @@ export { PARTS, combine, matchPart, matchParts, resolveSpec, reachableW } from '
 // The milliamps out of a CC ref. Projects do not agree on where it goes:
 // ET-CCR-D-350-1CH-01 puts it before the channel count and ET-CCR-D-1CH-500-01
 // after it, and both are live. So rather than a fixed position, take the one
-// plain number among the segments — the channel count carries CH, the trailing
+// plain number among the segments - the channel count carries CH, the trailing
 // -01 is the variant, and what is left is the current.
 export function currentFromRef(typeRef) {
   const parts = String(typeRef ?? '').split('-');
@@ -845,9 +845,9 @@ export function currentFromName(name) {
   return m ? Number(m[1]) / 1000 : null;
 }
 
-// Which mode a single hub is in. The overlay already decides this per hub — it
+// Which mode a single hub is in. The overlay already decides this per hub - it
 // sends links for a hub that has cables and an assessment for one that does not
-// — so a model holding both is the honest shape, and a job can be part designed
+// - so a model holding both is the honest shape, and a job can be part designed
 // and part still at tender.
 export function zoneMode(model, zone) {
   const links = (model.links || []).filter((l) => l.zone === zone).length;
@@ -889,7 +889,7 @@ export function nextTypeRef(inventory, draft) {
 }
 
 // ---- driver sizing (greenfield / bulk add) ----
-// Both live in the core now — the placeholder Ref and the `~2` tag that keeps
+// Both live in the core now - the placeholder Ref and the `~2` tag that keeps
 // two added rows apart in memory are not a driver idea. Re-exported so every
 // call site and test keeps working unchanged.
 
@@ -903,7 +903,7 @@ export function nextDriverRef(taken) {
 const fpKey = (l) => (l.powerType === 'CC' ? `CC·${g(l.currentA ?? 0)}A` : `CV·${g(l.voltageV ?? 0)}V`);
 const sum = (xs) => xs.reduce((a, b) => a + b, 0);
 
-// Emergency drivers are stock for the emergency circuit, not spare capacity —
+// Emergency drivers are stock for the emergency circuit, not spare capacity - 
 // they lose every tie against an ordinary type that fits just as well.
 // ponytail: recognised by ref, the only signal the export carries.
 const isEmergency = (ref) => /(^|[-_ ])EM([-_ ]|\d|$)/i.test(String(ref));
@@ -911,7 +911,7 @@ const isEmergency = (ref) => /(^|[-_ ])EM([-_ ]|\d|$)/i.test(String(ref));
 // Sizing is only as honest as the ratings, so a type has to DECLARE them to be a
 // candidate: CC/CV, its current or output voltage, and a max power. An
 // undeclared type passes every compatibility test by default and its blank node
-// limits read as infinite — that made the least-documented type in the library
+// limits read as infinite - that made the least-documented type in the library
 // win every bucket (most watts, no fV ceiling, so always the fewest drivers).
 // It is still fine to *hold* cables (validation only warns); it is not fine to
 // recommend buying one.
@@ -926,7 +926,7 @@ function sizingCandidates(inventory, links) {
 
 // Choose the type that needs the fewest drivers for this bucket, then an
 // ordinary type over an emergency one, then the one that wastes the least
-// capacity. Types that can't take the single biggest cable are out — no amount
+// capacity. Types that can't take the single biggest cable are out - no amount
 // of them would ever fit it.
 // fewest drivers → ordinary before emergency → least wasted capacity
 const betterFit = (a, b) => a.count - b.count || a.em - b.em || a.waste - b.waste;
@@ -966,9 +966,9 @@ export function planDrivers(model, assignments, added, zone, opts = {}) {
   const buckets = new Map();
   for (const l of pool) {
     // fingerprint always splits (a CC cable can't share a CV driver); the
-    // ControlGroup split is optional but on by default — check 7 FAILs a node
+    // ControlGroup split is optional but on by default - check 7 FAILs a node
     // serving two groups, so mixing them would only create work.
-    const key = restrictControlGroup ? `${l.controlGroup || '—'} · ${fpKey(l)}` : fpKey(l);
+    const key = restrictControlGroup ? `${l.controlGroup || '-'} · ${fpKey(l)}` : fpKey(l);
     if (!buckets.has(key)) buckets.set(key, []);
     buckets.get(key).push(l);
   }
@@ -1036,9 +1036,9 @@ export function planFromRequirements(model, zone, opts = {}) {
   for (const r of rows) {
     const key = [
       fpKey(r),                                        // a CC fitting cannot share a CV driver
-      restrictControlGroup ? (r.controlGroup || '—') : null,
-      splitByType ? (r.positionType || '—') : null,
-      splitByLocation ? (r.location || '—') : null,
+      restrictControlGroup ? (r.controlGroup || '-') : null,
+      splitByType ? (r.positionType || '-') : null,
+      splitByLocation ? (r.location || '-') : null,
     ].filter((x) => x != null).join(' · ');
     if (!buckets.has(key)) buckets.set(key, []);
     buckets.get(key).push(r);
@@ -1047,7 +1047,7 @@ export function planFromRequirements(model, zone, opts = {}) {
   const lines = [];
   const unmatched = [];
   for (const [key, group] of [...buckets.entries()].sort()) {
-    // What must fit is ONE fitting, not the group total — that is the whole
+    // What must fit is ONE fitting, not the group total - that is the whole
     // difference between this and packing cables.
     const units = group.map((r) => ({ ...r, loadW: r.wPer, fvV: r.fvPer }));
     const qty = group.reduce((n, r) => n + r.qty, 0);
@@ -1056,7 +1056,7 @@ export function planFromRequirements(model, zone, opts = {}) {
     const totalW = group.reduce((w, r) => w + r.loadW, 0);
 
     // Rank candidates by the count THIS arithmetic gives, not by pickType's,
-    // which ranks on watts. When forward voltage binds — and it usually does —
+    // which ranks on watts. When forward voltage binds - and it usually does - 
     // the two disagree: two 35fV fittings on a 55fV node need two outputs, so a
     // 2CH part holds them on one driver while a 1CH part of the same wattage
     // needs two. Ranking on watts picks the 1CH and doubles the estimate.
@@ -1086,7 +1086,7 @@ export function planFromRequirements(model, zone, opts = {}) {
           : 'driver W',
       };
       // Fewest drivers is the efficient answer, and a 2-output part usually wins
-      // it — two fittings that will not sit in series still sit on one driver,
+      // it - two fittings that will not sit in series still sit on one driver,
       // one per output. Early on that is the wrong instinct: it assumes a
       // consolidation the detail design may not follow, so the default is to
       // reach for the simpler single-output part and accept the higher count.
@@ -1127,7 +1127,7 @@ export function planFromRequirements(model, zone, opts = {}) {
   return { zone, lines, unmatched, drivers, loadW: lines.reduce((w, l) => w + l.loadW, 0) };
 }
 
-// Every hub in the assessment, sized — or just the one asked for.
+// Every hub in the assessment, sized - or just the one asked for.
 export function estimate(model, opts, zone) {
   const zones = zone ? [zone] : [...new Set((model.requirements || []).map((r) => r.zone))].sort();
   return zones.map((z) => planFromRequirements(model, z, opts));
@@ -1177,7 +1177,7 @@ export function exportCsv(model, assignments, added) {
 }
 
 // Rows (ElementRef+Node) whose link refs differ from the imported baseline, or
-// that belong to a driver added in the UI — i.e. exactly what the Review diff
+// that belong to a driver added in the UI - i.e. exactly what the Review diff
 // shows. Shared by the CSV diff view and the patch script below.
 export function changedRows(model, assignments, addedDrivers) {
   const a = assignments || {};
@@ -1199,7 +1199,7 @@ export function changedRows(model, assignments, addedDrivers) {
 // JS port of the DB-Merge macro: for every link ref in a changed assignment
 // row, patch LinksMap's FromLinkEndContext* columns to point at the new
 // ElementRef+Node. Only rows that actually changed from the imported baseline
-// (or belong to a UI-added driver) are patched — same scope as the Review diff.
+// (or belong to a UI-added driver) are patched - same scope as the Review diff.
 const TYPE_SHEET = 'ElementTypes';
 const ELEMENT_SHEET = 'Elements';
 
@@ -1285,7 +1285,7 @@ const typeRow = (t) => ({
 // per physical driver to resolve.
 //
 // Elements.ContextRef is a foreign key BY Ref, and a hub's zone label is
-// COALESCE(ExtRef, Ref) — on a project whose hub Positions carry ExtRefs (P8110
+// COALESCE(ExtRef, Ref) - on a project whose hub Positions carry ExtRefs (P8110
 // labelled CSB) the label is not a key at all. The host sends the real Position
 // Ref in dat:init's context, the only place it appears.
 function addedElements(sessions) {
@@ -1296,14 +1296,14 @@ function addedElements(sessions) {
     const hubLabel = sn.context?.hubLabel ?? null;
     for (const d of sn.addedDrivers ?? []) {
       const known = hubRef && (!hubLabel || hubLabel === d.zone || hubRef === d.zone);
-      // A hub is usually a Position — DJ 101681 takes it from
-      // Link_SecondaryPowerRef, which is the PSU-HUB Position — but it does not
+      // A hub is usually a Position - DJ 101681 takes it from
+      // Link_SecondaryPowerRef, which is the PSU-HUB Position - but it does not
       // have to be one. Until the host sends the kind this falls back rather
       // than knows, and says so instead of writing a silent guess.
       const hubType = sn.context?.hubContextType ?? null;
       const notes = [];
       if (!known) notes.push(`CHECK ContextRef: ${d.zone} is the hub label, not its Position Ref`);
-      if (!hubType) notes.push('CHECK ContextType: assumed Position — the host did not say whether this hub is a Position or an Element');
+      if (!hubType) notes.push('CHECK ContextType: assumed Position - the host did not say whether this hub is a Position or an Element');
       out.push({
         ref: PLACEHOLDER_REF,
         name: byType.get(d.typeRef)?.name || '',

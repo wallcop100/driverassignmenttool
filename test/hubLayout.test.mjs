@@ -174,7 +174,7 @@ test('the trunking is the side clearance, not a wall on top of it', () => {
   // band is there regardless
   // upright, the 50 is at the part's ends, so the row is inset by it and the
   // trunking stands in the inset. Turned, the 50 is above and below instead, so
-  // the row has the whole bay width — HUB-A runs four turned drivers wall to wall
+  // the row has the whole bay width - HUB-A runs four turned drivers wall to wall
   // over a 280 column of upright ones.
   const both = hl.placements([[I('A'), { ...I('B'), rot: 90 }]]);
   assert.equal(both[0].x, hl.TRUNK);
@@ -203,7 +203,7 @@ test('a row closes when the next part will not fit the width', () => {
 
 // ---- saving a layout to Parameters and getting the same drawing back -------
 // Every edit the lab offers has to survive the DesignDB. The check is always
-// the same: make the edit, save, load, and assert the drawing is identical —
+// the same: make the edit, save, load, and assert the drawing is identical - 
 // not just the item list, the actual placements the renderer consumes.
 
 const byRef = (bays) => Object.fromEntries(
@@ -235,7 +235,7 @@ test('save/load: an untouched hub', () => {
   // they take 126.7 each: 343 tall in a 380 bay
   assert.equal(saved.container.parameters, '[[380mm,343mm,150mm]]<1>');
   // the coordinate is relative to the hub the Element is contexted into, and the
-  // bay is the discrete space it sits in — both, as page 100966 has them
+  // bay is the discrete space it sits in - both, as page 100966 has them
   assert.equal(saved.elements[0].contextParameters, '[50mm,25mm,0mm]<1>');
   assert.equal(saved.elements[0].parameters, null, 'upright says nothing its type does not');
 });
@@ -397,7 +397,7 @@ test('load: an Element the model no longer has is dropped, not drawn as a hole',
 });
 
 // ---- a hub is not necessarily an Element ----------------------------------
-// On the live projects a PSU hub is usually a Position — P8110, labelled CSB —
+// On the live projects a PSU hub is usually a Position - P8110, labelled CSB - 
 // but it can be an Element, and page 100966 puts available continuous space on
 // "Locations/Positions/Elements and Types". Getting the kind wrong writes the
 // capacity to a sheet the hub is not on and contexts every driver into a row
@@ -442,7 +442,7 @@ test('no hub given means no kind claimed, not a guess', () => {
   assert.equal(saved.container.contextType, null);
   assert.equal(saved.container.ref, null);
   assert.equal(saved.elements[0].contextType, null);
-  // and it still round trips — the geometry never depended on the kind
+  // and it still round trips - the geometry never depended on the kind
   roundTrip(HUB());
 });
 
@@ -473,14 +473,14 @@ test('separating a bay makes it an enclosure Element named the way set 108908 na
 
   assert.equal(saved.slots.length, 1);
   const enc = saved.slots[0];
-  assert.equal(enc.name, '#72.2', 'hub name, dot, bay number — as #72.2 under #72');
+  assert.equal(enc.name, '#72.2', 'hub name, dot, bay number - as #72.2 under #72');
   assert.equal(enc.contextType, 'Position', 'the enclosure sits on the hub Position');
   assert.equal(enc.contextRef, 'P90001');
   assert.equal(enc.isNew, true, 'its Ref is the workbook\'s to allocate');
   assert.match(enc.parameters, /^\[\[380mm,/, 'and it states its own size');
 
   assert.equal(enc.typeRef, hl.ENCLOSURE_TYPE, 'one generic wrapper type, not a size catalogue');
-  // the hub now states only the bay it still holds itself — bay 2's size went
+  // the hub now states only the bay it still holds itself - bay 2's size went
   // with bay 2, so the hub is a single 380 bay again, not the 710 it was
   assert.match(saved.container.parameters, /<1>$/);
   assert.match(saved.container.parameters, /^\[\[380mm,/);
@@ -524,7 +524,7 @@ test('every bay separated: each is its own enclosure, the hub holds none directl
   const saved = hl.save(bays, opts);
 
   assert.deepEqual(saved.slots.map((b) => b.name), ['#72.1', '#72.2']);
-  // the parameters followed the bays out, so the Position states nothing — and
+  // the parameters followed the bays out, so the Position states nothing - and
   // says so loudly, because whatever is on that row has to be cleared
   assert.equal(saved.container.parameters, '');
   assert.equal(saved.container.clear, true);
@@ -540,7 +540,7 @@ test('joining a separated bay back puts its drivers on the Position again', () =
   assert.equal(split.elements.find((e) => e.ref === 'C').contextType, 'Element');
   assert.equal(joined.elements.find((e) => e.ref === 'C').contextType, 'Position');
   assert.deepEqual(joined.slots, [], 'the enclosure Element is no longer needed');
-  // the drawing is the same either way — separating is a record, not a move
+  // the drawing is the same either way - separating is a record, not a move
   assert.deepEqual(drawing(bays), drawing(bays));
 });
 
