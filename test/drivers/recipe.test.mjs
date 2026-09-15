@@ -55,13 +55,15 @@ test('with no children and no spaces the datasheet pair is only a suggestion', (
 test('junction boxes are spaces on the driver Element, and their count comes back', () => {
   const { parts } = r.partsFor({ wrapper, children, types });
   const params = r.elementParams('[76.7mm,153.6mm,150mm]', 2, parts);
-  assert.equal(params, '[76.7mm,153.6mm,150mm]<JB.1[80mm,35mm,40mm,158mm,0,0],JB.2[80mm,35mm,40mm,158mm,35mm,0]>',
+  // the supply sits at 55, so a second box beside the driver would reach it:
+  // the stack goes right of everything instead
+  assert.equal(params, '[76.7mm,153.6mm,150mm]<JB.1[80mm,35mm,40mm,233mm,0,0],JB.2[80mm,35mm,40mm,233mm,35mm,0]>',
     'beside the as-placed size it already held');
   assert.equal(r.jbCount(params), 2);
   assert.equal(r.jbCount('[76.7mm,153.6mm,150mm]'), null, 'nothing stated: the default stands');
   assert.equal(r.jbCount(r.elementParams(params, 0, parts)), null, 'zero writes none');
   const m = r.compose(parts, 2);
-  assert.deepEqual(m.size, [238, 123, 40]);
+  assert.deepEqual(m.size, [313, 123, 40]);
   assert.equal(m.parts.filter((p) => p.kind === 'jbox').length, 2);
 });
 
@@ -77,4 +79,22 @@ test('the snap: 5mm by default, Alt for 1mm, Shift for five steps, and a nudge l
   assert.equal(nudge(340, 1, 5), 345);
   assert.equal(nudge(338, -1, 5), 335);
   assert.equal(nudge(340, 1, 5, { shift: true }), 350);
+});
+
+test('a junction box never sits on a part', () => {
+  const low = [{ role: 'Driver', size: [153, 50, 23], at: [0, 0, 0] }, { role: 'PSU', size: [228, 68, 39], at: [0, 55, 0] }];
+  const boxes = r.placeJbs(2, low);
+  assert.equal(boxes[0].at[0], 233, 'the second box would reach the supply, so the stack moves right of everything');
+  const lifted = r.houseArrange(low, { minLow: 70 });
+  assert.deepEqual(lifted.find((p) => p.role === 'PSU').at, [0, 75, 0], 'or the house rule lifts the supply over the stack');
+  assert.equal(r.placeJbs(2, lifted)[0].at[0], 158, 'and the boxes stay beside the driver');
+  const m = r.compose(lifted, 2);
+  const rects = m.parts;
+  for (let i = 0; i < rects.length; i += 1) {
+    for (let j = i + 1; j < rects.length; j += 1) {
+      const a = rects[i]; const b = rects[j];
+      const hit = a.at[0] < b.at[0] + b.size[0] && b.at[0] < a.at[0] + a.size[0] && a.at[1] < b.at[1] + b.size[1] && b.at[1] < a.at[1] + a.size[1];
+      assert.ok(!hit, `${a.kind} and ${b.kind} overlap`);
+    }
+  }
 });

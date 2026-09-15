@@ -73,17 +73,18 @@ test('the edits are container-agnostic', () => {
 const PART = (ref, w = 210, h = 40) => ({ ref, label: ref, size: [w, h, 150] });
 
 test('equal widths put slots exactly where the single pitch did', () => {
-  assert.deepEqual(L.offsetsOf(3, { slotWidth: 380 }), [0, 330, 660]);
-  assert.deepEqual(L.offsetsOf(3, { slotWidth: 380, joined: false }), [0, 380, 760]);
+  // each slot keeps its own trunking, so the next starts where this one ends
+  assert.deepEqual(L.offsetsOf(3, { slotWidth: 380 }), [0, 380, 760]);
+  assert.deepEqual(L.offsetsOf(3, { slotWidth: 380, joined: true }), [0, 330, 660], 'a shared divider, when asked for');
 });
 
 test('a wider bay beside a standard one moves everything after it', () => {
   const slots = [[PART('A')], [PART('B')]];
   const opts = { widths: [500, 380] };
-  // 500 + 380 less the 50 they share
-  assert.equal(L.extent(slots, opts).w, 830);
+  // 500 + 380, each keeping its own trunking
+  assert.equal(L.extent(slots, opts).w, 880);
   const b = L.placements(slots, opts).find((p) => p.ref === 'B');
-  assert.equal(b.x, 450 + L.TRUNK, 'bay 2 starts at 500 - 50, then its trunking inset');
+  assert.equal(b.x, 500 + L.TRUNK, 'bay 2 starts where bay 1 ends, then its trunking inset');
   assert.equal(L.widthAt(1, opts), 380);
   assert.equal(L.widthAt(5, opts), L.SLOT_WIDTH, 'an unset width is the house width');
 });
@@ -103,7 +104,7 @@ test('per-bay widths survive the save and load round trip, separated bays includ
   const draw = (s) => L.placements(s, opts).map((p) => [p.ref, p.slot, p.x, p.y]);
   assert.deepEqual(draw(back), draw(slots));
   assert.match(saved.slots[0].parameters, /^\[\[400mm,/, 'the separated bay states its own width');
-  assert.match(saved.container.parameters, /^\[\[850mm,/, '380 + 520 - 50 for the bays still on the hub');
+  assert.match(saved.container.parameters, /^\[\[900mm,/, '380 + 520 for the bays still on the hub');
 });
 
 test('a slot with no width typed is as wide as what it holds', () => {

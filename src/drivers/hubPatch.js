@@ -129,10 +129,9 @@ const hubSection = (h) => `    // --- CHANGE: the hub's own size ---\n`
 // updated in place; one without a Ref is appended under the placeholder.
 const baySection = (bays) => `    // --- ADD: separated bays ---\n`
   + `    const bays = [\n${json(bays)}\n    ];\n`
-  + `    let next_E = data_E.length;\n`
   + `    for (const b of bays) {\n`
   + `      const existing = b.isNew ? undefined : rowOf_E.get(b.ref);\n`
-  + `      const row = existing === undefined ? next_E++ : existing;\n`
+  + `      const row = existing === undefined ? nextRow_E++ : existing;\n`
   + `      if (existing === undefined) {\n`
   + `        WS_E.getCell(row, col_E_Ref).setValue(b.ref);\n`
   + `        WS_E.getCell(row, col_E_Name).setValue(b.name);\n`
@@ -147,6 +146,33 @@ const baySection = (bays) => `    // --- ADD: separated bays ---\n`
   + ` + (b.isNew ? " - give it a real Ref, and point its drivers at that Ref." : ""));\n`
   + `    }\n\n`;
 
+// A quantity row broken apart keeps one driver on its own row.
+const quantitySection = (rows) => `    // --- CHANGE: a quantity broken apart keeps one ---\n`
+  + `    const quantities = [\n${json(rows)}\n    ];\n`
+  + `    for (const q of quantities) {\n`
+  + `      const row = rowOf_E.get(q.ref);\n`
+  + `      if (row === undefined) { console.log("WARNING: " + q.ref + " not found - its Quantity was not changed."); continue; }\n`
+  + `      WS_E.getCell(row, col_E_Quantity).setValue(q.quantity);\n`
+  + `      console.log(q.ref + ": Quantity " + String(data_E[row][col_E_Quantity]) + " -> " + q.quantity);\n`
+  + `    }\n\n`;
+
+// ...and the others become rows of their own, where they were placed. Their Ref is
+// the workbook's to allocate, as with any driver added here.
+const brokenOutSection = (rows) => `    // --- ADD: drivers broken out of a quantity ---\n`
+  + `    const brokenOut = [\n${json(rows)}\n    ];\n`
+  + `    for (const el of brokenOut) {\n`
+  + `      const row = nextRow_E++;\n`
+  + `      WS_E.getCell(row, col_E_Ref).setValue(el.ref);\n`
+  + `      if (el.name) { WS_E.getCell(row, col_E_Name).setValue(el.name); }\n`
+  + `      WS_E.getCell(row, col_E_TypeRef).setValue(el.typeRef);\n`
+  + `      WS_E.getCell(row, col_E_ContextType).setValue(el.contextType);\n`
+  + `      WS_E.getCell(row, col_E_ContextRef).setValue(el.contextRef);\n`
+  + `      if (el.contextParameters) { WS_E.getCell(row, col_E_ContextParameters).setValue(el.contextParameters); }\n`
+  + `      if (el.parameters) { WS_E.getCell(row, col_E_Parameters).setValue(el.parameters); }\n`
+  + `      console.log("Appended " + el.ref + " (" + el.typeRef + ") in " + el.contextRef + " " + el.contextParameters);\n`
+  + `    }\n`
+  + `    console.log("Drivers broken out of a quantity carry the placeholder Ref. Give each a real Ref.");\n\n`;
+
 const flavours = (params) => {
   const p = parseParams(params ?? '');
   return {
@@ -160,8 +186,23 @@ const flavours = (params) => {
 // typeSizes may carry `spaces`: a wrapper type's parts, '<PSU(...)[...]>'.
 // tbc: [{ ref, sheet: 'E' | 'ET', isTBC, isPropertiesTBC }], flags set here.
 // jb: { [elementRef]: '<JB.1[...],...>' | '' }, junction boxes set here ('' clears).
-export function hubPatch({ saved, hub = null, typeSizes = [], tbc = [], jb = {}, tool = 'Driver Assignment Tool' }) {
-  const elements = (saved?.elements ?? [])
+// quantities: [{ ref, quantity }], rows whose Quantity changes (a quantity broken apart).
+// newElements: { [elementRef]: { typeRef, name } }, drivers broken out of a quantity.
+export function hubPatch({
+  saved, hub = null, typeSizes = [], tbc = [], jb = {}, quantities = [], newElements = {},
+  tool = 'Driver Assignment Tool',
+}) {
+  const isNew = (ref) => Object.hasOwn(newElements, ref);
+  const brokenOut = (saved?.elements ?? []).filter((e) => isNew(e.ref)).map((e) => ({
+    ref: PLACEHOLDER_REF,
+    name: newElements[e.ref].name ?? '',
+    typeRef: newElements[e.ref].typeRef,
+    contextType: e.contextType ?? hub?.contextType ?? 'Position',
+    contextRef: e.contextRef ?? hub?.ref ?? '',
+    contextParameters: e.contextParameters ?? '',
+    parameters: `${e.parameters ?? ''}${jb[e.ref] ?? ''}`,
+  }));
+  const elements = (saved?.elements ?? []).filter((e) => !isNew(e.ref))
     .map((e) => {
       const cp = parseParams(e.contextParameters);
       const moved = e.contextType === 'Element';
@@ -189,9 +230,11 @@ export function hubPatch({ saved, hub = null, typeSizes = [], tbc = [], jb = {},
 
   let body = MERGE_TS
     + header('Elements', 'E',
-      ['Ref', 'Name', 'TypeRef', 'ContextType', 'ContextRef', 'IsTBC', 'IsPropertiesTBC', 'ContextParameters', 'Parameters'],
+      ['Ref', 'Name', 'TypeRef', 'ContextType', 'ContextRef', 'Quantity', 'IsTBC', 'IsPropertiesTBC', 'ContextParameters', 'Parameters'],
       ['ContextParameters', 'Parameters', 'IsTBC'])
-    + rowMap('E');
+    + rowMap('E')
+    // every append shares one row counter, so bays and new drivers never collide
+    + `    let nextRow_E = data_E.length;\n`;
   const flagsOn = (sheet) => tbc.filter((f) => f.sheet === sheet)
     .map((f) => ({ ref: f.ref, isTBC: !!f.isTBC, isPropertiesTBC: !!f.isPropertiesTBC }));
   if (typeSizes.length || flagsOn('ET').length) {
@@ -214,7 +257,9 @@ export function hubPatch({ saved, hub = null, typeSizes = [], tbc = [], jb = {},
     body += `    console.log("CHECK: no hub Ref was sent, so the hub's own size "`
       + ` + ${JSON.stringify(saved?.container?.parameters ?? '')} + " was not written.");\n\n`;
   }
+  if (quantities.length) body += quantitySection(quantities);
   if (bays.length) body += baySection(bays);
+  if (brokenOut.length) body += brokenOutSection(brokenOut);
   if (flagsOn('E').length) body += tbcSection('E', flagsOn('E'));
   if (flagsOn('ET').length) body += tbcSection('ET', flagsOn('ET'));
   return script(body, tool);

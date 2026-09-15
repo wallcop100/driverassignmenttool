@@ -179,6 +179,25 @@ export function reducer(state, action) {
       return withUndo(state, { assignments, ...CLEAR_MODES });
     }
 
+    // A row with a Quantity broken into single drivers. It keeps its Ref as one of
+    // them; the rest are added under the placeholder, each marked with the row it
+    // came from. A quantity row never has cables, so there is nothing to move.
+    case 'SPLIT_QUANTITY': {
+      const { ref, typeRef, zone, quantity } = action;
+      if (!(quantity > 1) || state.addedDrivers.some((d) => d.split === ref)) return state;
+      const template = state.model.inventory.find((t) => t.typeRef === typeRef);
+      const taken = new Set([...state.model.drivers.map((d) => d.ref), ...state.addedDrivers.map((d) => d.ref)]);
+      const assignments = cloneAssignments(state.assignments);
+      const added = [];
+      for (let i = 1; i < quantity; i += 1) {
+        const r = nextDriverRef(taken);
+        taken.add(r);
+        for (const node of template?.nodes ?? []) assignments[keyOf(r, node.name)] = { toEntityType: '', refs: [] };
+        added.push({ ref: r, typeRef, zone, split: ref });
+      }
+      return withUndo(state, { assignments, addedDrivers: [...state.addedDrivers, ...added] });
+    }
+
     case 'ADD_DRIVER': {
       const { typeRef, zone } = action;
       const taken = new Set([
@@ -424,7 +443,7 @@ export function effectiveDrivers(model, addedDrivers, deletedDrivers) {
   const gone = new Set(deletedDrivers ?? []);
   return [
     ...model.drivers.filter((d) => !gone.has(d.ref)),
-    ...(addedDrivers ?? []).map((a) => ({ ...byType[a.typeRef], ref: a.ref, zone: a.zone, added: true })),
+    ...(addedDrivers ?? []).map((a) => ({ ...byType[a.typeRef], ref: a.ref, zone: a.zone, added: true, split: a.split ?? null })),
   ];
 }
 

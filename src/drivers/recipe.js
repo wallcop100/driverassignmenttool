@@ -60,23 +60,25 @@ export function nameSpaces(parts) {
 
 // The drawings' arrangement: the supply across the top, everything else side by
 // side beneath it. Used when nothing states an arrangement; never stored as a rule.
-export function houseArrange(parts) {
-  const top = parts.filter((p) => p.role === 'PSU');
-  const low = parts.filter((p) => p.role !== 'PSU');
-  const out = [];
+// `minLow` lifts the supply clear of something beside the lower parts - the
+// junction box stack, which can stand taller than a 50mm driver.
+export function houseArrange(parts, { minLow = 0 } = {}) {
+  const at = new Map();
   let x = 0;
-  for (const p of low) {
-    out.push({ ...p, at: [x, 0, 0] });
+  parts.forEach((p, i) => {
+    if (p.role === 'PSU') return;
+    at.set(i, [x, 0, 0]);
     x += (p.size?.[0] ?? 0) + GAP;
-  }
-  const lowH = Math.max(0, ...low.map((p) => p.size?.[1] ?? 0));
+  });
+  const lowH = Math.max(0, minLow, ...parts.filter((p) => p.role !== 'PSU').map((p) => p.size?.[1] ?? 0));
   let y = lowH ? lowH + GAP : 0;
-  for (const p of top) {
-    out.push({ ...p, at: [0, y, 0] });
+  parts.forEach((p, i) => {
+    if (p.role !== 'PSU') return;
+    at.set(i, [0, y, 0]);
     y += (p.size?.[1] ?? 0) + GAP;
-  }
-  // keep the order they came in, so the editor's rows do not jump
-  return parts.map((p) => out.find((o) => o === p || (o.space === p.space && o.typeRef === p.typeRef && o.label === p.label)) ?? p);
+  });
+  // same order as they came in, so the editor's rows do not jump
+  return parts.map((p, i) => ({ ...p, at: at.get(i) }));
 }
 
 // The box around everything placed, and the deepest part.
@@ -170,6 +172,23 @@ export function jbSpaces(count, parts) {
   }));
 }
 
+const overlaps = (a, b) => a.at[0] < b.at[0] + b.size[0] && b.at[0] < a.at[0] + a.size[0]
+  && a.at[1] < b.at[1] + b.size[1] && b.at[1] < a.at[1] + a.size[1];
+
+// Where the junction boxes actually go: beside the lower parts, unless that
+// would put one on a part (a stated arrangement can have the supply low), in
+// which case the whole stack moves to the right of everything. Two things can
+// never occupy the same space.
+export function placeJbs(count, parts) {
+  const body = parts.filter((p) => p.size).map((p) => ({ size: p.size, at: p.at ?? [0, 0, 0] }));
+  let boxes = jbSpaces(count, parts);
+  if (boxes.some((bx) => body.some((p) => overlaps(bx, p)))) {
+    const x = body.length ? Math.max(...body.map((p) => p.at[0] + p.size[0])) + GAP : 0;
+    boxes = boxes.map((bx) => ({ ...bx, at: [x, bx.at[1], 0] }));
+  }
+  return boxes;
+}
+
 // How many the Element states, or null when it states none and the default stands.
 export function jbCount(params) {
   const list = parseParams(params ?? '').spaceList;
@@ -182,7 +201,7 @@ export function jbCount(params) {
 export function elementParams(current, count, parts) {
   const p = parseParams(current ?? '');
   const others = (p.spaceList ?? []).filter((sp) => !JB.test(sp.name));
-  const list = [...others, ...jbSpaces(count, parts)];
+  const list = [...others, ...placeJbs(count, parts)];
   return formatParams({ ...p, spaceList: list, spaces: list.length ? null : null });
 }
 
@@ -194,7 +213,7 @@ export function compose(parts, jboxes = 0) {
     kind: kind(p.role), label: p.label ?? p.typeRef ?? p.space, full: p.typeRef ?? p.label,
     size: p.size, at: p.at ?? [0, 0, 0], space: p.space,
   }));
-  const boxes = jbSpaces(jboxes, parts).map((sp, i) => ({
+  const boxes = placeJbs(jboxes, parts).map((sp, i) => ({
     kind: 'jbox', label: 'JUNCTION BOX', size: sp.size, at: sp.at, ref: `jb${i}`,
   }));
   const all = [...body, ...boxes];

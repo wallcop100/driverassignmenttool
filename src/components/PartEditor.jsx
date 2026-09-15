@@ -36,7 +36,7 @@ export default function PartEditor({
   // the type's envelope is its parts; the preview also shows this Element's
   // junction boxes, which sit beside them and are not the type's to state
   const env = recipe.envelope(parts) ?? [100, 50, 30];
-  const jbs = recipe.jbSpaces(jboxes ?? 0, parts);
+  const jbs = recipe.placeJbs(jboxes ?? 0, parts);
   const view = recipe.envelope([...parts, ...jbs]) ?? env;
   const k = Math.min(1.2, 300 / Math.max(view[0], 1), 190 / Math.max(view[1], 1));
   const PAD = 18;

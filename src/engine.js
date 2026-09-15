@@ -1295,7 +1295,9 @@ function addedElements(sessions) {
     const byType = new Map((sn.model?.inventory ?? []).map((t) => [t.typeRef, t]));
     const hubRef = sn.hubRef ?? sn.context?.hubRef ?? null;
     const hubLabel = sn.context?.hubLabel ?? null;
-    for (const d of sn.addedDrivers ?? []) {
+    // a driver broken out of a quantity row is appended by the space layout's
+    // patch, with its placement; writing it here too would add it twice
+    for (const d of (sn.addedDrivers ?? []).filter((x) => !x.split)) {
       const known = hubRef && (!hubLabel || hubLabel === d.zone || hubRef === d.zone);
       // A hub is usually a Position - DJ 101681 takes it from
       // Link_SecondaryPowerRef, which is the PSU-HUB Position - but it does not

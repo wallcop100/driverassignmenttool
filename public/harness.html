@@ -85,6 +85,10 @@ ET-CVR-D-24-4CH-01,,OP.1,320W | 24V,80W,24,,0,0
 ET-CVR-01,EldoLED LinearDrive 220D,,,,,"[153,50,23]{<OP.1,<OP.2}",0,0
 ET-CVR-PSU-24,Meanwell - HLG-185-24,,,,24,,0,0
 `;
+// the hub rows, as DJ 101681's date_ block sends them: one row standing for four
+const ELEM_CSV = `Ref,Kind,ContextRef,Parameters,ContextParameters,Quantity
+E50028,element,p50123,,,4
+`;
 // the wrapper's parts, as DJ 101681's datc_ block sends them
 const COMP_CSV = `ParentTypeRef,ChildTypeRef,Quantity,SortOrder
 ET-CVR-D-24-2CH-01,ET-CVR-PSU-24,1,1
@@ -108,6 +112,7 @@ const sendInit = async () => {
     links,
     tbc: TBC_CSV,
     compositions: COMP_CSV,
+    elements: ELEM_CSV,
     focusZone: $('zone').value || undefined,
     context: {
       branchId: Number($('branch').value),

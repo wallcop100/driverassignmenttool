@@ -157,3 +157,17 @@ test('the contract: a hub is recreated from only what the patch writes', async (
   assert.deepEqual(hl.placements(loaded, { widths: geo.widths }).map((p) => [p.ref, p.slot, p.x, p.y, p.rot ?? 0]),
     hl.placements(bays, { widths }).map((p) => [p.ref, p.slot, p.x, p.y, p.rot ?? 0]));
 });
+
+test('breaking a quantity apart keeps one on the row and appends the rest where they were placed', () => {
+  const bays = [[I('E50028')], [I('E5000X'), I('E5000X~2')]];
+  const s = hubPatch({ saved: hl.save(bays, { container: POS }), hub: POS,
+    quantities: [{ ref: 'E50028', quantity: 1 }],
+    newElements: { E5000X: { typeRef: 'ET-CCR-D-300-2CH-01', name: 'SOLODrive' }, 'E5000X~2': { typeRef: 'ET-CCR-D-300-2CH-01', name: 'SOLODrive' } } });
+  assert.match(s, /"ref":"E50028","quantity":1/);
+  assert.match(s, /col_E_Quantity\)\.setValue\(q\.quantity\)/);
+  const appended = s.match(/"ref":"E5000X","name":"SOLODrive","typeRef":"ET-CCR-D-300-2CH-01","contextType":"Position","contextRef":"P8110","contextParameters":"\[[^"]+\]<2>"/g) ?? [];
+  assert.equal(appended.length, 2, 'both broken-out drivers appended, placed in bay 2');
+  assert.doesNotMatch(s, /"ref":"E5000X~2"/, 'the placeholder is written as the placeholder');
+  assert.doesNotMatch(s, /rowOf_E\.get\(it\.ref\)[\s\S]*"ref":"E5000X","xyz"/, 'not looked up as if it already existed');
+  assert.match(s, /let nextRow_E = data_E\.length;/);
+});

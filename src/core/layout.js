@@ -71,22 +71,21 @@ export function footprint(item) {
 }
 
 
-// Two slots standing together share the gap between them: the centre is 50, not
-// the 100 they would make by each bringing its own 50. So a joined slot is
-// pitched one clearance closer than its width. Bays on separate sheets are
-// separate pieces of joinery and keep their own full clearance.
-export const pitchOf = (slotWidth, joined = true) => (joined ? slotWidth - CLEAR_X : slotWidth);
+// Two slots standing together each keep their own trunking: the run between them
+// is 100, not a shared 50. Sharing it put two bays' clearances on top of each
+// other and hatched half the trunking that is really there. `joined: true` is
+// kept for a caller that genuinely shares a divider.
+export const pitchOf = (slotWidth, joined = false) => (joined ? slotWidth - CLEAR_X : slotWidth);
 
 // Each slot's own width: widths[i] where one is given, else slotWidth. A hub is
 // not always two identical bays - a 500 beside a 380 is ordinary joinery.
 export const widthAt = (i, { slotWidth = SLOT_WIDTH, widths = null } = {}) =>
   (widths?.[i] > 0 ? widths[i] : slotWidth);
 
-// Where each slot starts across the container. Joined slots share the 50mm
-// between them, so each starts one clearance before the previous one ended.
-// With every width equal this is slot x pitch, which is what it replaced.
+// Where each slot starts across the container: where the previous one ended,
+// since each keeps its own trunking.
 export function offsetsOf(count, opts = {}) {
-  const joined = opts.joined ?? true;
+  const joined = opts.joined ?? false;
   const out = [];
   let x = 0;
   for (let i = 0; i < count; i += 1) {
@@ -193,7 +192,7 @@ export const slotHeight = (items, slotWidth = SLOT_WIDTH) =>
 // Width is the slots: HUB-A holds a 210mm SoloDrive and is drawn 380 wide, because
 // a slot is as wide as a slot whether or not anything fills it.
 export function extent(slots, opts = {}) {
-  const { width = null, joined = true } = opts;
+  const { width = null, joined = false } = opts;
   const n = Math.max(1, slots.length);
   let w = 0;
   for (let i = 0; i < n; i += 1) w += widthAt(i, opts);

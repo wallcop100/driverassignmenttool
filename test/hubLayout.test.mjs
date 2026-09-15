@@ -45,8 +45,8 @@ test('two wide parts cannot share a row, so they stack their clearance apart', (
 test('the cabinet is as wide as its bays, not as wide as its contents', () => {
   // HUB-A holds a 210mm SoloDrive and is drawn 380 wide
   assert.deepEqual(hl.extent([[I('A')]]), { w: 380, h: 90 });
-  // two joined bays share their 50mm centre
-  assert.equal(hl.extent([[I('A')], [I('B')]]).w, 710);
+  // two bays side by side, each with its own trunking
+  assert.equal(hl.extent([[I('A')], [I('B')]]).w, 760);
   // and the joiner's own width wins when one is given
   assert.equal(hl.extent([[I('A')], [I('B')]], { width: 530 }).w, 530);
 });
@@ -164,17 +164,17 @@ test('a separate bay is its own sheet, the way H1 and H2 are two drawings', () =
   assert.deepEqual(hl.sheets(2, []), [{ slots: [0, 1], separate: false }]);
 });
 
-test('joined bays share their centre; separate ones keep their own clearance', () => {
+test('bays side by side each keep their own trunking, so their clearances never overlap', () => {
   const two = [[I('A')], [I('B')]];
-  // 380 + 380 less the 50 they share
-  assert.equal(hl.extent(two).w, 710);
-  assert.equal(hl.extent(two, { joined: false }).w, 760);
-  // the content areas abut with exactly 50 between them
+  // 380 + 380: sharing the 50 between them overlapped both bays' clearances
+  assert.equal(hl.extent(two).w, 760);
+  assert.equal(hl.extent(two, { joined: true }).w, 710, 'a shared divider only when asked for');
+  // 100 of trunking between the two content areas, 50 from each bay
   const p = hl.placements(two);
   const bay0ContentEnds = hl.CLEAR_X + (hl.BAY_WIDTH - hl.CLEAR_X * 2);
-  assert.equal(p[1].x - bay0ContentEnds, 50);
-  assert.equal(hl.pitchOf(380), 330);
-  assert.equal(hl.pitchOf(380, false), 380);
+  assert.equal(p[1].x - bay0ContentEnds, 100);
+  assert.equal(hl.pitchOf(380), 380);
+  assert.equal(hl.pitchOf(380, true), 330);
 });
 
 test('the trunking is the side clearance, not a wall on top of it', () => {
@@ -266,8 +266,8 @@ test('save/load: moving a part to another bay writes a different discrete space'
   const { saved } = roundTrip(moved);
   const b = saved.elements.find((e) => e.ref === 'B');
   assert.match(b.contextParameters, /<2>$/, 'bay 2');
-  // bay 2 starts a shared centre along: 380 - 50 + 50
-  assert.match(b.contextParameters, /^\[380mm,/);
+  // bay 2 starts where bay 1 ends, then its own 50 of trunking
+  assert.match(b.contextParameters, /^\[430mm,/);
   assert.deepEqual(bayNames(saved.container.parameters), ['1', '2'], 'the hub declares both bays');
 });
 
@@ -507,10 +507,10 @@ test('a driver in a separated bay is contexted into the bay, not the hub', () =>
   assert.equal(c.contextRef, 'E90215');
   // and its coordinate is relative to the bay it is now in, not to the hub
   // local to the bay: the 50 trunking inset still applies inside it, but the
-  // bay's own offset across the hub (a 330 pitch) is gone
+  // bay's own offset across the hub (a 380 pitch) is gone
   assert.match(c.contextParameters, /^\[50mm,/);
   assert.equal(hl.save(bays, { container: POS }).elements.find((e) => e.ref === 'C')
-    .contextParameters.startsWith('[380mm,'), true, 'unseparated it is 380 from the hub');
+    .contextParameters.startsWith('[430mm,'), true, 'unseparated it is 430 from the hub');
   assert.doesNotMatch(c.contextParameters, /<\d/, 'the parent already says which bay');
 
   // the others are untouched and still on the Position
@@ -569,7 +569,7 @@ test('splitting takes the parameters OFF the Position, it does not copy them', (
 
   // before: the Position states the whole hub, both bays
   const joined = hl.save(bays, { container: POS });
-  assert.match(joined.container.parameters, /^\[\[710mm,/);
+  assert.match(joined.container.parameters, /^\[\[760mm,/);
   assert.deepEqual(bayNames(joined.container.parameters), ['1', '2']);
   assert.equal(joined.container.clear, false);
 
@@ -629,7 +629,7 @@ test('every bay width and start comes back from the saved rows alone', () => {
   const widths = [338, 500, 380];
   const heights = [0, 700, 0];
   const saved = hl.save(bays, { container: { ref: 'P1', contextType: 'Position' }, widths, heights, separate: [2], wrapperRefs: { 2: 'E9' } });
-  assert.equal(saved.container.parameters, '[[788mm,700mm,150mm]]<1[338mm,255mm,150mm,0,0,0],2[500mm,700mm,150mm,288mm,0,0]>');
+  assert.equal(saved.container.parameters, '[[838mm,700mm,150mm]]<1[338mm,255mm,150mm,0,0,0],2[500mm,700mm,150mm,338mm,0,0]>');
 
   // nothing from the session: only what the patch writes
   const geo = hl.bayGeometry(saved.container.parameters);
@@ -638,7 +638,7 @@ test('every bay width and start comes back from the saved rows alone', () => {
   const now = hl.placements(back, { widths: geo.widths }).map((p) => [p.ref, p.slot, p.x, p.y, p.rot ?? 0]);
   assert.deepEqual(now, was);
   assert.deepEqual(geo.heights.slice(0, 2), [255, 700], 'a stated height comes back as stated');
-  assert.equal(hl.extent(back.slice(0, 2), { widths: geo.widths.slice(0, 2), heights: geo.heights.slice(0, 2) }).w, 788);
+  assert.equal(hl.extent(back.slice(0, 2), { widths: geo.widths.slice(0, 2), heights: geo.heights.slice(0, 2) }).w, 838);
 });
 
 test('an upright hub module takes a row to itself, however wide the bay', () => {
@@ -647,4 +647,16 @@ test('an upright hub module takes a row to itself, however wide the bay', () => 
   assert.equal(rows.length, 3, 'never side by side, so clearances never overlap');
   const turned = hl.packBay([{ ...M('A'), rot: 90 }, { ...M('B'), rot: 90 }], 380);
   assert.equal(turned.length, 1, 'turned ones still run across the top, as HUB-A has them');
+});
+
+test('a row with a Quantity is a stack exactly as tall as that many drivers', () => {
+  const unit = { ref: 'E1', label: 'E1', size: [153, 50, 23], alone: true, parts: [{ kind: 'driver', size: [153, 50, 23], at: [0, 0] }] };
+  const four = hl.stack(unit, 4);
+  assert.equal(four.qty, 4);
+  assert.equal(four.parts.length, 4);
+  assert.equal(hl.bayHeight([four]), hl.bayHeight([unit, { ...unit, ref: 'E2' }, { ...unit, ref: 'E3' }, { ...unit, ref: 'E4' }]),
+    'the bay stands as tall as four separate drivers');
+  assert.equal(hl.stack(unit, 1), unit, 'a quantity of one is just the driver');
+  const saved = hl.save([[four]], { container: POS });
+  assert.equal(saved.elements.length, 1, 'and it saves as the one row it is');
 });

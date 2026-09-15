@@ -79,6 +79,10 @@ function moduleFor(driver, ctx = {}) {
         edited: typed ?? recipes[driver.typeRef] ?? null,
       });
     if (r.source !== 'wrapper' && r.parts.some((p) => p.size)) {
+      // an arrangement nobody has stated lifts the supply over the junction boxes
+      if (r.source === 'children' || r.source === 'suggested') {
+        r.parts = recipe.houseArrange(r.parts, { minLow: n * recipe.JB_SIZE[1] });
+      }
       const built = recipe.compose(r.parts, n);
       const origin = r.source === 'edited' ? 'edited'
         : (r.source === 'spaces' || r.source === 'element') ? 'db' : 'datasheet';
@@ -164,6 +168,10 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
   const ctx = useMemo(() => ({
     sizes, recipes: state.recipes ?? {}, comps, types: typesLib, elemParams, jbSet: state.jboxes ?? {},
   }), [sizes, state.recipes, comps, typesLib, elemParams, state.jboxes]);
+  // a row with a Quantity, until it has been broken apart
+  const brokenFrom = useMemo(() => new Set(addedDrivers.filter((a) => a.split).map((a) => a.split)), [addedDrivers]);
+  const qtyOf = (ref) => (brokenFrom.has(ref) ? 1 : rows.elements[ref]?.quantity ?? 1);
+  const stackFor = (d) => hl.stack(moduleFor(d, ctx), qtyOf(d.ref));
   const snap = state.prefs?.snapMm > 0 ? state.prefs.snapMm : DEFAULT_SNAP;
 
   const hubs = model.zones;
@@ -201,7 +209,7 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
   useEffect(() => {
     if (!hub || st[hub]) return;
     const mine = drivers.filter((d) => d.zone === hub);
-    const items = mine.map((d) => moduleFor(d, ctx));
+    const items = mine.map((d) => stackFor(d));
     const placed = mine.map((d) => rows.elements[d.ref]).filter((e) => /[<[]/.test(e?.contextParameters ?? ''));
     if (rows.hub?.parameters || placed.length) {
       const geo = hl.bayGeometry(rows.hub?.parameters ?? '');
@@ -233,14 +241,23 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
   // change redraws every Element it reaches in every hub already open. Not an
   // undo step: it is the set's, like a preset.
   useEffect(() => {
-    setSt((s) => Object.fromEntries(Object.entries(s).map(([h, v]) => [h, {
-      ...v,
-      bays: v.bays.map((b) => b.map((i) => {
-        const d = drivers.find((x) => x.ref === i.ref);
-        return d ? { ...moduleFor(d, ctx), rot: i.rot } : i;
-      })),
-    }])));
-  }, [ctx, drivers]);
+    setSt((s) => Object.fromEntries(Object.entries(s).map(([h, v]) => {
+      const bays = v.bays.map((b) => b
+        .filter((i) => drivers.some((x) => x.ref === i.ref))   // an undone split
+        .map((i) => ({ ...stackFor(drivers.find((x) => x.ref === i.ref)), rot: i.rot })));
+      // drivers broken out of a quantity stand just after the row they came from
+      const have = new Set(bays.flat().map((i) => i.ref));
+      for (const d of drivers.filter((x) => x.zone === h && !have.has(x.ref))) {
+        let bi = bays.findIndex((b) => b.some((i) => i.ref === d.split));
+        if (bi < 0) bi = 0;
+        // after the source and any sibling already placed, so they keep their order
+        let at = -1;
+        bays[bi].forEach((i, n) => { if (i.ref === d.split || drivers.find((x) => x.ref === i.ref)?.split === d.split) at = n; });
+        bays[bi].splice(at < 0 ? bays[bi].length : at + 1, 0, stackFor(d));
+      }
+      return [h, { ...v, bays }];
+    })));
+  }, [ctx, drivers, brokenFrom]);
 
   // the editor and the snap chip close on a click outside them
   useEffect(() => {
@@ -382,12 +399,12 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
   const colWidth = (b) => (cur.bays[b].length ? hl.naturalWidth(hl.spanFeeds(cur.bays[b], null)) : 2 * hl.TRUNK + 50);
 
   // How many bays a width would make. A bay is one column of upright modules;
-  // pulling it past room for a second column makes a second bay, sharing the 50
-  // between them, instead of packing two columns whose clearances overlap.
+  // pulling it past room for a second column makes a second bay with its own
+  // trunking, instead of packing two columns whose clearances overlap.
   const baysFor = (b, w) => {
     const loose = cur.bays[b].filter((i) => i.kind !== 'feed');
     if (loose.filter((i) => i.rot !== 90).length < 2) return 1;
-    return Math.max(1, Math.min(loose.length, Math.floor((w - hl.CLEAR_X) / (colWidth(b) - hl.CLEAR_X))));
+    return Math.max(1, Math.min(loose.length, Math.floor(w / colWidth(b))));
   };
   const splitWide = (b, w) => {
     const k = baysFor(b, w);
@@ -406,7 +423,7 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
           separate: j === 0 ? o.separate : false, ref: j === 0 ? o.ref : '' })),
         ...cur.opts.slice(b + 1)],
     });
-    setNotice(`Bay ${b + 1} holds one column of drivers, so it became ${chunks.length} bays.`);
+    setNotice(`Bay ${b + 1} holds one column of drivers, so it became ${chunks.length} bays, each with its own trunking.`);
     return true;
   };
 
@@ -501,6 +518,14 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
   // junction boxes are the Element's, so they go through the set's state and the patch
   const setJboxes = (refs, n) => refs.forEach((ref) => dispatch({ type: 'SET_JBOXES', ref, count: n }));
 
+  const breakApart = (ref) => {
+    const item = cur.bays.flat().find((i) => i.ref === ref);
+    const d = drivers.find((x) => x.ref === ref);
+    if (!item || !d || !(item.qty > 1)) return;
+    dispatch({ type: 'SPLIT_QUANTITY', ref, typeRef: d.typeRef, zone: hub, quantity: item.qty });
+    setNotice(`${outRef(ref)} is now ${item.qty} drivers: it keeps its Ref, the other ${item.qty - 1} need Refs in the DB.`);
+  };
+
   const addBay = () => edit({ bays: hl.addBay(cur.bays), opts: [...cur.opts, bayDefaults()] });
   const removeBay = () => edit({ bays: hl.removeBay(cur.bays), opts: cur.opts.slice(0, -1) });
   const splitSelected = () => {
@@ -545,11 +570,11 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
     // and its junction boxes when they were set here
     const jb = {};
     for (const d of hubDrivers) {
-      const m = cur.bays.flat().find((i) => i.ref === d.ref) ?? moduleFor(d, ctx);
+      const m = moduleFor(d, ctx);
       const ownParts = m.recipe?.scope === 'element' ? m.recipe.parts : [];
       const setHere = state.jboxes?.[d.ref] != null;
       if (!ownParts.length && !setHere) continue;
-      const list = [...recipe.toSpaceList(ownParts), ...recipe.jbSpaces(m.jboxes, partsOf(m))];
+      const list = [...recipe.toSpaceList(ownParts), ...recipe.placeJbs(m.jboxes, partsOf(m))];
       jb[d.ref] = list.length ? formatParams({ spaceList: list }) : '';
     }
 
@@ -557,7 +582,13 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
     const tbc = Object.entries(state.tbc ?? {})
       .filter(([ref]) => mine.has(ref))
       .map(([ref, f]) => ({ ...f, ref: f.sheet === 'E' ? outRef(ref) : ref }));
-    await api.copyPatch(hubPatch({ saved, hub: container.ref ? container : null, typeSizes: [...typeRows.values()], tbc, jb }));
+    // a quantity broken apart: the row keeps one, the rest are appended where placed
+    const broken = addedDrivers.filter((a) => a.split && a.zone === hub);
+    const quantities = [...new Set(broken.map((a) => a.split))].map((ref) => ({ ref: outRef(ref), quantity: 1 }));
+    const newElements = Object.fromEntries(broken.map((a) => [a.ref, { typeRef: a.typeRef, name: typesLib[a.typeRef]?.name ?? '' }]));
+    await api.copyPatch(hubPatch({
+      saved, hub: container.ref ? container : null, typeSizes: [...typeRows.values()], tbc, jb, quantities, newElements,
+    }));
     setCopied(true);
     setTimeout(() => setCopied(false), 1800);
   };
@@ -566,6 +597,15 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
 
 
   const flagBlock = focusModule ? (
+    <>
+    {focusItem?.qty > 1 && (
+      <div className="hub-qty">
+        <span><b>{outRef(focusItem.ref)}</b> is one row standing for {focusItem.qty} drivers. It moves as one stack.</span>
+        <button type="button" className="btn btn-sm btn-outline-primary" onClick={() => breakApart(focusItem.ref)}>
+          Break apart into {focusItem.qty}
+        </button>
+      </div>
+    )}
     <div className="hub-inspect-flags">
       {focusRef && (
         <label>
@@ -580,6 +620,7 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
         <span className="rv-ref">{focusType}</span> properties TBC
       </label>
     </div>
+    </>
   ) : null;
 
   // a module with parts gets the part editor; a single block gets its size
@@ -734,7 +775,12 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
                 title="Stand it on its side, as HUB-A does across its top zone">
                 Rotate 90°
               </button>
-              <button className="btn btn-sm btn-outline-primary" onClick={splitSelected}>
+              {sel.map((r) => cur.bays.flat().find((i) => i.ref === r)).filter((i) => i?.qty > 1).map((i) => (
+              <button key={i.ref} className="btn btn-sm btn-outline-primary" onClick={() => breakApart(i.ref)}>
+                Break apart {outRef(i.ref)} ×{i.qty}
+              </button>
+            ))}
+            <button className="btn btn-sm btn-outline-primary" onClick={splitSelected}>
                 Split {sel.length} into a new bay
               </button>
             </>
@@ -992,6 +1038,13 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
                             );
                           })}
                         </g>
+                        {p.qty > 1 && (
+                          <g className="hub-stack">
+                            <rect x={x - 4} y={y - 4} width={px(p.size[0]) + 8} height={px(p.size[1]) + 8} rx="6" />
+                            <text x={x + px(p.size[0]) + 8} y={y + 12}>×{p.qty}</text>
+                            <title>{`${outRef(p.ref)}: one row standing for ${p.qty} drivers. Break it apart to move them one by one.`}</title>
+                          </g>
+                        )}
                         {/* as placed, so it stays top right when the block is turned */}
                         <g className="hub-pencil" transform={`translate(${x + px(p.size[0]) - 17},${y + 3})`}
                           onMouseDown={(e) => {

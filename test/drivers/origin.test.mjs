@@ -28,3 +28,16 @@ test('a size and a TBC flag set here are kept, and a null takes them back off', 
   assert.equal(st.tbc.E1.isTBC, true);
   assert.deepEqual(reducer(st, { type: 'SET_TBC', ref: 'E1', flags: null }).tbc, {});
 });
+
+test('a quantity broken apart adds the rest as placeholder drivers, and only once', async () => {
+  const { reducer, initialState } = await import('../../src/state.js');
+  const model = { drivers: [{ ref: 'E50028', typeRef: 'T', zone: 'HUB-B2', nodes: [{ name: 'OP.1' }] }],
+    inventory: [{ typeRef: 'T', nodes: [{ name: 'OP.1' }, { name: 'OP.2' }] }], links: [], baseline: {} };
+  let st = { ...initialState, model };
+  st = reducer(st, { type: 'SPLIT_QUANTITY', ref: 'E50028', typeRef: 'T', zone: 'HUB-B2', quantity: 4 });
+  assert.equal(st.addedDrivers.length, 3);
+  assert.ok(st.addedDrivers.every((d) => d.split === 'E50028' && d.zone === 'HUB-B2'));
+  assert.deepEqual(st.assignments[`${st.addedDrivers[0].ref}|OP.2`], { toEntityType: '', refs: [] });
+  assert.equal(reducer(st, { type: 'SPLIT_QUANTITY', ref: 'E50028', typeRef: 'T', zone: 'HUB-B2', quantity: 4 }), st, 'not twice');
+  assert.equal(reducer(st, { type: 'UNDO' }).addedDrivers.length, 0, 'and undo puts the stack back');
+});

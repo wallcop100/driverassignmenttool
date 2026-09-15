@@ -103,3 +103,20 @@ export const save = (bays, opts = {}) =>
   L.save(bays, { wrapperType: ENCLOSURE_TYPE, ...opts });
 
 // `export *` already re-exported core's save; this one has to win.
+
+// A row with a Quantity is N identical drivers in one stack: drawn at true size,
+// with the clearance each would keep from the next, so the bay comes out exactly
+// as tall as N separate drivers would make it. It moves as one until it is broken
+// apart, and saves as the one row it is.
+export function stack(module, qty) {
+  if (!(qty > 1) || !module?.size) return module;
+  const [w, h, d] = module.size;
+  const pitch = h + 2 * L.CLEAR_Y;
+  const parts = [];
+  for (let k = 0; k < qty; k += 1) {
+    for (const p of module.parts ?? []) {
+      parts.push({ ...p, at: [p.at?.[0] ?? 0, (p.at?.[1] ?? 0) + k * pitch, p.at?.[2] ?? 0], unit: k });
+    }
+  }
+  return { ...module, qty, unitSize: module.size, size: [w, h * qty + 2 * L.CLEAR_Y * (qty - 1), d], parts };
+}
