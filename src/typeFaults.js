@@ -106,6 +106,7 @@ export function fixPreset(t, spec, mode, currentA) {
     controlType: take(d.controlType, spec.controlType),
     nodeNames: d.nodes?.map((n) => n.name) ?? null,
     invented: false,
+    origin: 'datasheet',
   };
 }
 
@@ -175,5 +176,6 @@ export function fillFromSpec({ t, spec, currentA }) {
     controlType: spec.controlType ?? null,
     nodeNames: spec.nodeNames ?? null,
     invented: false,
+    origin: 'datasheet',
   };
 }

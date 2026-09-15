@@ -20,9 +20,42 @@ export const removeBay = L.removeSlot;
 export const splitToBay = L.splitToSlot;
 export const bayName = L.slotLabel;
 
-// Feed Provision is drawn at the bottom of a bay in every hub that has one.
-export const feedItem = (w = 330, h = 105) =>
-  ({ ref: '__feed', label: 'Feed provision', kind: 'feed', size: [w, h] });
+// Feed Provision is not the drawing's own box: the projects already place it as
+// Elements, ET-CCR-FEED-PROV and ET-CVR-FEED-PROV on set 108857, and those rows
+// arrive with the hub's drivers. ET-PROV-DRIVER-01 is a provisional DRIVER, not
+// a feed, which is why the match needs FEED.
+export const isFeed = (typeRef) => /FEED-?PROV/i.test(String(typeRef ?? ''));
+
+// A feed provision type with no size of its own is drawn at this, marked as not
+// in the DB, until somebody gives the type one.
+export const FEED_SIZE = [280, 105, 50];
+
+// ...except its width. A feed with no stated size runs across the bay, so it
+// takes the width of whatever else the bay holds, or of the width typed for the
+// bay, rather than setting it: 280 plus the trunking is exactly 380, and letting
+// the placeholder decide would pin every bay at 380 again.
+export function spanFeeds(items, typedWidth = null) {
+  const loose = (i) => i.kind === 'feed' && i.sizedBy === 'datasheet' && i.size;
+  if (!items.some(loose)) return items;
+  const others = items.filter((i) => !loose(i));
+  const width = typedWidth > 0 ? typedWidth : others.length ? L.naturalWidth(others) : L.SLOT_WIDTH;
+  const w = Math.max(50, width - 2 * L.TRUNK);
+  const wide = (s) => [w, s[1], s[2]];
+  return items.map((i) => (loose(i)
+    ? { ...i, size: wide(i.size), parts: (i.parts ?? []).map((p) => ({ ...p, size: wide(p.size) })) }
+    : i));
+}
+
+// Where a size comes from, strongest first. Typed here beats the DB because it
+// is a change on top of it; the DB beats the datasheet because it is the
+// design's own; the datasheet is the plaster that lets work carry on.
+export function resolveSize({ edited = null, db = null, datasheet = null } = {}) {
+  const ok = (s) => s?.[0] > 0 && s?.[1] > 0;
+  if (ok(edited)) return { size: edited, origin: 'edited' };
+  if (ok(db)) return { size: db, origin: 'db' };
+  if (ok(datasheet)) return { size: datasheet, origin: 'datasheet' };
+  return { size: null, origin: 'missing' };
+}
 
 // A module is not one rectangle. The drawings compose it: the PSU across the
 // top, the driver bottom left, its junction boxes stacked bottom right.

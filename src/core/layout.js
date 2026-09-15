@@ -99,6 +99,17 @@ export function offsetsOf(count, opts = {}) {
 // The width a slot has to fill, between the two trunking bands.
 export const innerWidth = (slotWidth = SLOT_WIDTH) => slotWidth - 2 * TRUNK;
 
+// The width a slot comes out at when nobody has typed one: its widest row plus
+// that row's trunking, so the far band sits against the equipment instead of at
+// 380. Rows still break at maxWidth, so a slot shrinks to what it holds and only
+// grows past maxWidth when a single item is wider than the inside. Empty, it is
+// the house width.
+export function naturalWidth(items, maxWidth = SLOT_WIDTH) {
+  const rows = packSlot(items, maxWidth);
+  if (!rows.length) return maxWidth;
+  return Math.round(Math.max(...rows.map((r) => r.inset * 2 + r.x)));
+}
+
 // Lay one slot out bottom-up in rows. Anything narrow enough sits BESIDE what is
 // already on the row rather than starting its own - which is what the CAD does
 // with four turned DualDrives across the top of HUB-A, and what a pure stack

@@ -4,6 +4,7 @@ import Block from './Block.jsx';
 import FlagDialog from './FlagDialog.jsx';
 import KebabMenu from './KebabMenu.jsx';
 import Tooltip from './Tooltip.jsx';
+import Origin from './Origin.jsx';
 import { useDomain } from '../core/domain.js';
 
 
@@ -168,9 +169,7 @@ export default function DriverBin({ driver, state, dispatch, links, accent, flag
         {/* the same mark a moved cable carries: a dot means you changed this and
             it is not in the DesignDB yet */}
         {state.presets?.[driver.typeRef] && (
-          <Tooltip content={`You have edited ${driver.typeRef}. The change applies to every hub in this set and is patched with the rest.`}>
-            <span className="type-edited">edited</span>
-          </Tooltip>
+          <Origin kind={state.presets[driver.typeRef].origin ?? 'edited'} what={driver.typeRef} />
         )}
         <span className="text-secondary small text-truncate flex-grow-1">{driver.typeRef}</span>
         {status === 'impossible' && <span className="status-tag tag-impossible">✕ type</span>}

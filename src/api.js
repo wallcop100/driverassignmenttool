@@ -183,3 +183,27 @@ export function typeSizes() {
   }
   return out;
 }
+
+// IsTBC / IsPropertiesTBC as the DB has them: on the type library (DJ 101681
+// V1.8) and on the hub's Elements (its datb_ block, posted as msg.tbc). Only
+// refs with a flag set are returned. Empty from older hosts.
+let tbcText = null;
+export const setTbcText = (text) => { tbcText = text ?? null; };
+const truthy = (v) => /^(1|true|yes|y)$/i.test(String(v ?? '').trim());
+
+export function tbcFlags() {
+  const out = {};
+  const take = (text, name, refOf, sheet) => {
+    if (!text?.trim()) return;
+    const { rows, fields } = readCsv(text, [], name, true);
+    if (!fields.includes('IsTBC') && !fields.includes('IsPropertiesTBC')) return;
+    for (const r of rows) {
+      const ref = String(refOf(r) ?? '').trim();
+      const f = { sheet, isTBC: truthy(r.IsTBC), isPropertiesTBC: truthy(r.IsPropertiesTBC) };
+      if (ref && (f.isTBC || f.isPropertiesTBC)) out[ref] = f;
+    }
+  };
+  take(raw?.types, 'Types', (r) => r.ElementTypeRef ?? r.Ref, 'ET');
+  take(tbcText, 'TBC', (r) => r.ElementRef, 'E');
+  return out;
+}

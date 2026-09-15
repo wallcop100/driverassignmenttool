@@ -90,11 +90,20 @@ test('fitsIn says by how much, so rearranging can be judged', () => {
   assert.equal(hl.fitsIn({ w: 380, h: 320 }, { w: 380, h: 543 }).overH, -223, 'negative is spare');
 });
 
-test('feed provision is part of the hub, and sits at the bottom', () => {
-  const feed = hl.feedItem();
-  const placed = hl.placements([[feed, I('A')]]);
-  assert.equal(placed[0].ref, '__feed');
-  assert.ok(placed[0].y < placed[1].y);
+test('feed provision is the FEED-PROV Elements, and a provisional driver is not one', () => {
+  assert.ok(hl.isFeed('ET-CCR-FEED-PROV'));
+  assert.ok(hl.isFeed('ET-CVR-FEEDPROV'));
+  assert.ok(!hl.isFeed('ET-PROV-DRIVER-01'));
+  assert.ok(!hl.isFeed('ET-FEED'), 'a track feed is not a hub provision');
+});
+
+test('a size is taken edited, then DB, then datasheet, and says which', () => {
+  const e = [100, 40, 20]; const d = [153, 50, 23]; const ds = [210, 40, 33];
+  assert.deepEqual(hl.resolveSize({ edited: e, db: d, datasheet: ds }), { size: e, origin: 'edited' });
+  assert.deepEqual(hl.resolveSize({ db: d, datasheet: ds }), { size: d, origin: 'db' });
+  assert.deepEqual(hl.resolveSize({ datasheet: ds }), { size: ds, origin: 'datasheet' });
+  assert.deepEqual(hl.resolveSize({ edited: [0, 0, 0] }), { size: null, origin: 'missing' },
+    'a zero is not a size');
 });
 
 test('a module is composed the way the drawings compose it', () => {
@@ -596,4 +605,16 @@ test('the enclosure type is one generic wrapper, overridable', () => {
     hl.save(bays, { container: POS, separate: [1], wrapperType: 'ET-ENCLOSURE-INT-01' }).slots[0].typeRef,
     'ET-ENCLOSURE-INT-01',
   );
+});
+
+test('a feed with no size of its own spans the bay, and never sets its width', () => {
+  const feed = { ref: 'E1', kind: 'feed', sizedBy: 'datasheet', size: [...hl.FEED_SIZE], parts: [{ kind: 'feed', size: [...hl.FEED_SIZE], at: [0, 0] }] };
+  const drv = { ref: 'D1', size: [153, 50, 23] };
+  const laid = hl.spanFeeds([feed, drv]);
+  assert.equal(laid[0].size[0], 153, 'as wide as the driver it sits under');
+  assert.equal(laid[0].parts[0].size[0], 153);
+  assert.equal(hl.naturalWidth(laid), 253, 'so the bay follows the driver, not 380');
+  assert.equal(hl.spanFeeds([feed, drv], 500)[0].size[0], 400, 'a typed bay width is spanned instead');
+  const stated = { ...feed, sizedBy: 'db', size: [300, 90, 50] };
+  assert.equal(hl.spanFeeds([stated, drv])[0].size[0], 300, 'a size the type states is kept');
 });

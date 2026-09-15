@@ -33,7 +33,6 @@ const rowMap = (code) => `    const rowOf_${code} = new Map<string, number>();\n
   + `    for (let i = 1; i < data_${code}.length; i++) { rowOf_${code}.set(String(data_${code}[i][col_${code}_Ref]), i); }\n`;
 
 const typeSizeSection = (types) => `    // --- CHANGE: ElementTypes sizes ---\n`
-  + rowMap('ET')
   + `    const typeSizes = [\n${json(types)}\n    ];\n`
   + `    for (const t of typeSizes) {\n`
   + `      const row = rowOf_ET.get(t.ref);\n`
@@ -44,6 +43,20 @@ const typeSizeSection = (types) => `    // --- CHANGE: ElementTypes sizes ---\n`
   + `      WS_ET.getCell(row, col_ET_Parameters).setValue(next);\n`
   + `      WS_ET.getCell(row, col_ET_IsPropertiesTBC).${CLEAR};\n`
   + `      console.log("Type " + t.ref + ": " + was + " -> " + next);\n`
+  + `    }\n\n`;
+
+// Last, after every write that clears IsPropertiesTBC on the rows it touched,
+// so a flag somebody set here is not undone by the patch that carries it.
+const tbcSection = (code, rows) => `    // --- CHANGE: TBC flags on ${code === 'ET' ? 'ElementTypes' : 'Elements'} ---\n`
+  + `    const tbc_${code} = [\n${json(rows)}\n    ];\n`
+  + `    for (const f of tbc_${code}) {\n`
+  + `      const row = rowOf_${code}.get(f.ref);\n`
+  + `      if (row === undefined) { console.log("WARNING: " + f.ref + " not found - TBC flags not written."); continue; }\n`
+  + `      const tbc = WS_${code}.getCell(row, col_${code}_IsTBC);\n`
+  + `      const props = WS_${code}.getCell(row, col_${code}_IsPropertiesTBC);\n`
+  + `      if (f.isTBC) { tbc.setValue("Y"); } else { tbc.${CLEAR}; }\n`
+  + `      if (f.isPropertiesTBC) { props.setValue("Y"); } else { props.${CLEAR}; }\n`
+  + `      console.log(f.ref + ": IsTBC " + (f.isTBC ? "Y" : "-") + ", IsPropertiesTBC " + (f.isPropertiesTBC ? "Y" : "-"));\n`
   + `    }\n\n`;
 
 const elementSection = (rows) => `    // --- CHANGE: where each driver sits ---\n`
@@ -112,9 +125,9 @@ const flavours = (params) => {
 
 // saved: core/layout.save() output. hub: { ref, contextType }.
 // typeSizes: [{ ref, size: '[w,h,d]' }], one per driver ElementType.
-export function hubPatch({ saved, hub = null, typeSizes = [], tool = 'Driver Assignment Tool' }) {
+// tbc: [{ ref, sheet: 'E' | 'ET', isTBC, isPropertiesTBC }], flags set here.
+export function hubPatch({ saved, hub = null, typeSizes = [], tbc = [], tool = 'Driver Assignment Tool' }) {
   const elements = (saved?.elements ?? [])
-    .filter((e) => !String(e.ref).startsWith('__'))       // Feed Provision is drawn, not an Element
     .map((e) => {
       const cp = parseParams(e.contextParameters);
       const moved = e.contextType === 'Element';
@@ -139,13 +152,16 @@ export function hubPatch({ saved, hub = null, typeSizes = [], tool = 'Driver Ass
 
   let body = MERGE_TS
     + header('Elements', 'E',
-      ['Ref', 'Name', 'TypeRef', 'ContextType', 'ContextRef', 'IsPropertiesTBC', 'ContextParameters', 'Parameters'],
-      ['ContextParameters', 'Parameters'])
+      ['Ref', 'Name', 'TypeRef', 'ContextType', 'ContextRef', 'IsTBC', 'IsPropertiesTBC', 'ContextParameters', 'Parameters'],
+      ['ContextParameters', 'Parameters', 'IsTBC'])
     + rowMap('E');
-  if (typeSizes.length) {
-    body += header('ElementTypes', 'ET', ['Ref', 'Parameters', 'IsPropertiesTBC'], ['Parameters'])
-      + typeSizeSection(typeSizes);
+  const flagsOn = (sheet) => tbc.filter((f) => f.sheet === sheet)
+    .map((f) => ({ ref: f.ref, isTBC: !!f.isTBC, isPropertiesTBC: !!f.isPropertiesTBC }));
+  if (typeSizes.length || flagsOn('ET').length) {
+    body += header('ElementTypes', 'ET', ['Ref', 'Parameters', 'IsTBC', 'IsPropertiesTBC'], ['Parameters', 'IsTBC'])
+      + rowMap('ET');
   }
+  if (typeSizes.length) body += typeSizeSection(typeSizes);
   if (elements.length) body += elementSection(elements);
 
   if (hub?.ref) {
@@ -159,5 +175,7 @@ export function hubPatch({ saved, hub = null, typeSizes = [], tool = 'Driver Ass
       + ` + ${JSON.stringify(saved?.container?.parameters ?? '')} + " was not written.");\n\n`;
   }
   if (bays.length) body += baySection(bays);
+  if (flagsOn('E').length) body += tbcSection('E', flagsOn('E'));
+  if (flagsOn('ET').length) body += tbcSection('ET', flagsOn('ET'));
   return script(body, tool);
 }

@@ -89,40 +89,46 @@ export default function ReviewModal({ state, dispatch, onClose }) {
           <div className="modal-body">
             {/* Two kinds of change, two sections: ElementTypes rows and LinksMap
                 rows are separate sheets and separate parts of the patch. */}
-            {provisional.length > 0 && (
-              <>
-                <h6 className="rv-sec">
-                  Driver types edited
-                  <span>{provisional.length} ElementTypes row{provisional.length === 1 ? '' : 's'}</span>
-                </h6>
-                <table className="table table-sm align-middle">
-                  <tbody>
-                    {provisional.map((t) => (
-                      <tr key={t.typeRef}>
-                        <td className="fw-semibold rv-ref">{t.typeRef}</td>
-                        <td className="text-secondary">
-                          {t.invented
-                            ? 'new type - the patch adds the row'
-                            : 'the patch overwrites the ratings on this row'}
-                          {t.drivers > 0 && ` · used by ${t.drivers} driver${t.drivers > 1 ? 's' : ''} here`}
-                        </td>
-                        <td className="text-end">
-                          <button className="btn btn-sm btn-link p-0"
-                            title="Drop this edit and leave the DesignDB row as it is"
-                            onClick={() => dispatch({ type: 'DELETE_PRESET', typeRef: t.typeRef })}>
-                            <span className="material-icons small-icon">undo</span>
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                <p className="text-secondary small rv-note">
-                  Ratings only. Every other column on the row is left alone, and the
-                  edits apply across the set.
-                </p>
-              </>
-            )}
+            {[
+              ['datasheet', 'Driver types filled from the datasheet',
+                'Not in the DB. The tool filled these in so work could carry on, and the patch writes them. Drop any you do not want written.'],
+              ['edited', 'Driver types edited',
+                'Ratings only. Every other column on the row is left alone, and the edits apply across the set.'],
+            ].map(([origin, title, note]) => {
+              const list = provisional.filter((t) => t.origin === origin);
+              if (!list.length) return null;
+              return (
+                <div key={origin}>
+                  <h6 className="rv-sec">
+                    {title}
+                    <span>{list.length} ElementTypes row{list.length === 1 ? '' : 's'}</span>
+                  </h6>
+                  <table className="table table-sm align-middle">
+                    <tbody>
+                      {list.map((t) => (
+                        <tr key={t.typeRef}>
+                          <td className="fw-semibold rv-ref">{t.typeRef}</td>
+                          <td className="text-secondary">
+                            {t.invented
+                              ? 'new type - the patch adds the row'
+                              : 'the patch overwrites the ratings on this row'}
+                            {t.drivers > 0 && ` · used by ${t.drivers} driver${t.drivers > 1 ? 's' : ''} here`}
+                          </td>
+                          <td className="text-end">
+                            <button className="btn btn-sm btn-link p-0"
+                              title="Drop this and leave the DesignDB row as it is"
+                              onClick={() => dispatch({ type: 'DELETE_PRESET', typeRef: t.typeRef })}>
+                              <span className="material-icons small-icon">undo</span>
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <p className="text-secondary small rv-note">{note}</p>
+                </div>
+              );
+            })}
 
             {added.length > 0 && (
               <>

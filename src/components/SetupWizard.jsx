@@ -79,7 +79,7 @@ export default function SetupWizard({ model, presets, dispatch, onClose, only })
   };
 
   const accept = () => {
-    dispatch({ type: 'SET_PRESET', preset: proposed() });
+    dispatch({ type: 'SET_PRESET', preset: { ...proposed(), origin: 'datasheet' } });
     setDraft(null);
     if (i < steps.length - 1) setI(i + 1);
   };

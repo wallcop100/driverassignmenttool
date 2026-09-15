@@ -71,6 +71,23 @@ export function loadTypes() {
   } catch { return {}; }
 }
 
+// Sizes typed in the space layout and TBC flags set here. Like presets they
+// belong to the set, not the hub, so they sit beside the presets slot.
+const EMPTY_EXTRAS = { typeSizes: {}, tbc: {} };
+export function loadTypeExtras() {
+  try {
+    const v = JSON.parse(localStorage.getItem(`${typesKey}:extras`) ?? '{}') ?? {};
+    return { typeSizes: v.typeSizes ?? {}, tbc: v.tbc ?? {} };
+  } catch { return { ...EMPTY_EXTRAS }; }
+}
+
+function saveTypeExtras({ typeSizes = {}, tbc = {} }) {
+  try {
+    if (!Object.keys(typeSizes).length && !Object.keys(tbc).length) localStorage.removeItem(`${typesKey}:extras`);
+    else localStorage.setItem(`${typesKey}:extras`, JSON.stringify({ typeSizes, tbc }));
+  } catch { /* quota, or storage disabled */ }
+}
+
 export function saveTypes(presets) {
   try {
     if (!presets || !Object.keys(presets).length) localStorage.removeItem(typesKey);
@@ -101,6 +118,7 @@ export function listSessions() {
 export function saveSession(state) {
   if (!state.model) return;
   saveTypes(state.presets);   // shared across every hub of this set
+  saveTypeExtras(state);
   const payload = JSON.stringify({
     model: state.model,
     assignments: state.assignments,

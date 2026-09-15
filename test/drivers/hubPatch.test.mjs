@@ -69,7 +69,21 @@ test('without a hub Ref the hub size is reported, not guessed at', () => {
   assert.doesNotMatch(s, /getWorksheet\("Positions"\)/);
 });
 
-test('Feed Provision is drawn, never written as an Element', () => {
-  const s = hubPatch({ saved: hl.save([[hl.feedItem(280, 105), I('A')]], { container: POS }), hub: POS });
-  assert.doesNotMatch(s, /__feed/);
+test('Feed Provision is a real Element, placed and written like a driver', () => {
+  const feed = { ref: 'E50027', kind: 'feed', label: 'Feed Provision', size: [280, 105, 50] };
+  const s = hubPatch({ saved: hl.save([[feed, I('A')]], { container: POS }), hub: POS });
+  assert.match(s, /"ref":"E50027","xyz":"\[50mm,25mm,0mm\]","spaces":"<1>"/);
+});
+
+test('a TBC flag set here is written after every clear, on the sheet it belongs to', () => {
+  const s = hubPatch({ saved: hl.save([[I('E1')]], { container: POS }), hub: POS, tbc: [
+    { ref: 'E1', sheet: 'E', isTBC: true, isPropertiesTBC: false },
+    { ref: 'ET-CCR-FEED-PROV', sheet: 'ET', isTBC: false, isPropertiesTBC: true },
+  ] });
+  assert.match(s, /"ref":"E1","isTBC":true,"isPropertiesTBC":false/);
+  assert.match(s, /DB\.getWorksheet\("ElementTypes"\)/, 'a type flag opens ElementTypes with no size to write');
+  assert.ok(s.indexOf('const tbc_E') > s.lastIndexOf('col_E_IsPropertiesTBC).clear'),
+    'the flag comes after the clear that would otherwise undo it');
+  assert.match(s, /tbc\.setValue\("Y"\)/);
+  assert.doesNotMatch(s, /setValue\(""\)/);
 });

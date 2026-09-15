@@ -1,4 +1,5 @@
 import { ratingsOf, zoneList } from '../typeFaults.js';
+import Origin from './Origin.jsx';
 
 // One driver ElementType, as a card. The same card on both surfaces: the picker
 // adds it to a hub, the types page edits it. What a type IS does not change with
@@ -13,7 +14,7 @@ export default function TypeCard({ t, faults, usage, onWarn, children, below, cl
     <div className={`tp-card ${faults.length ? 'is-off' : ''} ${className}`}>
       <div className="tp-card-top">
         <span className="tp-ref">{t.typeRef}</span>
-        {t.preset && <span className="tp-dot" title="Changed here, not patched yet">pending</span>}
+        {t.preset && <Origin kind={t.origin ?? 'edited'} what={`${t.typeRef}'s ratings`} />}
       </div>
       <div className="tp-line">
         <span className={`type-power ${t.powerType ? `is-${t.powerType.toLowerCase()}` : 'is-unknown'}`}>

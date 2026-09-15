@@ -784,6 +784,7 @@ export function presetToType(p) {
     controlType: p.controlType ?? null,
     preset: true,
     invented: !!p.invented,
+    origin: p.origin ?? 'edited',
   };
 }
 

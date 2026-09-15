@@ -77,9 +77,12 @@ export const drivers = makeDomain({
 
   // A hub the host sends with no cables - only a requirement assessment - is the
   // tender case, and lands on the estimate rather than a tray.
-  parseInit: (msg, types) => (msg.assessment && !msg.links?.trim()
-    ? api.parseEstimate(msg.assessment, types)
-    : api.parseText(msg.form, msg.links, types)),
+  parseInit: (msg, types) => {
+    api.setTbcText(msg.tbc);
+    return msg.assessment && !msg.links?.trim()
+      ? api.parseEstimate(msg.assessment, types)
+      : api.parseText(msg.form, msg.links, types);
+  },
 
   validate: (model, assignments, added) => api.validate(assignments, added),
   eligibility: (model, zone, assignments, added) => api.eligibility(zone, assignments, added),

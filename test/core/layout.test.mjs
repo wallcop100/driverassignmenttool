@@ -103,3 +103,10 @@ test('per-bay widths survive the save and load round trip, separated bays includ
   assert.match(saved.slots[0].parameters, /^\[\[400mm,/, 'the separated bay states its own width');
   assert.match(saved.container.parameters, /^\[\[850mm,/, '380 + 520 - 50 for the bays still on the hub');
 });
+
+test('a slot with no width typed is as wide as what it holds', () => {
+  // three upright modules: 17.5 each, a shared 50 between, 50 trunking each side
+  assert.equal(L.naturalWidth([MOD('a'), MOD('b'), MOD('c')]), 253);
+  assert.equal(L.naturalWidth([]), L.SLOT_WIDTH, 'an empty slot is the house width');
+  assert.equal(L.naturalWidth([MOD('wide', 400)]), 500, 'one item wider than the inside widens the slot');
+});

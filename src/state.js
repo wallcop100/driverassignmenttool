@@ -46,6 +46,8 @@ export const initialState = {
   distributeNodes: [],   // node keys marked as distribution targets
   prefs: DEFAULT_PREFS, // persisted UI prefs (label config)
   presets: {},          // typeRef -> driver type preset patched/invented here
+  typeSizes: {},        // typeRef -> { size } typed in the space layout
+  tbc: {},              // ref -> { sheet, isTBC, isPropertiesTBC } set here
   demo: false,          // demo dataset loaded → show the tutorial
   deletedDrivers: [],   // refs of DesignDB drivers to mark IsDeleted in the patch
   fixNodeSyntax: false, // sweep banned ':' nodes out of LinksMap in the patch
@@ -103,6 +105,8 @@ export function reducer(state, action) {
         // Type corrections belong to the set, not the hub - the ones made in
         // another hub of this set arrive here already applied.
         presets: action.presets ?? {},
+        typeSizes: action.typeSizes ?? {},
+        tbc: action.tbc ?? {},
         // an estimate has no cables to assign, so it never lands on a zone
         view: action.view ?? (action.model.mode === 'estimate'
           ? { page: 'estimate' }
@@ -318,6 +322,8 @@ export function reducer(state, action) {
         prefs: { ...DEFAULT_PREFS, ...(action.saved.prefs ?? {}) },
         // the hub's own saved presets, plus any made in another hub since
         presets: { ...(action.saved.presets ?? {}), ...(action.presets ?? {}) },
+        typeSizes: { ...(action.saved.typeSizes ?? {}), ...(action.typeSizes ?? {}) },
+        tbc: { ...(action.saved.tbc ?? {}), ...(action.tbc ?? {}) },
         context: state.context, // host context outlives a resume
         // action.view pins where to land. Embedded that is the hub the host
         // opened this frame on: a resume must restore the *work*, not navigate
@@ -336,6 +342,20 @@ export function reducer(state, action) {
       const presets = { ...state.presets };
       delete presets[action.typeRef];
       return { ...state, presets };
+    }
+    // A size typed in the space layout, and a TBC flag. Both belong to the set
+    // like presets, and stay out of undo for the same reason. null clears one.
+    case 'SET_TYPE_SIZE': {
+      const typeSizes = { ...state.typeSizes };
+      if (action.size) typeSizes[action.typeRef] = { size: action.size };
+      else delete typeSizes[action.typeRef];
+      return { ...state, typeSizes };
+    }
+    case 'SET_TBC': {
+      const tbc = { ...state.tbc };
+      if (action.flags) tbc[action.ref] = action.flags;
+      else delete tbc[action.ref];
+      return { ...state, tbc };
     }
     case 'SET_MODEL': // rebuilt with the current presets; assignments survive
       return { ...state, model: action.model };
@@ -614,6 +634,7 @@ export function provisionalTypes(state) {
     .map((p) => ({
       typeRef: p.typeRef,
       invented: !!p.invented,
+      origin: p.origin ?? 'edited',
       drivers: all.filter((d) => d.typeRef === p.typeRef).length,
     }))
     .sort((a, b) => a.typeRef.localeCompare(b.typeRef));

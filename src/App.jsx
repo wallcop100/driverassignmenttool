@@ -12,7 +12,7 @@ import Tutorial from './components/Tutorial.jsx';
 import ZonePage from './components/ZonePage.jsx';
 import * as embed from './embed.js';
 import { LabelContext } from './labelContext.js';
-import { clearSession, loadSession, loadTypes, saveSession, setSessionKey } from './persist.js';
+import { clearSession, loadSession, loadTypeExtras, loadTypes, saveSession, setSessionKey } from './persist.js';
 import { changeCount, diffRows, initialState, intersectionSuggestions, reducer } from './state.js';
 
 const embedded = embed.isEmbedded();
@@ -40,7 +40,7 @@ export default function App({ domain = driversDomain }) {
   const resume = () => {
     const pin = embedded && state.view.page === 'zone'
       && saved.model?.zones?.includes(state.view.zone) ? state.view : undefined;
-    dispatch({ type: 'RESTORE', saved, view: pin, presets: loadTypes() });
+    dispatch({ type: 'RESTORE', saved, view: pin, presets: loadTypes(), ...loadTypeExtras() });
     setSaved(null);
   };
   const discard = () => { clearSession(); setSaved(null); };
@@ -52,7 +52,7 @@ export default function App({ domain = driversDomain }) {
     clearSession();
     // The hub's work goes; the set's type corrections are not this hub's to
     // discard - other hubs are relying on them.
-    dispatch({ type: 'INIT', ...fresh.current, presets: loadTypes() });
+    dispatch({ type: 'INIT', ...fresh.current, presets: loadTypes(), ...loadTypeExtras() });
   };
 
   // the message handler below is mounted once, so it can't close over state
@@ -85,7 +85,7 @@ export default function App({ domain = driversDomain }) {
           model,
           context: msg.context ?? null,
           // corrections already made to these types from another hub of this set
-          presets: loadTypes(),
+          presets: loadTypes(), ...loadTypeExtras(),
           view: matched ? { page: 'zone', zone: focus } : undefined,
         };
         fresh.current = init;
@@ -95,7 +95,7 @@ export default function App({ domain = driversDomain }) {
         // blank, then prior work replaces it in the same tick if there is any.
         const prior = loadSession();
         if (prior?.model) {
-          dispatch({ type: 'RESTORE', saved: prior, view: init.view, presets: loadTypes() });
+          dispatch({ type: 'RESTORE', saved: prior, view: init.view, presets: loadTypes(), ...loadTypeExtras() });
         }
       } catch (e) {
         // a bad re-init when we already have working data is a notice, not a
@@ -168,7 +168,7 @@ export default function App({ domain = driversDomain }) {
   useEffect(() => {
     saveSession(state);
     if (embedded && model) embed.send({ type: embed.topic('dirty'), changeCount: changeCount(state) });
-  }, [model, assignments, addedDrivers, state.prefs, state.presets, state.view]);
+  }, [model, assignments, addedDrivers, state.prefs, state.presets, state.typeSizes, state.tbc, state.view]);
 
   useEffect(() => {
     const onKey = (e) => {

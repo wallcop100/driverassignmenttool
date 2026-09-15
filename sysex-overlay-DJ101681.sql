@@ -1,5 +1,5 @@
 -- SysEx Overlay - Lighting Interactive Driver Assignment --
--- V1.7 -- (DJ 101681: V1.7 live as revision 68; adds Parameters to the type library)
+-- V1.8 -- (DJ 101681: V1.7 live as revision 68; V1.8 sends IsTBC / IsPropertiesTBC, NOT YET SAVED)
 
 --SQL HEADER--
 DECLARE @Container_TypeRef AS varchar(max) = 'PSU.HUB';   -- comma separated list of PSU-HUB Types
@@ -99,7 +99,7 @@ DECLARE @EntityTypeFilter AS varchar(max) = @Container_TypeRef;
    composed string for older hosts. */
 DECLARE @TypesCsv varchar(max);
 SELECT @TypesCsv = '"ElementTypeRef","ElementTypeName","MaxPower(W)","CurrentRange","OutputVoltage(V)",'
-+ '"NodeMaxPower(W)","NodeMaxForwardVoltage(fV)","NodeCurrent","ControlType","BallastCountPerUoM","Channels","Parameters"'
++ '"NodeMaxPower(W)","NodeMaxForwardVoltage(fV)","NodeCurrent","ControlType","BallastCountPerUoM","Channels","Parameters","IsTBC","IsPropertiesTBC"'
 + @NL + STRING_AGG(CONVERT(varchar(max),
     '"'+REPLACE(ISNULL(t.Ref,''),'"','""')+'",'
   + '"'+REPLACE(ISNULL(t.Name,''),'"','""')+'",'
@@ -115,11 +115,14 @@ SELECT @TypesCsv = '"ElementTypeRef","ElementTypeName","MaxPower(W)","CurrentRan
   -- The whole Parameters cell. The space layout reads the [w,h,d] a type already
   -- states from it, so a size somebody has written into the workbook is drawn
   -- and patched back unchanged instead of being replaced by a datasheet figure.
-  + '"'+REPLACE(ISNULL(t.Parameters,''),'"','""')+'"'
+  + '"'+REPLACE(ISNULL(t.Parameters,''),'"','""')+'",'
+  -- to be confirmed, as the workbook has it, so the space layout can hatch it
+  + '"'+ISNULL(CONVERT(varchar(10),t.IsTBC),'')+'",'
+  + '"'+ISNULL(CONVERT(varchar(10),t.IsPropertiesTBC),'')+'"'
   ), @NL) WITHIN GROUP (ORDER BY t.Ref)
 FROM (SELECT Ref, Name, [MaxPower(W)], CurrentRange, [OutputVoltage(V)],
              [NodeMaxPower(W)], [NodeMaxForwardVoltage(fV)], NodeCurrent,
-             ControlType, BallastCountPerUoM, Parameters,
+             ControlType, BallastCountPerUoM, Parameters, IsTBC, IsPropertiesTBC,
              CASE WHEN ISNULL(Parameters,'') LIKE '%<%'
                     THEN LEN(Parameters) - LEN(REPLACE(Parameters,'<',''))
                   -- no direction markers: every comma separated entry is a node
@@ -301,6 +304,24 @@ FROM #SPRequirements r
 WHERE NOT EXISTS (SELECT * FROM #LinkCsv lc WHERE lc.HubLabel = r.HubLabel)
 GROUP BY r.HubLabel;
 
+/* ---- 2c. TBC flags on the hub's Elements ----------------------------------------------
+   Only the Elements with a flag set, so a hub with none sends nothing. The space
+   layout hatches these and lets the flag be set or cleared, and patches it. */
+IF OBJECT_ID('tempdb..#TbcCsv') IS NOT NULL DROP TABLE #TbcCsv;
+SELECT f.Pullzone AS HubLabel,
+  '"ElementRef","IsTBC","IsPropertiesTBC"'
++ @NL + STRING_AGG(CONVERT(varchar(max),
+    '"'+REPLACE(e.Ref,'"','""')+'",'
+  + '"'+ISNULL(CONVERT(varchar(10),e.IsTBC),'')+'",'
+  + '"'+ISNULL(CONVERT(varchar(10),e.IsPropertiesTBC),'')+'"'
+  ), @NL) AS Csv
+INTO #TbcCsv
+FROM (SELECT DISTINCT Pullzone, ElementRef FROM #DriverAssignmentForm WHERE ISNULL(Pullzone,'')<>'') f
+JOIN #Elements e ON e.Ref = f.ElementRef
+WHERE NULLIF(NULLIF(CONVERT(varchar(10),e.IsTBC),''),'0') IS NOT NULL
+   OR NULLIF(NULLIF(CONVERT(varchar(10),e.IsPropertiesTBC),''),'0') IS NOT NULL
+GROUP BY f.Pullzone;
+
 /* ---- 3. the handler -----------------------------------------------------------------
    Self-built panel, not the Bootstrap modal: no dependency on SysEx modal ids,
    full width for a real application, and it cannot collide with a markdown modal
@@ -315,6 +336,7 @@ DECLARE @JS varchar(max) =
 +'var d=document.getElementById(''data_''+ref);'
 +'if(!f||!l){IWalertmessage(''No data block for ''+ref);return;}'
 +'var form=f.textContent,links=l.textContent,assess=d?d.textContent:'''';'
++'var tb=document.getElementById(''datb_''+ref),tbc=tb?tb.textContent:'''';'
  -- The CSVs must keep their line breaks. If they are ever collapsed the tool
  -- reports a column error; catch it here, where the message can name the cause.
  -- Each block is only checked when it HAS content: the form is empty on a hub
@@ -362,7 +384,7 @@ DECLARE @JS varchar(max) =
 +'var tlib=document.getElementById(''datt_''+ref);'
 +'if(tlib){fr.contentWindow.postMessage({type:''dat:types'',version:1,types:tlib.textContent},TOOL_ORIGIN);}'
 +'fr.contentWindow.postMessage({type:''dat:init'',version:1,'
-+'form:form,links:links,assessment:assess,focusZone:hub,'
++'form:form,links:links,assessment:assess,tbc:tbc,focusZone:hub,'
 +'context:{branchId:''' + @Branch + ''',systemSetId:ver,hubRef:ref,hubLabel:hub}},TOOL_ORIGIN);}'
 +'if(m.type===''dat:dirty''){dirty=m.changeCount;st.textContent=dirty?dirty+'' unsaved'':'''';}'
 +'if(m.type===''dat:error''){IWalertmessage(''Driver tool: ''+m.message);}'
@@ -390,6 +412,7 @@ SELECT 'Position', h.HubRef, '>DriverAssignment.Open',
    '<script type="text/plain" id="datf_'+h.HubRef+'">'+ISNULL(fc.Csv,'')+'</'+'script>'
  + '<script type="text/plain" id="datl_'+h.HubRef+'">'+ISNULL(lc.Csv,'')+'</'+'script>'
  + CASE WHEN dc.Csv IS NOT NULL THEN '<script type="text/plain" id="data_'+h.HubRef+'">'+dc.Csv+'</'+'script>' ELSE '' END
+ + CASE WHEN tc.Csv IS NOT NULL THEN '<script type="text/plain" id="datb_'+h.HubRef+'">'+tc.Csv+'</'+'script>' ELSE '' END
  + CASE WHEN @TypesCsv IS NOT NULL THEN '<script type="text/plain" id="datt_'+h.HubRef+'">'+@TypesCsv+'</'+'script>' ELSE '' END
  + '<a href="javascript:void(0)" class="btn btn-sm btn-primary" title="Assign drivers for this hub"'
  + ' onclick="'+@JS+'window.__datOpen('''+h.HubRef+''','''+h.HubLabel+''','''+@Ver+''');">'
@@ -397,7 +420,8 @@ SELECT 'Position', h.HubRef, '>DriverAssignment.Open',
 FROM #Hubs h
 LEFT JOIN #FormCsv fc ON fc.HubLabel = h.HubLabel
 LEFT JOIN #LinkCsv lc ON lc.HubLabel = h.HubLabel
-LEFT JOIN #DataCsv dc ON dc.HubLabel = h.HubLabel;
+LEFT JOIN #DataCsv dc ON dc.HubLabel = h.HubLabel
+LEFT JOIN #TbcCsv tc ON tc.HubLabel = h.HubLabel;
 
 -- A count, so the panel says something even before you click. A hub with no
 -- cables says what it does have, since "0 drivers, 0 cables" would read as
