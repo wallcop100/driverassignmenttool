@@ -917,3 +917,95 @@ body { background: #f6f8fb; }
   background: #fff; border: 1px solid #dbe2ea; border-radius: 6px; box-shadow: 0 6px 18px rgba(15, 23, 42, .12);
 }
 .hub-inpatch-list label { display: flex; align-items: center; gap: 6px; margin: 0; }
+
+/* The size editor floats under whatever opened it, so opening it never moves the
+   drawing. The pencil that opens it only shows on the block under the pointer. */
+.hub-stagebox { position: relative; }
+.hub-legend { position: relative; }
+.hub-pop { position: absolute; z-index: 40; }
+.hub-pop .hub-inspect {
+  margin-top: 0; background: #fff; width: max-content; max-width: min(92vw, 560px);
+  box-shadow: 0 8px 22px rgba(15, 23, 42, .16);
+}
+.hub-pencil { opacity: 0; cursor: pointer; transition: opacity .12s; }
+.hub-g:hover .hub-pencil, .hub-pencil:focus-within { opacity: 1; }
+.hub-pencil rect { fill: #fff; stroke: #2563eb; stroke-width: 1; }
+.hub-pencil path { fill: none; stroke: #2563eb; stroke-width: 1.2; stroke-linejoin: round; }
+@media (prefers-reduced-motion: reduce) { .hub-pencil { transition: none; } }
+
+/* Resizing a bay: handles on hover, a ghost of where the edge started, a readout
+   that springs on each snap step. Playful, but every figure can still be typed. */
+.hub-handle { cursor: pointer; outline: none; }
+.hub-handle circle { fill: #fff; stroke: #2563eb; stroke-width: 1.4; transition: transform .12s cubic-bezier(.34, 1.56, .64, 1); }
+.hub-handle .resize-icon path { fill: #2563eb; }
+.hub-handle:hover circle, .hub-handle:focus-visible circle { transform: scale(1.18); fill: #eff6ff; }
+.hub-handle:focus-visible circle { stroke-width: 2.4; }
+.hub-live { fill: none; stroke: #2563eb; stroke-width: 1; stroke-dasharray: 2 3; pointer-events: none; }
+.hub-live.is-live { stroke-dasharray: none; stroke-width: 1.6; }
+.hub-ghost { fill: rgba(37, 99, 235, .05); stroke: #93c5fd; stroke-width: 1; stroke-dasharray: 4 3; pointer-events: none; }
+.hub-readout {
+  position: absolute; z-index: 45; pointer-events: none; white-space: nowrap;
+  padding: 2px 9px; border-radius: 999px; font-size: 12px; font-variant-numeric: tabular-nums;
+  background: #1e3a8a; color: #fff; box-shadow: 0 4px 12px rgba(15, 23, 42, .2);
+  animation: hub-spring .16s cubic-bezier(.34, 1.56, .64, 1);
+}
+.hub-readout.is-over { background: var(--status-fail, #c41f4b); }
+@keyframes hub-spring { from { transform: scale(.9); } 60% { transform: scale(1.06); } to { transform: scale(1); } }
+.hub-exact {
+  position: absolute; z-index: 45; width: 76px; height: 26px; padding: 0 6px; font-size: 12.5px;
+  border: 1.5px solid #2563eb; border-radius: 5px; box-shadow: 0 4px 12px rgba(15, 23, 42, .15);
+}
+.hub-dimval { cursor: text; pointer-events: all; }
+.hub-baytab.is-shake { animation: hub-shake .36s ease-in-out; }
+@keyframes hub-shake { 20%, 60% { transform: translateX(-4px); } 40%, 80% { transform: translateX(4px); } }
+
+.hub-snap { position: relative; }
+.hub-snap-chip {
+  display: inline-flex; align-items: center; gap: 2px; font-size: 12.5px; color: #1e3a8a;
+  background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 999px; padding: 1px 6px 1px 10px;
+}
+.hub-snap-chip .material-icons { font-size: 16px; }
+.hub-snap-pop {
+  position: absolute; left: 0; top: calc(100% + 4px); z-index: 40; display: flex; flex-direction: column; gap: 6px;
+  padding: 8px 10px; background: #fff; border: 1px solid #dbe2ea; border-radius: 8px;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, .12); white-space: nowrap;
+}
+.hub-snap-presets { display: flex; align-items: center; gap: 4px; }
+.hub-snap-presets button {
+  min-width: 30px; height: 26px; border: 1px solid #dbe2ea; border-radius: 6px; background: #fff; font-size: 12.5px;
+}
+.hub-snap-presets button.is-on { background: #2563eb; border-color: #2563eb; color: #fff; }
+.hub-snap-custom { display: inline-flex; align-items: center; gap: 3px; margin: 0 0 0 4px; font-size: 12.5px; }
+.hub-snap-custom input { width: 56px; height: 26px; padding: 0 5px; }
+.hub-fromdb { font-size: 11.5px; color: #2c6b39; border: 1px solid #b7dfc0; border-radius: 999px; padding: 0 8px; }
+.hub-bays button.is-on { background: #2563eb; color: #fff; border-color: #2563eb; }
+
+/* the part editor */
+.pe { max-width: min(94vw, 720px); }
+.pe-preview { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; overflow: visible; touch-action: none; }
+.pe-envelope { fill: none; stroke: #94a3b8; stroke-dasharray: 4 3; }
+.pe-rect { fill: #fff; stroke: #16212e; stroke-width: 1.2; cursor: move; }
+.pe-rect.is-datasheet { stroke: #64748b; stroke-dasharray: 3 2; }
+.pe-rect.is-edited { stroke: #b7791f; stroke-dasharray: 6 3; }
+.pe-rect.is-missing { stroke: #e11d48; stroke-dasharray: 3 2; }
+.pe-part.is-active .pe-rect { stroke: #2563eb; stroke-width: 2; }
+.pe-label { font-size: 11px; fill: #111; pointer-events: none; }
+.pe-handle { cursor: pointer; opacity: 0; transition: opacity .12s; }
+.pe-part:hover .pe-handle, .pe-part.is-active .pe-handle { opacity: 1; }
+.pe-handle circle { fill: #fff; stroke: #2563eb; stroke-width: 1.2; }
+.pe-handle .resize-icon path { fill: #2563eb; }
+.pe-scroll { overflow-x: auto; }
+.pe-table { font-size: 12.5px; border-collapse: collapse; }
+.pe-table th { font-weight: 500; color: #64748b; padding: 2px 4px; text-align: left; }
+.pe-table td { padding: 2px 4px; }
+.pe-table input, .pe-table select { height: 26px; padding: 0 5px; font-size: 12.5px; }
+.pe-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; font-size: 12.5px; }
+.pe-ask { display: inline-flex; align-items: center; gap: 6px; color: #1e3a8a; }
+@media (prefers-reduced-motion: reduce) {
+  .hub-readout, .hub-baytab.is-shake { animation: none; }
+  .hub-handle circle, .pe-handle { transition: none; }
+}
+
+/* the part editor needs its table: wider than the size editor it replaces */
+.hub-pop .hub-inspect.pe { max-width: min(94vw, 780px); }
+.pe-table td .rv-ref { white-space: nowrap; }

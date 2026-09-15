@@ -48,3 +48,36 @@ test('a missing axis stays missing rather than becoming zero', () => {
   assert.deepEqual(p.parseParams('[,50,]').size, [null, 50, null]);
   assert.equal(p.formatParams({ size: [null, 50, null] }), '[,50mm,]');
 });
+
+test('a space can carry a detail, its size and where it sits', () => {
+  const x = p.parseParams('[[838mm,418mm,150mm]]<1[338mm,418mm,150mm,0,0,0],2[550mm,418mm,150mm,288mm,0,0]>');
+  assert.deepEqual(x.capacity, [838, 418, 150]);
+  assert.equal(x.size, null, 'a size inside a space is not the entity size');
+  assert.deepEqual(x.spaceList.map((s) => [s.name, s.size, s.at]),
+    [['1', [338, 418, 150], [0, 0, 0]], ['2', [550, 418, 150], [288, 0, 0]]]);
+  assert.equal(p.formatParams(x), '[[838mm,418mm,150mm]]<1[338mm,418mm,150mm,0,0,0],2[550mm,418mm,150mm,288mm,0,0]>');
+
+  const w = p.parseParams('[233mm,123mm,39mm]<PSU(ET-CVR-PSU-24)[228mm,68mm,39mm,0,55mm,0],Driver(ET-CVR-01)[153mm,50mm,23mm,0,0,0]>{<OP.1,<OP.2}');
+  assert.deepEqual(w.size, [233, 123, 39]);
+  assert.equal(w.nodes, '<OP.1,<OP.2');
+  assert.deepEqual(w.spaceList.map((s) => [s.name, s.detail, s.at]),
+    [['PSU', 'ET-CVR-PSU-24', [0, 55, 0]], ['Driver', 'ET-CVR-01', [0, 0, 0]]]);
+});
+
+test('the rewrite page examples read as they say', () => {
+  const r = p.parseSpace('Rack Rear.Top[100%,40mm,50%,0,760mm,50%][[100%,100%,20U,0,0,0]]');
+  assert.equal(r.name, 'Rack Rear.Top');
+  assert.deepEqual(r.at, [0, 760, 50]);
+  assert.ok(r.capacity);
+  const t = p.parseParams('[20m,20m,20m][[10m,10m,10m,10m,2m,0m]]');
+  assert.deepEqual(t.size, [20000, 20000, 20000]);
+  assert.deepEqual(t.capacityAt, [10000, 2000, 0]);
+  assert.equal(p.parseParams('<Service Modules.S1(Green),Servcice Modules.S2(Blue)>').spaceList[1].detail, 'Blue');
+});
+
+test('a node list keeps its directions, however they are written', () => {
+  const n = p.parseParams('{<01(C19),<02(C13),>Power in(C20)}<A,B>');
+  assert.equal(n.nodes, '<01(C19),<02(C13),>Power in(C20)');
+  assert.equal(n.spaces, 'A,B');
+  assert.equal(p.parseParams('{>SFP 01{01,02},>SFP 02{01,02}}').nodes, '>SFP 01{01,02},>SFP 02{01,02}');
+});

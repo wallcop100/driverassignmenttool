@@ -28,6 +28,7 @@ export const DEFAULT_PREFS = {
   splitByType: true,
   splitByLocation: false,
   preferSingleOutput: true,
+  snapMm: 5,            // resize grid in the space layout
 };
 
 export const initialState = {
@@ -48,6 +49,8 @@ export const initialState = {
   presets: {},          // typeRef -> driver type preset patched/invented here
   typeSizes: {},        // typeRef -> { size } typed in the space layout
   tbc: {},              // ref -> { sheet, isTBC, isPropertiesTBC } set here
+  recipes: {},          // wrapper typeRef -> [part] arranged here
+  jboxes: {},           // driver Element ref -> junction box count set here
   demo: false,          // demo dataset loaded → show the tutorial
   deletedDrivers: [],   // refs of DesignDB drivers to mark IsDeleted in the patch
   fixNodeSyntax: false, // sweep banned ':' nodes out of LinksMap in the patch
@@ -107,6 +110,8 @@ export function reducer(state, action) {
         presets: action.presets ?? {},
         typeSizes: action.typeSizes ?? {},
         tbc: action.tbc ?? {},
+        recipes: action.recipes ?? {},
+        jboxes: action.jboxes ?? {},
         // an estimate has no cables to assign, so it never lands on a zone
         view: action.view ?? (action.model.mode === 'estimate'
           ? { page: 'estimate' }
@@ -324,6 +329,8 @@ export function reducer(state, action) {
         presets: { ...(action.saved.presets ?? {}), ...(action.presets ?? {}) },
         typeSizes: { ...(action.saved.typeSizes ?? {}), ...(action.typeSizes ?? {}) },
         tbc: { ...(action.saved.tbc ?? {}), ...(action.tbc ?? {}) },
+        recipes: { ...(action.saved.recipes ?? {}), ...(action.recipes ?? {}) },
+        jboxes: { ...(action.saved.jboxes ?? {}), ...(action.jboxes ?? {}) },
         context: state.context, // host context outlives a resume
         // action.view pins where to land. Embedded that is the hub the host
         // opened this frame on: a resume must restore the *work*, not navigate
@@ -356,6 +363,20 @@ export function reducer(state, action) {
       if (action.flags) tbc[action.ref] = action.flags;
       else delete tbc[action.ref];
       return { ...state, tbc };
+    }
+    // A wrapper's parts arranged here, and a driver Element's junction boxes.
+    // The set's, like sizes; null clears.
+    case 'SET_RECIPE': {
+      const recipes = { ...state.recipes };
+      if (action.parts?.length) recipes[action.typeRef] = action.parts;
+      else delete recipes[action.typeRef];
+      return { ...state, recipes };
+    }
+    case 'SET_JBOXES': {
+      const jboxes = { ...state.jboxes };
+      if (action.count == null) delete jboxes[action.ref];
+      else jboxes[action.ref] = action.count;
+      return { ...state, jboxes };
     }
     case 'SET_MODEL': // rebuilt with the current presets; assignments survive
       return { ...state, model: action.model };

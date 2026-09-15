@@ -1,5 +1,5 @@
 -- SysEx Overlay - Lighting Interactive Driver Assignment --
--- V1.8 -- (DJ 101681: V1.8 live as revision 73; sends IsTBC / IsPropertiesTBC)
+-- V1.9 -- (DJ 101681: V1.8 live as revision 73; V1.9 sends driver parts and Element Parameters, NOT YET SAVED)
 
 --SQL HEADER--
 DECLARE @Container_TypeRef AS varchar(max) = 'PSU.HUB';   -- comma separated list of PSU-HUB Types
@@ -51,6 +51,21 @@ DECLARE @Ver varchar(50) = ISNULL(NULLIF(@DataVersion,''), CONVERT(varchar(50), 
 DECLARE @Branch varchar(50) = CONVERT(varchar(50), ISNULL(@SystemBranchID,0));
 
 {{>SystemSetDesignDB}}
+
+-- A driver's parts, captured BEFORE the generated (_EE) rows are removed below.
+-- A CV wrapper such as ET-CVR-D-24-2CH-01 holds a DC/DC driver and its supply as
+-- child Elements, and on every set measured those children are generated at
+-- commit: 31 of them under 108857's wrappers, 87 under 109311's, none real. One
+-- row per wrapper type and child type is all the space layout needs; where each
+-- part sits is stated on the wrapper type's own Parameters, not here.
+IF OBJECT_ID('tempdb..#Compositions') IS NOT NULL DROP TABLE #Compositions;
+SELECT P.TypeRef AS ParentTypeRef, C.TypeRef AS ChildTypeRef,
+       MAX(ISNULL(C.Quantity, 1)) AS Quantity, MIN(ISNULL(C.SortOrder, 0)) AS SortOrder
+INTO   #Compositions
+FROM   #ElementsRaw C
+JOIN   #ElementsRaw P ON P.Ref = C.ContextRef AND C.ContextType = 'Element'
+WHERE  ISNULL(C.IsDeleted, '') = '' AND ISNULL(P.IsDeleted, '') = ''
+GROUP BY P.TypeRef, C.TypeRef;
 
 --|Remove Deleted|--
 	DELETE FROM #LocationsRaw WHERE NOT ISNULL(IsDeleted,'')='';
@@ -145,6 +160,8 @@ FROM (SELECT Ref, Name, [MaxPower(W)], CurrentRange, [OutputVoltage(V)],
       -- 10568 all 16 driver types in use have the column empty, so the two rules
       -- above sent nothing at all and the panel had nothing to size against.
       -- Being used as a driver is the evidence; the empty column is the defect.
+      -- a driver's parts, so their sizes, nodes and output voltage arrive too
+         OR Ref IN (SELECT ChildTypeRef FROM #Compositions)
          OR Ref IN (SELECT DISTINCT E.TypeRef
                     FROM #Elements E
                     JOIN #CalculatedPositions CP ON CP.PositionRef = E.PositionRef
@@ -322,6 +339,49 @@ WHERE NULLIF(NULLIF(CONVERT(varchar(10),e.IsTBC),''),'0') IS NOT NULL
    OR NULLIF(NULLIF(CONVERT(varchar(10),e.IsPropertiesTBC),''),'0') IS NOT NULL
 GROUP BY f.Pullzone;
 
+/* ---- 2d. parts, and each driver Element's own Parameters ----------------------------
+   The parts are page-level, like the type library. The hub rows are per hub:
+   the hub's bays, separated bays, and every driver's placement, as-placed size
+   and junction boxes, so a layout the patch saved can be drawn again. */
+DECLARE @CompCsv varchar(max);
+SELECT @CompCsv = '"ParentTypeRef","ChildTypeRef","Quantity","SortOrder"'
++ @NL + STRING_AGG(CONVERT(varchar(max),
+    '"'+REPLACE(c.ParentTypeRef,'"','""')+'",'
+  + '"'+REPLACE(c.ChildTypeRef,'"','""')+'",'
+  + '"'+CONVERT(varchar(20),c.Quantity)+'",'
+  + '"'+CONVERT(varchar(20),c.SortOrder)+'"'
+  ), @NL) WITHIN GROUP (ORDER BY c.ParentTypeRef, c.SortOrder)
+FROM #Compositions c;
+
+IF OBJECT_ID('tempdb..#ElemCsv') IS NOT NULL DROP TABLE #ElemCsv;
+SELECT x.HubLabel,
+  '"Ref","Kind","ContextRef","Parameters","ContextParameters"'
++ @NL + STRING_AGG(CONVERT(varchar(max),
+    '"'+REPLACE(x.Ref,'"','""')+'",'
+  + '"'+x.Kind+'",'
+  + '"'+REPLACE(ISNULL(x.ContextRef,''),'"','""')+'",'
+  + '"'+REPLACE(ISNULL(x.Parameters,''),'"','""')+'",'
+  + '"'+REPLACE(ISNULL(x.ContextParameters,''),'"','""')+'"'
+  ), @NL) AS Csv
+INTO #ElemCsv
+FROM (
+  -- the hub row: which bays it holds and each one's size and start
+  SELECT h.HubLabel, h.HubRef AS Ref, CONVERT(varchar(10),'hub') AS Kind,
+         CONVERT(nvarchar(200), NULL) AS ContextRef, p.Parameters, CONVERT(nvarchar(max), NULL) AS ContextParameters
+  FROM #Hubs h JOIN #Positions p ON p.Ref = h.HubRef
+  UNION ALL
+  -- a bay separated into an enclosure Element of its own
+  SELECT h.HubLabel, e.Ref, 'bay', e.ContextRef, e.Parameters, e.ContextParameters
+  FROM #Hubs h JOIN #Elements e ON e.ContextRef = h.HubRef AND e.TypeRef LIKE 'ET-PSU-ENC%'
+  UNION ALL
+  -- every driver: where it sits, its as-placed size and its junction boxes
+  SELECT f.Pullzone, e.Ref, 'element', e.ContextRef, e.Parameters, e.ContextParameters
+  FROM (SELECT DISTINCT Pullzone, ElementRef FROM #DriverAssignmentForm WHERE ISNULL(Pullzone,'')<>'') f
+  JOIN #Elements e ON e.Ref = f.ElementRef
+) x
+WHERE ISNULL(x.Parameters,'') <> '' OR ISNULL(x.ContextParameters,'') <> ''
+GROUP BY x.HubLabel;
+
 /* ---- 3. the handler -----------------------------------------------------------------
    Self-built panel, not the Bootstrap modal: no dependency on SysEx modal ids,
    full width for a real application, and it cannot collide with a markdown modal
@@ -337,6 +397,8 @@ DECLARE @JS varchar(max) =
 +'if(!f||!l){IWalertmessage(''No data block for ''+ref);return;}'
 +'var form=f.textContent,links=l.textContent,assess=d?d.textContent:'''';'
 +'var tb=document.getElementById(''datb_''+ref),tbc=tb?tb.textContent:'''';'
++'var tp=document.getElementById(''datc_''+ref),comps=tp?tp.textContent:'''';'
++'var te=document.getElementById(''date_''+ref),elems=te?te.textContent:'''';'
  -- The CSVs must keep their line breaks. If they are ever collapsed the tool
  -- reports a column error; catch it here, where the message can name the cause.
  -- Each block is only checked when it HAS content: the form is empty on a hub
@@ -384,7 +446,7 @@ DECLARE @JS varchar(max) =
 +'var tlib=document.getElementById(''datt_''+ref);'
 +'if(tlib){fr.contentWindow.postMessage({type:''dat:types'',version:1,types:tlib.textContent},TOOL_ORIGIN);}'
 +'fr.contentWindow.postMessage({type:''dat:init'',version:1,'
-+'form:form,links:links,assessment:assess,tbc:tbc,focusZone:hub,'
++'form:form,links:links,assessment:assess,tbc:tbc,compositions:comps,elements:elems,focusZone:hub,'
 +'context:{branchId:''' + @Branch + ''',systemSetId:ver,hubRef:ref,hubLabel:hub}},TOOL_ORIGIN);}'
 +'if(m.type===''dat:dirty''){dirty=m.changeCount;st.textContent=dirty?dirty+'' unsaved'':'''';}'
 +'if(m.type===''dat:error''){IWalertmessage(''Driver tool: ''+m.message);}'
@@ -413,6 +475,8 @@ SELECT 'Position', h.HubRef, '>DriverAssignment.Open',
  + '<script type="text/plain" id="datl_'+h.HubRef+'">'+ISNULL(lc.Csv,'')+'</'+'script>'
  + CASE WHEN dc.Csv IS NOT NULL THEN '<script type="text/plain" id="data_'+h.HubRef+'">'+dc.Csv+'</'+'script>' ELSE '' END
  + CASE WHEN tc.Csv IS NOT NULL THEN '<script type="text/plain" id="datb_'+h.HubRef+'">'+tc.Csv+'</'+'script>' ELSE '' END
+ + CASE WHEN @CompCsv IS NOT NULL THEN '<script type="text/plain" id="datc_'+h.HubRef+'">'+@CompCsv+'</'+'script>' ELSE '' END
+ + CASE WHEN ec.Csv IS NOT NULL THEN '<script type="text/plain" id="date_'+h.HubRef+'">'+ec.Csv+'</'+'script>' ELSE '' END
  + CASE WHEN @TypesCsv IS NOT NULL THEN '<script type="text/plain" id="datt_'+h.HubRef+'">'+@TypesCsv+'</'+'script>' ELSE '' END
  + '<a href="javascript:void(0)" class="btn btn-sm btn-primary" title="Assign drivers for this hub"'
  + ' onclick="'+@JS+'window.__datOpen('''+h.HubRef+''','''+h.HubLabel+''','''+@Ver+''');">'
@@ -421,7 +485,8 @@ FROM #Hubs h
 LEFT JOIN #FormCsv fc ON fc.HubLabel = h.HubLabel
 LEFT JOIN #LinkCsv lc ON lc.HubLabel = h.HubLabel
 LEFT JOIN #DataCsv dc ON dc.HubLabel = h.HubLabel
-LEFT JOIN #TbcCsv tc ON tc.HubLabel = h.HubLabel;
+LEFT JOIN #TbcCsv tc ON tc.HubLabel = h.HubLabel
+LEFT JOIN #ElemCsv ec ON ec.HubLabel = h.HubLabel;
 
 -- A count, so the panel says something even before you click. A hub with no
 -- cables says what it does have, since "0 drivers, 0 cables" would read as

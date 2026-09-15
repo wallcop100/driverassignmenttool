@@ -6,7 +6,7 @@ import * as hl from '../../src/hubLayout.js';
 import { hubPatch, MERGE_TS } from '../../src/drivers/hubPatch.js';
 
 // the exact merge the script runs, with its TypeScript annotations taken off
-const merge = new Function(`${MERGE_TS.replace(/: string/g, '')}; return mergeFlavour;`)();
+const merge = new Function(`${MERGE_TS.replace(/: (string|number)/g, '')}; return mergeFlavour;`)();
 const I = (ref, w = 210, h = 40) => ({ ref, label: ref, size: [w, h, 150] });
 const POS = { ref: 'P8110', name: '#1', contextType: 'Position' };
 
@@ -86,4 +86,74 @@ test('a TBC flag set here is written after every clear, on the sheet it belongs 
     'the flag comes after the clear that would otherwise undo it');
   assert.match(s, /tbc\.setValue\("Y"\)/);
   assert.doesNotMatch(s, /setValue\(""\)/);
+});
+
+test('the merge reads by depth: a size inside a space is never the entity size', () => {
+  const hub = '[[838mm,418mm,150mm]]<1[338mm,418mm,150mm,0,0,0],2[550mm,418mm,150mm,288mm,0,0]>';
+  assert.equal(merge(hub, 'size', '[1mm,2mm,3mm]'), `[1mm,2mm,3mm]${hub}`, 'no top-level size to replace');
+  assert.equal(merge(hub, 'spaces', '<1[380mm,418mm,150mm,0,0,0]>'), '<1[380mm,418mm,150mm,0,0,0]>[[838mm,418mm,150mm]]');
+  const wrap = '[233mm,123mm,39mm]<PSU(ET-CVR-PSU-24)[228mm,68mm,39mm,0,55mm,0]>{<OP.1,<OP.2}';
+  assert.equal(merge(wrap, 'size', '[240mm,130mm,39mm]'), '[240mm,130mm,39mm]<PSU(ET-CVR-PSU-24)[228mm,68mm,39mm,0,55mm,0]>{<OP.1,<OP.2}');
+  assert.equal(merge(wrap, 'nodes', ''), '[233mm,123mm,39mm]<PSU(ET-CVR-PSU-24)[228mm,68mm,39mm,0,55mm,0]>');
+});
+
+test('a wrapper type gets its parts as spaces, and a driver Element its junction boxes', () => {
+  const s = hubPatch({ saved: hl.save([[I('E1')]], { container: POS }), hub: POS,
+    typeSizes: [
+      { ref: 'ET-CVR-D-24-2CH-01', size: '[238mm,128mm,39mm]', spaces: '<Driver(ET-CVR-01)[153mm,50mm,23mm,0,0,0]>' },
+      { ref: 'ET-CVR-01', size: '[153mm,50mm,23mm]' },
+    ],
+    jb: { E1: '<JB.1[80mm,35mm,40mm,158mm,0,0]>' } });
+  assert.match(s, /"ref":"ET-CVR-D-24-2CH-01","size":"\[238mm,128mm,39mm\]","setSpaces":true,"spaces":"<Driver\(ET-CVR-01\)/);
+  assert.match(s, /"ref":"ET-CVR-01","size":"\[153mm,50mm,23mm\]","setSpaces":false,"spaces":""/);
+  assert.match(s, /"ref":"E1",.*"setJb":true,"jb":"<JB\.1\[80mm/);
+  assert.match(s, /mergeFlavour\(nextP, "spaces", it\.jb\)/);
+  assert.doesNotMatch(s, /_EE\|/, 'a generated row is never written');
+});
+
+test('the contract: a hub is recreated from only what the patch writes', async () => {
+  const r = await import('../../src/drivers/recipe.js');
+  // a hub with a typed bay width, a turned module, junction boxes and moved parts
+  const types = {
+    'ET-CVR-01': { name: '220D', params: '{<OP.1,<OP.2}' },
+    'ET-CVR-PSU-24': { name: 'HLG-185-24', params: '', outputVoltageV: 24 },
+  };
+  const wrapper = { typeRef: 'ET-CVR-D-24-2CH-01', name: 'x', params: '{<OP.1,<OP.2}' };
+  const parts = [
+    { space: 'Driver', role: 'Driver', typeRef: 'ET-CVR-01', size: [153, 50, 23], at: [0, 0, 0] },
+    { space: 'PSU', role: 'PSU', typeRef: 'ET-CVR-PSU-24', size: [228, 68, 39], at: [15, 60, 0] },
+  ];
+  const mod = r.compose(parts, 2);
+  const item = { ref: 'E1', typeRef: wrapper.typeRef, size: mod.size, rot: 90 };
+  const bays = [[I('A')], [item]];
+  const widths = [380, 520];
+  const saved = hl.save(bays, { container: POS, widths });
+
+  // apply the patch's own merge to empty cells, exactly as the script does
+  const cell = {};
+  cell.hub = merge(merge('', 'spaces', `<${hl.parseParams(saved.container.parameters).spaces}>`), 'capacity',
+    hl.formatParams({ capacity: hl.parseParams(saved.container.parameters).capacity }));
+  cell.el = Object.fromEntries(saved.elements.map((e) => {
+    const cp = hl.parseParams(e.contextParameters);
+    return [e.ref, {
+      contextParameters: merge(merge('', 'spaces', `<${cp.spaces}>`), 'size', hl.formatParams({ size: cp.size })),
+      parameters: merge(e.parameters ? merge('', 'size', e.parameters) : '', 'spaces',
+        e.ref === 'E1' ? r.elementParams('', 2, parts).replace(/^.*?(<.*>).*$/, '$1') : ''),
+    }];
+  }));
+  cell.wrapper = merge(merge(wrapper.params, 'size', hl.formatParams({ size: r.envelope(parts) })), 'spaces',
+    `<${hl.parseParams(r.wrapperParams('', parts)).spaces}>`);
+
+  // and rebuild from those cells with no session state at all
+  const back = r.partsFor({ wrapper: { ...wrapper, params: cell.wrapper }, types });
+  assert.equal(back.source, 'spaces');
+  assert.deepEqual(back.parts.map((p) => [p.space, p.at]), parts.map((p) => [p.space, p.at]));
+  assert.equal(r.jbCount(cell.el.E1.parameters), 2);
+  const again = r.compose(back.parts, r.jbCount(cell.el.E1.parameters));
+  const byRef = { A: I('A'), E1: { ...item, size: again.size, rot: 0 } };
+  const loaded = hl.load({ container: cell.hub, elements: saved.elements.map((e) => ({ ...e, ...cell.el[e.ref] })) }, byRef);
+  const geo = hl.bayGeometry(cell.hub);
+  // an upright part comes back as rot 0 where it went in with none
+  assert.deepEqual(hl.placements(loaded, { widths: geo.widths }).map((p) => [p.ref, p.slot, p.x, p.y, p.rot ?? 0]),
+    hl.placements(bays, { widths }).map((p) => [p.ref, p.slot, p.x, p.y, p.rot ?? 0]));
 });

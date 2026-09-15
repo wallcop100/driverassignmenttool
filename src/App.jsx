@@ -168,7 +168,7 @@ export default function App({ domain = driversDomain }) {
   useEffect(() => {
     saveSession(state);
     if (embedded && model) embed.send({ type: embed.topic('dirty'), changeCount: changeCount(state) });
-  }, [model, assignments, addedDrivers, state.prefs, state.presets, state.typeSizes, state.tbc, state.view]);
+  }, [model, assignments, addedDrivers, state.prefs, state.presets, state.typeSizes, state.tbc, state.recipes, state.jboxes, state.view]);
 
   useEffect(() => {
     const onKey = (e) => {

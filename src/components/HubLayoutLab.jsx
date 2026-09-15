@@ -5,8 +5,12 @@ import { effectiveDrivers, outRef } from '../state.js';
 import * as hl from '../hubLayout.js';
 import * as draw from '../core/draw.js';
 import { formatParams } from '../core/params.js';
+import * as recipe from '../drivers/recipe.js';
+import { SNAP_PRESETS, DEFAULT_SNAP, dragTo, nudge } from '../core/snap.js';
 import { hubPatch } from '../drivers/hubPatch.js';
 import Origin from './Origin.jsx';
+import PartEditor from './PartEditor.jsx';
+import ResizeIcon from './ResizeIcon.jsx';
 
 // Composing one PSU hub, drawn the way 5642600A draws it: equipment as plain
 // labelled blocks with the drivers rounded, cable trunking hatched, Feed
@@ -16,11 +20,11 @@ import Origin from './Origin.jsx';
 // cannot overlap and the gap between neighbours is always the clearance they
 // carry. The millimetres fall out of the sequence.
 //
-// Almost no project states a driver's size yet (0 of 103 driver types across
-// five live sets), so most blocks are drawn at a datasheet figure the tool
-// supplied. That is allowed, so work can carry on, but it is never allowed to
-// look like the design's own: a datasheet size is outlined dotted, a size typed
-// here dashed amber, and only a size from the DB is drawn solid.
+// Everything drawn here can be drawn again from only what the patch writes: each
+// bay's size and start on the hub row, where every driver sits on its Element, a
+// driver's parts as spaces on its wrapper type, and its junction boxes as spaces
+// on the driver Element. What is not in the DB yet is outlined so: dotted for a
+// datasheet figure, dashed amber for something typed here.
 
 const JBOX = (n) => ({ kind: 'jbox', label: 'JUNCTION BOX', size: [80, 35, 40], ref: `jb${n}` });
 
@@ -37,46 +41,78 @@ export function defaultJboxes(spec, type) {
 const composite = (parts) => (parts.some((p) => p.kind === 'driver' && p.size)
   ? hl.composite(parts.filter((p) => p.size)) : null);
 
-// A driver, its supply and its junction boxes, as one module, or a Feed
-// Provision Element as one block. `sizes` is { edited, db }: what was typed here
-// and what the ElementTypes state. A stated size is the type's whole body; a
-// datasheet one is composed from the parts the name resolves to.
-function moduleFor(driver, jboxes, sizes = {}) {
+// One driver, or a Feed Provision Element, as the block the bay places.
+//
+// ctx: { sizes: { edited, db }, recipes, comps, types, elemParams, jbSet }
+//
+// A module with parts - a wrapper type with spaces, DB children, or a datasheet
+// pair - is composed from those parts. Anything else is one block at its type's
+// size, as it always was.
+function moduleFor(driver, ctx = {}) {
+  const { sizes = {}, recipes = {}, comps = {}, types = {}, elemParams = {}, jbSet = {} } = ctx;
   const spec = resolveSpec(driver.name || driver.typeName || driver.typeRef);
-  const part = spec?.driver ?? spec ?? null;
-  const supply = spec?.supply ?? null;
   const feed = hl.isFeed(driver.typeRef);
+  const storedJb = jbSet[driver.ref] ?? recipe.jbCount(elemParams[driver.ref]);
+  const jbAuto = feed ? 0 : defaultJboxes(spec, driver);
+  const n = feed ? 0 : storedJb ?? jbAuto;
+  const base = {
+    ref: driver.ref, typeRef: driver.typeRef, label: driver.typeRef,
+    kind: feed ? 'feed' : 'module', jboxes: n, jbStored: storedJb != null, jbAuto,
+  };
+
+  if (!feed) {
+    const typed = recipes[`@${driver.ref}`] ?? null;
+    const own = recipe.fromParams(elemParams[driver.ref]);
+    const r = !typed && own.length
+      ? { source: 'element', parts: own }
+      : recipe.partsFor({
+        wrapper: {
+          typeRef: driver.typeRef,
+          name: types[driver.typeRef]?.name || driver.typeName || driver.name,
+          params: types[driver.typeRef]?.params,
+        },
+        children: comps[driver.typeRef] ?? [],
+        types,
+        resolveSpec,
+        edited: typed ?? recipes[driver.typeRef] ?? null,
+      });
+    if (r.source !== 'wrapper' && r.parts.some((p) => p.size)) {
+      const built = recipe.compose(r.parts, n);
+      const origin = r.source === 'edited' ? 'edited'
+        : (r.source === 'spaces' || r.source === 'element') ? 'db' : 'datasheet';
+      return {
+        ...base,
+        recipe: { ...r, scope: typed ? 'element' : 'type' },
+        sizedBy: built ? origin : 'missing',
+        missing: r.parts.filter((p) => !p.size).map((p) => p.label ?? p.typeRef ?? p.space),
+        size: built?.size ?? null,
+        parts: built?.parts ?? [],
+      };
+    }
+  }
+
+  const part = spec?.driver ?? spec ?? null;
   const label = feed ? 'Feed Provision' : part?.code ?? part?.name ?? driver.typeRef;
   const sheet = feed
     ? [{ kind: 'feed', label, size: hl.FEED_SIZE, full: `${driver.typeRef}, no size stated` }]
-    : [
-      { kind: 'driver', label, size: part?.sizeMm ?? null, full: part?.name ?? driver.typeRef },
-      ...(supply ? [{ kind: 'psu', label: supply.code ?? supply.name, size: supply.sizeMm ?? null,
-        full: supply.name }] : []),
-    ];
-  const { size: own, origin } = hl.resolveSize({
+    : [{ kind: 'driver', label, size: part?.sizeMm ?? null, full: part?.name ?? driver.typeRef }];
+  const { size: stated, origin } = hl.resolveSize({
     edited: sizes.edited?.[driver.typeRef]?.size,
     db: sizes.db?.[driver.typeRef],
-    datasheet: feed ? hl.FEED_SIZE : composite(sheet)?.size,
+    datasheet: feed ? hl.FEED_SIZE : sheet[0].size,
   });
-  const stated = origin === 'edited' || origin === 'db';
-  const body = stated
-    ? [{ kind: feed ? 'feed' : 'driver', label, size: own,
+  const isStated = origin === 'edited' || origin === 'db';
+  const body = isStated
+    ? [{ kind: feed ? 'feed' : 'driver', label, size: stated,
       full: `${driver.typeRef}, sized from ${origin === 'db' ? 'its ElementType' : 'the size typed here'}` }]
     : sheet;
-  const n = feed ? 0 : jboxes ?? defaultJboxes(spec, driver);
-  const parts = [...body, ...Array.from({ length: n }, (_, i) => JBOX(i))];
   const built = feed
     ? (body[0].size ? { size: body[0].size, parts: [{ ...body[0], at: [0, 0] }] } : null)
-    : composite(parts);
+    : composite([...body, ...Array.from({ length: n }, (_, i) => JBOX(i))]);
   return {
-    ref: driver.ref,
-    typeRef: driver.typeRef,
-    label: driver.typeRef,
-    kind: feed ? 'feed' : 'module',
-    jboxes: n,
+    ...base,
     sizedBy: built ? origin : 'missing',
-    missing: stated ? [] : sheet.filter((p) => !p.size).map((p) => p.full ?? p.label),
+    missing: isStated ? [] : sheet.filter((p) => !p.size).map((p) => p.full ?? p.label),
     size: built?.size ?? null,
     parts: built?.parts ?? [],
   };
@@ -86,7 +122,7 @@ function moduleFor(driver, jboxes, sizes = {}) {
 const feedFirst = (items) => [...items.filter((i) => i.kind === 'feed'), ...items.filter((i) => i.kind !== 'feed')];
 
 const bayDefaults = () => ({
-  width: null, bounds: false, target: { w: '', h: '' }, separate: false, ref: '',
+  width: null, height: null, bounds: false, target: { w: '', h: '' }, separate: false, ref: '',
 });
 
 // The outline says where a block's size came from.
@@ -96,9 +132,17 @@ const LINE = {
   edited: { stroke: '#b7791f', strokeDasharray: '6 3' },
 };
 
+const ICON = { w: 'fit_width', h: 'height', both: 'arrows_outward' };
+
 // px per mm. The drawing used to be fixed at 0.36, which is small on a screen.
 const ZOOM_MIN = 0.25;
 const ZOOM_MAX = 1.5;
+const LEFT = 44;
+
+// A driver module's parts and junction boxes as the spaces the patch writes.
+const partsOf = (m) => (m.recipe?.parts?.length
+  ? m.recipe.parts
+  : m.parts.filter((p) => p.kind !== 'jbox').map((p) => ({ role: 'Driver', size: p.size, at: [p.at?.[0] ?? 0, p.at?.[1] ?? 0, 0] })));
 
 export default function HubLayoutLab({ state, dispatch, zone = null, onBack = null }) {
   const { model, addedDrivers } = state;
@@ -106,10 +150,20 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
     () => effectiveDrivers(model, addedDrivers, state.deletedDrivers),
     [model, addedDrivers, state.deletedDrivers],
   );
-  // what the workbook already states: sizes on ElementTypes, TBC flags
+  // what the workbook already states
   const stated = useMemo(() => api.typeSizes(), [model]);
   const dbTbc = useMemo(() => api.tbcFlags(), [model]);
+  const typesLib = useMemo(() => api.typeInfo(), [model]);
+  const comps = useMemo(() => api.compositions(), [model]);
+  const rows = useMemo(() => api.hubRows(), [model]);
+  const elemParams = useMemo(() => Object.fromEntries(Object.values(rows.elements)
+    .map((e) => [e.ref, e.parameters])), [rows]);
   const sizes = useMemo(() => ({ edited: state.typeSizes ?? {}, db: stated }), [state.typeSizes, stated]);
+  const ctx = useMemo(() => ({
+    sizes, recipes: state.recipes ?? {}, comps, types: typesLib, elemParams, jbSet: state.jboxes ?? {},
+  }), [sizes, state.recipes, comps, typesLib, elemParams, state.jboxes]);
+  const snap = state.prefs?.snapMm > 0 ? state.prefs.snapMm : DEFAULT_SNAP;
+
   const hubs = model.zones;
   const [hub, setHub] = useState(hubs.includes(zone) ? zone : hubs[0] ?? null);
   const [st, setSt] = useState({});
@@ -119,32 +173,81 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
   const [scale, setScale] = useState(0.55);
   const [menu, setMenu] = useState(null);         // bay index whose menu is open
   const [copied, setCopied] = useState(false);
-  const [pick, setPick] = useState(null);         // a sizeless type chosen from the legend
-  const [draft, setDraft] = useState(null);       // { typeRef, w, h, d } in the inspector
-  const [skip, setSkip] = useState([]);           // typeRefs whose size is left out of the patch
+  // the editor is opened on purpose, from a block's pencil or a sizeless type in
+  // the legend, and floats under what opened it: { ref?, typeRef?, sheet?, x?, y? }
+  const [editing, setEditing] = useState(null);
+  const [draft, setDraft] = useState(null);       // { typeRef, w, h, d } in the size editor
+  const [skip, setSkip] = useState([]);           // typeRefs left out of the patch
+  const [hover, setHover] = useState(null);       // bay under the pointer, for its handles
+  const [resize, setResize] = useState(null);     // a bay edge being pulled
+  const [exact, setExact] = useState(null);       // a dimension being typed in place
+  const [shake, setShake] = useState(null);       // a bay refusing a height below its contents
+  const [snapOpen, setSnapOpen] = useState(false);
   const svgEls = useRef({});
   const menuEl = useRef(null);
+  const resizeRef = useRef(null);
+  resizeRef.current = resize;
   const px = (n) => n * scale;
 
   const cur = st[hub] ?? null;
 
+  // A hub opens as the DB last saved it when there is anything to go on: the
+  // hub row's bays, and where each driver sits. Drivers with no placement yet
+  // join bay 1.
   useEffect(() => {
     if (!hub || st[hub]) return;
-    const items = drivers.filter((d) => d.zone === hub).map((d) => moduleFor(d, null, sizes));
+    const mine = drivers.filter((d) => d.zone === hub);
+    const items = mine.map((d) => moduleFor(d, ctx));
+    const placed = mine.map((d) => rows.elements[d.ref]).filter((e) => /[<[]/.test(e?.contextParameters ?? ''));
+    if (rows.hub?.parameters || placed.length) {
+      const geo = hl.bayGeometry(rows.hub?.parameters ?? '');
+      const first = Math.max(0, ...geo.held);
+      const slotRows = rows.bays.map((b, k) => ({ slot: first + k, ref: b.ref }));
+      const byRef = Object.fromEntries(items.map((i) => [i.ref, i]));
+      const loaded = hl.load({ container: rows.hub?.parameters ?? '', slots: slotRows, elements: placed }, byRef);
+      const done = new Set(loaded.flat().map((i) => i.ref));
+      loaded[0] = feedFirst([...loaded[0], ...items.filter((i) => !done.has(i.ref))]);
+      const opts = loaded.map((_, i) => ({
+        ...bayDefaults(),
+        width: geo.widths[i] ?? null,
+        height: geo.heights[i] ?? null,
+        separate: slotRows.some((s) => s.slot === i),
+        ref: slotRows.find((s) => s.slot === i)?.ref ?? '',
+      }));
+      rows.bays.forEach((b, k) => {
+        const cap = hl.parseParams(b.parameters).capacity;
+        const o = opts[slotRows[k].slot];
+        if (cap && o) { o.width = cap[0]; o.height = cap[1]; }
+      });
+      setSt((s) => ({ ...s, [hub]: { bays: loaded, opts, fromDb: true } }));
+      return;
+    }
     setSt((s) => ({ ...s, [hub]: { bays: [feedFirst(items)], opts: [bayDefaults()] } }));
-  }, [hub, drivers, st, sizes]);
+  }, [hub, drivers, st, ctx, rows]);
 
-  // A size belongs to the type, so saving one redraws every Element of it in
-  // every hub already open. Not an undo step: it is the set's, like a preset.
+  // A size, a part arrangement or a junction box count belongs to the set, so a
+  // change redraws every Element it reaches in every hub already open. Not an
+  // undo step: it is the set's, like a preset.
   useEffect(() => {
     setSt((s) => Object.fromEntries(Object.entries(s).map(([h, v]) => [h, {
       ...v,
       bays: v.bays.map((b) => b.map((i) => {
         const d = drivers.find((x) => x.ref === i.ref);
-        return d ? { ...moduleFor(d, i.jboxes, sizes), rot: i.rot } : i;
+        return d ? { ...moduleFor(d, ctx), rot: i.rot } : i;
       })),
     }])));
-  }, [sizes, drivers]);
+  }, [ctx, drivers]);
+
+  // the editor and the snap chip close on a click outside them
+  useEffect(() => {
+    if (!editing && !snapOpen) return undefined;
+    const onDoc = (e) => {
+      if (!e.target.closest?.('.hub-pop, .hub-pencil')) setEditing(null);
+      if (!e.target.closest?.('.hub-snap')) setSnapOpen(false);
+    };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [editing, snapOpen]);
 
   // a bay menu closes when you click anywhere outside it
   useEffect(() => {
@@ -157,15 +260,39 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
     return () => document.removeEventListener('mousedown', onDoc);
   }, [menu]);
 
+  // pulling a bay edge: snapped while it moves, committed as one undo step on release
+  const commitRef = useRef(null);
+  useEffect(() => {
+    if (!resize?.axis) return undefined;
+    const move = (e) => {
+      const r = resizeRef.current;
+      if (!r) return;
+      const mods = { alt: e.altKey, shift: e.shiftKey };
+      const dx = (e.clientX - r.x0) / scale;
+      const dy = (r.y0 - e.clientY) / scale;
+      setResize({
+        ...r, mx: e.clientX, my: e.clientY,
+        w: r.axis === 'h' ? r.startW : dragTo(r.startW, dx, snap, mods, { min: r.minW }),
+        h: r.axis === 'w' ? r.startH : dragTo(r.startH, dy, snap, mods, { min: 0 }),
+      });
+    };
+    const up = () => { const r = resizeRef.current; setResize(null); if (r) commitRef.current?.(r); };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+    return () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); };
+  }, [resize?.axis, resize?.b]);
+
+  const usedBy = (typeRef) => [...model.drivers, ...addedDrivers].filter((d) => d.typeRef === typeRef).length;
+
   // one type per hub, sized with no junction boxes: what its ElementType states
   const hubDrivers = drivers.filter((d) => d.zone === hub);
-  const types = [...new Map(hubDrivers.map((d) => [d.typeRef, moduleFor(d, 0, sizes)])).values()];
+  const types = [...new Map(hubDrivers.map((d) => [d.typeRef, moduleFor(d, { ...ctx, jbSet: { [d.ref]: 0 } })])).values()];
 
-  // the inspector follows a single selected block, or a sizeless type picked
-  // from the legend, since that one has no block to click
-  const focusItem = sel.length === 1 ? cur?.bays.flat().find((i) => i.ref === sel[0]) : null;
-  const focusType = focusItem?.typeRef ?? pick;
-  const focusModule = types.find((m) => m.typeRef === focusType) ?? null;
+  // the editor follows the block whose pencil was pressed, or the sizeless type
+  // picked from the legend, since that one has no block to press
+  const focusItem = editing?.ref ? cur?.bays.flat().find((i) => i.ref === editing.ref) : null;
+  const focusType = focusItem?.typeRef ?? editing?.typeRef ?? null;
+  const focusModule = focusItem ?? types.find((m) => m.typeRef === focusType) ?? null;
   const focusRef = focusItem?.ref ?? hubDrivers.find((d) => d.typeRef === focusType)?.ref ?? null;
   const focusKey = `${focusType}|${focusModule?.size?.join(',') ?? ''}`;
   useEffect(() => {
@@ -193,12 +320,65 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
 
   const opt = (b) => cur.opts[b] ?? bayDefaults();
   const setOpt = (b, patch) => edit({ opts: cur.opts.map((o, i) => (i === b ? { ...o, ...patch } : o)) });
-  // a bay nobody has given a width is as wide as what it holds, so the far
-  // trunking sits against the equipment
   // a feed with no size of its own spans its bay instead of deciding its width
   const laid = cur.bays.map((b, i) => hl.spanFeeds(b, opt(i).width));
+  // a bay nobody has given a width is as wide as what it holds, so the far
+  // trunking sits against the equipment
   const widthOf = (b) => (opt(b).width > 0 ? opt(b).width : hl.naturalWidth(laid[b]));
+  const contentH = (b, w = widthOf(b)) => hl.bayHeight(laid[b], w);
+  const heightOf = (b) => Math.max(contentH(b), opt(b).height > 0 ? opt(b).height : 0);
   const separate = cur.opts.map((o, i) => (o.separate ? i : null)).filter((i) => i != null);
+
+  // a height at or below the contents is no height at all: the contents decide
+  const commitBay = (r) => {
+    const patch = {};
+    if (r.axis !== 'h') patch.width = r.w;
+    if (r.axis !== 'w') {
+      const floor = contentH(r.b, patch.width ?? widthOf(r.b));
+      patch.height = r.h > floor ? r.h : null;
+      if (r.h < floor) { setShake(r.b); setTimeout(() => setShake(null), 420); }
+    }
+    setOpt(r.b, patch);
+  };
+  commitRef.current = commitBay;
+
+  const startResize = (e, b, axis, si) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const rect = svgEls.current[`s${si}`]?.getBoundingClientRect() ?? { left: 0, top: 0 };
+    const w = widthOf(b);
+    setResize({
+      b, axis, si, x0: e.clientX, y0: e.clientY, mx: e.clientX, my: e.clientY, rx: rect.left, ry: rect.top,
+      startW: w, startH: heightOf(b), w, h: heightOf(b),
+      minW: laid[b].length ? hl.naturalWidth(laid[b]) : 2 * hl.TRUNK + 50,
+    });
+  };
+  const keyResize = (e, b, axis) => {
+    const shift = e.shiftKey;
+    if ((axis === 'w' || axis === 'both') && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')) {
+      e.preventDefault();
+      const min = laid[b].length ? hl.naturalWidth(laid[b]) : 2 * hl.TRUNK + 50;
+      setOpt(b, { width: nudge(widthOf(b), e.key === 'ArrowRight' ? 1 : -1, snap, { shift, min }) });
+    } else if ((axis === 'h' || axis === 'both') && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+      e.preventDefault();
+      const next = nudge(heightOf(b), e.key === 'ArrowUp' ? 1 : -1, snap, { shift });
+      commitBay({ b, axis: 'h', h: next });
+    }
+  };
+  const openExact = (e, b, axis, si) => {
+    e.stopPropagation();
+    const rect = svgEls.current[`s${si}`]?.getBoundingClientRect() ?? { left: 0, top: 0 };
+    setExact({ b, axis, si, x: e.clientX - rect.left - 30, y: e.clientY - rect.top - 14,
+      value: String(axis === 'w' ? widthOf(b) : heightOf(b)) });
+  };
+  const commitExact = () => {
+    const n = Number(exact?.value);
+    if (exact && n > 0) {
+      if (exact.axis === 'w') setOpt(exact.b, { width: Math.max(n, laid[exact.b].length ? hl.naturalWidth(laid[exact.b]) : 0) });
+      else commitBay({ b: exact.b, axis: 'h', h: n });
+    }
+    setExact(null);
+  };
 
   // TBC: the workbook's flags, with what was set here on top
   const flags = (ref) => ({ ...(dbTbc[ref] ?? {}), ...(state.tbc?.[ref] ?? {}) });
@@ -213,7 +393,8 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
 
   // the whole hub, for the header and the patch
   const allWidths = cur.bays.map((_, b) => widthOf(b));
-  const ext = hl.extent(laid, { widths: allWidths });
+  const allHeights = cur.bays.map((_, b) => (opt(b).height > 0 ? opt(b).height : 0));
+  const ext = hl.extent(laid, { widths: allWidths, heights: allHeights });
   const count = (o) => types.filter((m) => m.sizedBy === o).length;
   const tbcCount = hubDrivers.filter((d) => isTbc(d.ref, d.typeRef)).length;
   // A feed with no size is drawn at a placeholder, not a datasheet figure, so it
@@ -231,13 +412,8 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
     setDrag(null);
   };
 
-  const setJboxes = (n) => edit({
-    bays: cur.bays.map((b) => b.map((i) => {
-      if (!sel.includes(i.ref) || i.kind === 'feed') return i;
-      const d = drivers.find((x) => x.ref === i.ref);
-      return d ? { ...moduleFor(d, n, sizes), rot: i.rot } : i;
-    })),
-  });
+  // junction boxes are the Element's, so they go through the set's state and the patch
+  const setJboxes = (refs, n) => refs.forEach((ref) => dispatch({ type: 'SET_JBOXES', ref, count: n }));
 
   const addBay = () => edit({ bays: hl.addBay(cur.bays), opts: [...cur.opts, bayDefaults()] });
   const removeBay = () => edit({ bays: hl.removeBay(cur.bays), opts: cur.opts.slice(0, -1) });
@@ -247,32 +423,156 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
   };
 
   // ---- the patch --------------------------------------------------------------
-  // Positions in each bay, the hub's size, any separated bay as its own Element,
-  // every size that is not in the DB yet (unless it was left out), and the TBC
-  // flags set here.
+  // Every bay's size and start, where each driver sits, separated bays, sizes and
+  // part arrangements not in the DB yet (unless left out), junction boxes set
+  // here, and TBC flags.
   const copyPatch = async () => {
-    const ctx = state.context;
-    const container = ctx?.hubRef
-      ? { ref: ctx.hubRef, name: hub, contextType: ctx.hubContextType ?? 'Position' }
+    const ctxHub = state.context;
+    const container = ctxHub?.hubRef
+      ? { ref: ctxHub.hubRef, name: hub, contextType: ctxHub.hubContextType ?? 'Position' }
       : { name: hub };
     const wrapperRefs = Object.fromEntries(cur.opts
       .map((o, i) => [i, o.separate && o.ref.trim() ? o.ref.trim() : null])
       .filter(([, r]) => r));
-    const saved = hl.save(laid, { container, separate, widths: allWidths, wrapperRefs });
-    const typeSizes = inPatch.map((m) => ({
-      ref: m.typeRef,
-      size: formatParams({ size: [m.size[0], m.size[1], m.size[2] > 0 ? m.size[2] : null] }),
-    }));
+    const saved = hl.save(laid, { container, separate, widths: allWidths, heights: allHeights, wrapperRefs });
+    const fmtSize = (s) => formatParams({ size: [s[0], s[1], s[2] > 0 ? s[2] : null] });
+
+    const typeRows = new Map();
+    for (const m of inPatch) {
+      if (m.recipe && m.recipe.source !== 'spaces' && m.recipe.source !== 'element' && m.recipe.scope !== 'element') {
+        // a wrapper: its parts as spaces, its envelope as its size, and each
+        // child type's own size where the DB does not have it
+        const env = recipe.envelope(m.recipe.parts);
+        typeRows.set(m.typeRef, { ref: m.typeRef, size: env ? fmtSize(env) : '',
+          spaces: formatParams({ spaceList: recipe.toSpaceList(m.recipe.parts) }) });
+        for (const p of m.recipe.parts) {
+          if (p.typeRef && p.size && p.sizeOrigin !== 'db' && !typeRows.has(p.typeRef)) {
+            typeRows.set(p.typeRef, { ref: p.typeRef, size: fmtSize(p.size) });
+          }
+        }
+      } else if (!m.recipe) {
+        typeRows.set(m.typeRef, { ref: m.typeRef, size: fmtSize(m.size) });
+      }
+    }
+
+    // an Element's own spaces: its parts when they were arranged for it alone,
+    // and its junction boxes when they were set here
+    const jb = {};
+    for (const d of hubDrivers) {
+      const m = cur.bays.flat().find((i) => i.ref === d.ref) ?? moduleFor(d, ctx);
+      const ownParts = m.recipe?.scope === 'element' ? m.recipe.parts : [];
+      const setHere = state.jboxes?.[d.ref] != null;
+      if (!ownParts.length && !setHere) continue;
+      const list = [...recipe.toSpaceList(ownParts), ...recipe.jbSpaces(m.jboxes, partsOf(m))];
+      jb[d.ref] = list.length ? formatParams({ spaceList: list }) : '';
+    }
+
     const mine = new Set([...hubDrivers.map((d) => d.ref), ...types.map((m) => m.typeRef)]);
     const tbc = Object.entries(state.tbc ?? {})
       .filter(([ref]) => mine.has(ref))
       .map(([ref, f]) => ({ ...f, ref: f.sheet === 'E' ? outRef(ref) : ref }));
-    await api.copyPatch(hubPatch({ saved, hub: container.ref ? container : null, typeSizes, tbc }));
+    await api.copyPatch(hubPatch({ saved, hub: container.ref ? container : null, typeSizes: [...typeRows.values()], tbc, jb }));
     setCopied(true);
     setTimeout(() => setCopied(false), 1800);
   };
 
   const focusTbc = focusModule && isTbc(focusRef, focusType);
+
+  const flagBlock = focusModule ? (
+    <div className="hub-inspect-flags">
+      {focusRef && (
+        <label>
+          <input type="checkbox" checked={!!flags(focusRef).isTBC}
+            onChange={() => setFlag(focusRef, 'E', 'isTBC')} />
+          <span className="rv-ref">{outRef(focusRef)}</span> is TBC
+        </label>
+      )}
+      <label>
+        <input type="checkbox" checked={!!flags(focusType).isPropertiesTBC}
+          onChange={() => setFlag(focusType, 'ET', 'isPropertiesTBC')} />
+        <span className="rv-ref">{focusType}</span> properties TBC
+      </label>
+    </div>
+  ) : null;
+
+  // a module with parts gets the part editor; a single block gets its size
+  const inspector = !focusModule ? null : focusModule.recipe ? (
+    <PartEditor key={`${focusType}|${focusRef}|${focusModule.recipe.source}`}
+      module={focusModule}
+      elementLabel={focusRef ? outRef(focusRef) : 'this Element'}
+      usedBy={usedBy(focusType)}
+      typeNames={Object.keys(typesLib)}
+      snap={snap}
+      jboxes={focusModule.jboxes} jbStored={focusModule.jbStored} jbAuto={focusModule.jbAuto}
+      onJboxes={(n) => focusRef && setJboxes([focusRef], n)}
+      onSave={(parts, scope) => dispatch({ type: 'SET_RECIPE', typeRef: scope === 'element' ? `@${focusRef}` : focusType, parts })}
+      onClose={() => setEditing(null)}>
+      {flagBlock}
+    </PartEditor>
+  ) : draft?.typeRef === focusType ? (
+    <div className="hub-inspect">
+      <div className="hub-inspect-head">
+        <b className="rv-ref">{focusType}</b>
+        {focusModule.sizedBy !== 'db' && <Origin kind={focusModule.sizedBy} what={`${focusType}'s size`} />}
+        {focusTbc && <Origin kind="tbc" what={focusType} />}
+        <button type="button" className="btn-close ms-auto" aria-label="Close"
+          onClick={() => setEditing(null)} />
+      </div>
+      <div className="hub-sizes">
+        {['w', 'h', 'd'].map((k) => (
+          <label key={k} className="fld">
+            <span className="fld-col">{k}</span>
+            <span className="fld-box">
+              <input type="number" step={snap} style={{ width: 64 }} value={draft[k]}
+                onChange={(e) => setDraft({ ...draft, [k]: e.target.value })} />mm
+            </span>
+          </label>
+        ))}
+        <button type="button" className="btn btn-sm btn-primary" disabled={!(+draft.w > 0 && +draft.h > 0)}
+          onClick={() => dispatch({ type: 'SET_TYPE_SIZE', typeRef: focusType,
+            size: [+draft.w, +draft.h, +draft.d > 0 ? +draft.d : 0] })}>
+          Save to type ({usedBy(focusType)})
+        </button>
+        {state.typeSizes?.[focusType] && (
+          <button type="button" className="btn btn-sm btn-outline-secondary"
+            onClick={() => dispatch({ type: 'SET_TYPE_SIZE', typeRef: focusType, size: null })}>
+            Back to the {stated[focusType] ? 'DB' : 'datasheet'} size
+          </button>
+        )}
+      </div>
+      {focusModule.kind !== 'feed' && focusRef && (
+        <span className="hub-bays">
+          junction boxes on {outRef(focusRef)}
+          <button type="button" className={focusModule.jbStored ? '' : 'is-on'} onClick={() => setJboxes([focusRef], null)}>auto {focusModule.jbAuto}</button>
+          {[0, 1, 2, 3, 4].map((n) => (
+            <button type="button" key={n} className={focusModule.jbStored && focusModule.jboxes === n ? 'is-on' : ''}
+              onClick={() => setJboxes([focusRef], n)}>{n}</button>
+          ))}
+        </span>
+      )}
+      {flagBlock}
+      <div className="text-secondary small">
+        A size belongs to the type, so it applies to every {focusType} in the set.
+        {focusModule.missing.length > 0 && ` No datasheet size for ${focusModule.missing.join(', ')}.`}
+      </div>
+    </div>
+  ) : null;
+
+  const bayHandle = (b, axis, cx, cy, si) => (
+    <g key={axis} className="hub-handle" transform={`translate(${cx},${cy})`} tabIndex={0} role="button"
+      aria-label={`Bay ${b + 1} ${axis === 'w' ? 'width' : axis === 'h' ? 'height' : 'width and height'}`}
+      onMouseDown={(e) => e.stopPropagation()}
+      onPointerDown={(e) => startResize(e, b, axis, si)}
+      onKeyDown={(e) => keyResize(e, b, axis)}
+      onDoubleClick={(e) => openExact(e, b, axis === 'h' ? 'h' : 'w', si)}>
+      <title>
+        {`Drag to set bay ${b + 1}'s ${axis === 'w' ? 'width' : axis === 'h' ? 'height' : 'width and height'}`
+          + ` on a ${snap}mm snap (Alt 1mm, Shift ${snap * 5}mm). Arrow keys nudge, double-click to type.`}
+      </title>
+      <circle r="11" />
+      <ResizeIcon name={ICON[axis]} size={14} x={-7} y={-7} />
+    </g>
+  );
 
   return (
     <div className="container-fluid py-3 hub-lab" onMouseUp={onDrop} onMouseLeave={() => setDrag(null)}>
@@ -285,7 +585,7 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
         )}
         <select className="form-select form-select-sm" style={{ width: 'auto' }} value={hub}
           onChange={(e) => {
-            setHub(e.target.value); setSel([]); setPick(null); setMenu(null); setHist({ undo: [], redo: [] });
+            setHub(e.target.value); setSel([]); setEditing(null); setMenu(null); setHist({ undo: [], redo: [] });
           }}>
           {hubs.map((z) => <option key={z} value={z}>{z}</option>)}
         </select>
@@ -295,10 +595,32 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
           <span>{Math.round((scale / 0.36) * 100)}%</span>
           <button onClick={() => setScale((z) => Math.min(ZOOM_MAX, +(z + 0.1).toFixed(2)))} aria-label="Zoom in">+</button>
         </span>
+        <span className="hub-snap">
+          <button type="button" className="hub-snap-chip" onClick={() => setSnapOpen((o) => !o)}
+            aria-expanded={snapOpen} title="Resize grid">
+            snap {snap}mm <span className="material-icons small-icon">expand_more</span>
+          </button>
+          {snapOpen && (
+            <div className="hub-snap-pop">
+              <div className="hub-snap-presets">
+                {SNAP_PRESETS.map((v) => (
+                  <button type="button" key={v} className={v === snap ? 'is-on' : ''}
+                    onClick={() => dispatch({ type: 'SET_PREFS', prefs: { snapMm: v } })}>{v}</button>
+                ))}
+                <label className="hub-snap-custom">
+                  <input type="number" min="0.5" step="0.5" value={snap}
+                    onChange={(e) => +e.target.value > 0 && dispatch({ type: 'SET_PREFS', prefs: { snapMm: +e.target.value } })} />mm
+                </label>
+              </div>
+              <div className="text-secondary small">Alt for 1mm, Shift for {snap * 5}mm, arrow keys nudge.</div>
+            </div>
+          )}
+        </span>
+        {cur.fromDb && <span className="hub-fromdb" title="Opened from the bays and placements the DB holds">from the DB</span>}
         <span className="ms-auto d-flex align-items-center gap-2">
           {notInDb.length > 0 && (
             <details className="hub-inpatch">
-              <summary>{inPatch.length} of {notInDb.length} sizes not in the DB go in the patch</summary>
+              <summary>{inPatch.length} of {notInDb.length} not in the DB go in the patch</summary>
               <div className="hub-inpatch-list">
                 {notInDb.map((m) => (
                   <label key={m.typeRef}>
@@ -306,8 +628,8 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
                       onChange={() => setSkip((s) => (s.includes(m.typeRef)
                         ? s.filter((x) => x !== m.typeRef) : [...s, m.typeRef]))} />
                     <span className="rv-ref">{m.typeRef}</span>
-                    <span className="text-secondary">{formatParams({ size: m.size })}</span>
-                    <Origin kind={m.sizedBy} what={`${m.typeRef}'s size`} />
+                    <span className="text-secondary">{m.recipe ? `${m.recipe.parts.length} parts` : formatParams({ size: m.size })}</span>
+                    <Origin kind={m.sizedBy} what={m.typeRef} />
                   </label>
                 ))}
               </div>
@@ -318,7 +640,7 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
           <button className="btn btn-sm btn-outline-secondary" disabled={!hist.redo.length} onClick={redo}
             title="Redo"><span className="material-icons small-icon align-middle">redo</span></button>
           <button className="btn btn-sm btn-primary" onClick={copyPatch}
-            title="Copy an ExcelScript patch: positions, the hub's size, separated bays, sizes not in the DB and TBC flags">
+            title="Copy an ExcelScript patch: bays, positions, separated bays, parts, junction boxes, sizes not in the DB and TBC flags">
             <span className="material-icons small-icon align-middle">{copied ? 'check' : 'content_copy'}</span>
             {copied ? ' Copied' : ' Copy patch'}
           </button>
@@ -335,64 +657,13 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
         {tbcCount > 0 && <span><Origin kind="tbc" what="These Elements" />{tbcCount}</span>}
         {types.filter((m) => m.sizedBy === 'missing').map((m) => (
           <button key={m.typeRef} type="button" className="btn btn-sm btn-link p-0"
-            onClick={() => { setSel([]); setPick(m.typeRef); }} title="Give this type a size">
+            onClick={() => setEditing({ typeRef: m.typeRef })} title="Give this type a size">
             <Origin kind="missing" what={m.typeRef} /> {m.typeRef}
           </button>
         ))}
-        <span className="text-secondary">Click a block to size it or flag it TBC.</span>
+        <span className="text-secondary">Hover a block for its pencil, hover a bay to resize it.</span>
+        {editing && !editing.ref && inspector && <div className="hub-pop" style={{ left: 0, top: '100%' }}>{inspector}</div>}
       </div>
-
-      {focusModule && draft?.typeRef === focusType && (
-        <div className="hub-inspect">
-          <div className="hub-inspect-head">
-            <b className="rv-ref">{focusType}</b>
-            {focusModule.sizedBy !== 'db' && <Origin kind={focusModule.sizedBy} what={`${focusType}'s size`} />}
-            {focusTbc && <Origin kind="tbc" what={focusType} />}
-            <button type="button" className="btn-close ms-auto" aria-label="Close"
-              onClick={() => { setSel([]); setPick(null); }} />
-          </div>
-          <div className="hub-sizes">
-            {['w', 'h', 'd'].map((k) => (
-              <label key={k} className="fld">
-                <span className="fld-col">{k}</span>
-                <span className="fld-box">
-                  <input type="number" style={{ width: 64 }} value={draft[k]}
-                    onChange={(e) => setDraft({ ...draft, [k]: e.target.value })} />mm
-                </span>
-              </label>
-            ))}
-            <button type="button" className="btn btn-sm btn-primary" disabled={!(+draft.w > 0 && +draft.h > 0)}
-              onClick={() => dispatch({ type: 'SET_TYPE_SIZE', typeRef: focusType,
-                size: [+draft.w, +draft.h, +draft.d > 0 ? +draft.d : 0] })}>
-              Save to type
-            </button>
-            {state.typeSizes?.[focusType] && (
-              <button type="button" className="btn btn-sm btn-outline-secondary"
-                onClick={() => dispatch({ type: 'SET_TYPE_SIZE', typeRef: focusType, size: null })}>
-                Back to the {stated[focusType] ? 'DB' : 'datasheet'} size
-              </button>
-            )}
-          </div>
-          <div className="hub-inspect-flags">
-            {focusRef && (
-              <label>
-                <input type="checkbox" checked={!!flags(focusRef).isTBC}
-                  onChange={() => setFlag(focusRef, 'E', 'isTBC')} />
-                <span className="rv-ref">{outRef(focusRef)}</span> is TBC
-              </label>
-            )}
-            <label>
-              <input type="checkbox" checked={!!flags(focusType).isPropertiesTBC}
-                onChange={() => setFlag(focusType, 'ET', 'isPropertiesTBC')} />
-              <span className="rv-ref">{focusType}</span> properties TBC
-            </label>
-          </div>
-          <div className="text-secondary small">
-            A size belongs to the type, so it applies to every {focusType} in the set.
-            {focusModule.missing.length > 0 && ` No datasheet size for ${focusModule.missing.join(', ')}.`}
-          </div>
-        </div>
-      )}
 
       <div className="hub-sheets">
         {hl.sheets(cur.bays.length, separate).map((sheet, si) => {
@@ -400,7 +671,8 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
           // between them, so the centre is 50 and not 100.
           const bays = sheet.slots.map((b) => laid[b]);
           const widths = sheet.slots.map((b) => widthOf(b));
-          const lopts = { widths };
+          const heights = sheet.slots.map((b) => (opt(b).height > 0 ? opt(b).height : 0));
+          const lopts = { widths, heights };
           const off = hl.offsetsOf(bays.length, lopts);
           const sheetExt = hl.extent(bays, lopts);
           const H = px(Math.max(sheetExt.h, 150));
@@ -408,9 +680,8 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
           const placed = hl.placements(bays, lopts);
           // the trunking is a property of a ROW: down each side of an upright
           // run, across the ends of a turned one
-          const rows = bays.flatMap((items, local) =>
+          const rows2 = bays.flatMap((items, local) =>
             hl.packBay(items, widths[local]).map((r) => ({ ...r, x0: off[local], bw: widths[local] })));
-          const LEFT = 44;
           return (
             <div key={si} className="hub-sheet">
               <div className="hub-sheet-head">
@@ -422,13 +693,14 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
               <div className="hub-baybar" style={{ width: W + LEFT + 16 }}>
                 {sheet.slots.map((b, local) => {
                   const o = opt(b);
-                  const bayExt = { w: widths[local], h: hl.bayHeight(bays[local], widths[local]) };
+                  const bayExt = { w: widths[local], h: heightOf(b) };
                   const verdict = (o.target.w || o.target.h) ? hl.fitsIn(bayExt, o.target) : null;
                   // a typed width the equipment does not fit in
                   const narrow = o.width > 0 ? hl.naturalWidth(bays[local], o.width) - o.width : 0;
                   return (
-                    <div key={b} className="hub-baytab" style={{ left: LEFT + px(off[local]), width: px(widths[local]) }}>
-                      <span className="hub-baytab-name">bay {b + 1} · {widths[local]}</span>
+                    <div key={b} className={`hub-baytab ${shake === b ? 'is-shake' : ''}`}
+                      style={{ left: LEFT + px(off[local]), width: px(widths[local]) }}>
+                      <span className="hub-baytab-name">bay {b + 1} · {widths[local]}{o.height > 0 ? ` × ${heightOf(b)}` : ''}</span>
                       {narrow > 0 && <span className="hub-verdict is-over">{narrow} over</span>}
                       {verdict && (
                         <span className={`hub-verdict ${verdict.fits ? 'is-ok' : 'is-over'}`}>
@@ -444,9 +716,15 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
                           <b>Bay {b + 1}</b>
                           <label className="hub-mrow" title="Blank follows what the bay holds">
                             <span>Width</span>
-                            <input type="number" step="5" placeholder={String(hl.naturalWidth(laid[b]))}
+                            <input type="number" step={snap} placeholder={String(hl.naturalWidth(laid[b]))}
                               value={o.width ?? ''}
                               onChange={(e) => setOpt(b, { width: e.target.value === '' ? null : +e.target.value })} />mm
+                          </label>
+                          <label className="hub-mrow" title="Blank follows what the bay holds">
+                            <span>Height</span>
+                            <input type="number" step={snap} placeholder={String(contentH(b))}
+                              value={o.height ?? ''}
+                              onChange={(e) => setOpt(b, { height: e.target.value === '' ? null : +e.target.value })} />mm
                           </label>
                           <label className="hub-mrow">
                             <span>Must fit in</span>
@@ -475,13 +753,19 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
                 })}
               </div>
 
+              <div className="hub-stagebox">
               <svg className="hub-svg" width={W + LEFT + 16} height={H + 64}
                 ref={(el) => { svgEls.current[`s${si}`] = el; }}
+                onMouseLeave={() => { if (!resize) setHover(null); }}
                 onMouseMove={(e) => {
-                  if (!drag) return;
                   const r = svgEls.current[`s${si}`].getBoundingClientRect();
                   const mmX = (e.clientX - r.left - LEFT) / scale;
                   let local = off.findIndex((o0, i) => mmX >= o0 && mmX < o0 + widths[i]);
+                  if (!drag) {
+                    const b = local < 0 ? null : sheet.slots[local];
+                    if (b !== hover && !resize) setHover(b);
+                    return;
+                  }
                   if (local < 0) local = mmX < 0 ? 0 : bays.length - 1;
                   const y = (r.top + 10 + H - e.clientY) / scale;
                   setDrag({ ...drag, overBay: sheet.slots[local],
@@ -499,7 +783,7 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
                 </defs>
                 <g transform={`translate(${LEFT},10)`}>
                   <rect x="0" y="0" width={W} height={H} fill="#fff" stroke="#16212e" strokeWidth="2" />
-                  {rows.map((r, n) => {
+                  {rows2.map((r, n) => {
                     const t = px(hl.TRUNK);
                     const yTop = H - px(r.y + r.h);
                     const bands = r.hatched
@@ -528,7 +812,6 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
                       <g key={`${p.ref}-${p.slot}`}
                         className={`hub-g ${sel.includes(p.ref) ? 'is-sel' : ''} ${drag?.ref === p.ref ? 'is-dragging' : ''}`}
                         onMouseDown={(e) => {
-                          setPick(null);
                           toggle(p.ref, e.shiftKey || e.metaKey || e.ctrlKey);
                           setDrag({ ref: p.ref, overBay: null, atIndex: 0 });
                         }}>
@@ -545,9 +828,11 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
                               { base: Math.max(7, 25 * scale), min: 5 });
                             const cx = sx + w / 2;
                             const cy = sy + h2 / 2;
-                            // a junction box is the drawing's own, so only the
-                            // equipment says where its size came from
-                            const line = sub.kind === 'jbox' ? LINE.db : LINE[p.sizedBy] ?? LINE.db;
+                            // a junction box is an allowance: dotted until the
+                            // Element states it, like any other stand-in
+                            const line = sub.kind === 'jbox'
+                              ? (p.jbStored ? LINE.db : LINE.datasheet)
+                              : LINE[p.sizedBy] ?? LINE.db;
                             const yellow = sub.kind === 'feed' || (tbc && sub.kind !== 'jbox');
                             const selected = sel.includes(p.ref);
                             return (
@@ -573,13 +858,24 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
                                     transform={`rotate(-90,${cx},${cy})`}>{sub.label}</text>
                                 )}
                                 <title>
-                                  {`${sub.full ?? sub.label}${sub.kind === 'jbox' ? ''
-                                    : p.sizedBy === 'datasheet' ? ' (size from the datasheet, not in the DB)'
-                                      : p.sizedBy === 'edited' ? ' (size typed here, not in the DB yet)' : ''}${tbc ? ', TBC' : ''}`}
+                                  {sub.kind === 'jbox'
+                                    ? `Junction box allowance${p.jbStored ? ', stated on the Element' : ', not in the DB'}`
+                                    : `${sub.full ?? sub.label}${p.sizedBy === 'datasheet' ? ' (not in the DB)'
+                                      : p.sizedBy === 'edited' ? ' (set here, not in the DB yet)' : ''}${tbc ? ', TBC' : ''}`}
                                 </title>
                               </g>
                             );
                           })}
+                        </g>
+                        {/* as placed, so it stays top right when the block is turned */}
+                        <g className="hub-pencil" transform={`translate(${x + px(p.size[0]) - 17},${y + 3})`}
+                          onMouseDown={(e) => {
+                            e.stopPropagation();
+                            setEditing({ ref: p.ref, sheet: si, x: LEFT + x, y: 10 + y + px(p.size[1]) + 6 });
+                          }}>
+                          <title>{p.recipe ? 'Parts, junction boxes and TBC' : 'Size, junction boxes and TBC'}</title>
+                          <rect width="14" height="14" rx="3" />
+                          <path d="M3.5 10.5 L3.5 12 L5 12 L11 6 L9.5 4.5 Z M9.5 4.5 L11 3 L12.5 4.5 L11 6" />
                         </g>
                       </g>
                     );
@@ -607,13 +903,40 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
                       x2={px(off[local] + widths[local]) - 2} y1={H - px(upto)} y2={H - px(upto)} />;
                   })()}
 
+                  {/* the bay's resize handles, on hover: the ghost of where the
+                      edge started stays until you let go */}
+                  {sheet.slots.map((b, local) => {
+                    const live = resize?.b === b;
+                    if (!drag && hover !== b && !live) return null;
+                    if (drag) return null;
+                    const bw = live ? resize.w : widths[local];
+                    const bh = live ? resize.h : heightOf(b);
+                    const x0 = px(off[local]);
+                    const top = H - px(bh);
+                    return (
+                      <g key={`hd${b}`} className="hub-handles">
+                        {live && (
+                          <rect className="hub-ghost" x={x0} y={H - px(resize.startH)}
+                            width={px(resize.startW)} height={px(resize.startH)} />
+                        )}
+                        <rect className={`hub-live ${live ? 'is-live' : ''}`} x={x0} y={top} width={px(bw)} height={px(bh)} />
+                        {bayHandle(b, 'w', x0 + px(bw), top + px(bh) / 2, si)}
+                        {bayHandle(b, 'h', x0 + px(bw) / 2, top, si)}
+                        {bayHandle(b, 'both', x0 + px(bw), top, si)}
+                      </g>
+                    );
+                  })}
+
                   {/* dimensions: height on the left, each bay's width under it,
-                      and the overall width under that when there is more than one */}
+                      and the overall width under that when there is more than one.
+                      Double-click a figure to type it. */}
                   <g className="hub-dimline">
                     <line x1="-14" y1="0" x2="-14" y2={H} />
                     <line x1="-18" y1="0" x2="-10" y2="0" />
                     <line x1="-18" y1={H} x2="-10" y2={H} />
-                    <text x="-22" y={H / 2} textAnchor="middle" transform={`rotate(-90,-22,${H / 2})`}>
+                    <text x="-22" y={H / 2} textAnchor="middle" transform={`rotate(-90,-22,${H / 2})`}
+                      className="hub-dimval"
+                      onDoubleClick={(e) => openExact(e, sheet.slots[0], 'h', si)}>
                       {Math.max(sheetExt.h, 0)}
                     </text>
                     {bays.map((_, local) => {
@@ -624,7 +947,8 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
                           <line x1={x0} y1={H + 12} x2={x1} y2={H + 12} />
                           <line x1={x0} y1={H + 8} x2={x0} y2={H + 16} />
                           <line x1={x1} y1={H + 8} x2={x1} y2={H + 16} />
-                          <text x={(x0 + x1) / 2} y={H + 26} textAnchor="middle">{widths[local]}</text>
+                          <text x={(x0 + x1) / 2} y={H + 26} textAnchor="middle" className="hub-dimval"
+                            onDoubleClick={(e) => openExact(e, sheet.slots[local], 'w', si)}>{widths[local]}</text>
                         </g>
                       );
                     })}
@@ -639,6 +963,30 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
                   </g>
                 </g>
               </svg>
+              {resize?.si === si && (() => {
+                const o = opt(resize.b);
+                const fits = (o.target.w || o.target.h) ? hl.fitsIn({ w: resize.w, h: resize.h }, o.target).fits : true;
+                const text = resize.axis === 'w' ? `${resize.startW} → ${resize.w}mm`
+                  : resize.axis === 'h' ? `${resize.startH} → ${resize.h}mm`
+                    : `${resize.startW} × ${resize.startH} → ${resize.w} × ${resize.h}mm`;
+                // keyed on the value, so each snap step replays the spring
+                return (
+                  <div key={text} className={`hub-readout ${fits ? '' : 'is-over'}`}
+                    style={{ left: resize.mx - resize.rx + 16, top: resize.my - resize.ry - 36 }}>{text}</div>
+                );
+              })()}
+              {exact?.si === si && (
+                <input className="hub-exact" type="number" autoFocus step={snap} value={exact.value}
+                  style={{ left: exact.x, top: exact.y }}
+                  aria-label={`Bay ${exact.b + 1} ${exact.axis === 'w' ? 'width' : 'height'} in mm`}
+                  onChange={(e) => setExact({ ...exact, value: e.target.value })}
+                  onKeyDown={(e) => { if (e.key === 'Enter') commitExact(); if (e.key === 'Escape') setExact(null); }}
+                  onBlur={commitExact} />
+              )}
+              {editing?.ref && editing.sheet === si && inspector && (
+                <div className="hub-pop" style={{ left: editing.x, top: editing.y }}>{inspector}</div>
+              )}
+              </div>
             </div>
           );
         })}
@@ -659,9 +1007,9 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
             <span className="hub-bays">
               junction boxes
               {/* one per output on CV and none on CC to start, reduced from there */}
-              <button onClick={() => setJboxes(null)} title="Back to one per output on CV, none on CC">auto</button>
+              <button onClick={() => setJboxes(sel, null)} title="Back to one per output on CV, none on CC">auto</button>
               {[0, 1, 2, 3, 4].map((n) => (
-                <button key={n} onClick={() => setJboxes(n)}>{n}</button>
+                <button key={n} onClick={() => setJboxes(sel, n)}>{n}</button>
               ))}
             </span>
             <button className="btn btn-sm btn-outline-secondary"

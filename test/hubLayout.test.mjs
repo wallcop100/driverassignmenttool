@@ -6,6 +6,8 @@ import * as hl from '../src/hubLayout.js';
 
 const I = (ref, w = 210, h = 40) => ({ ref, label: ref, size: [w, h, 150] });
 
+const bayNames = (params) => hl.bayGeometry(params).held.map(String);
+
 test('a Parameters field carrying several flavours survives a round trip', () => {
   // ET-UNICA-8M-4K8, live: a size and a node list sharing one column
   const p = hl.parseParams('[,,1U]{>ETH.01,>ETH.02,<SPK.01,>PWR.01}');
@@ -242,7 +244,7 @@ test('save/load: an untouched hub', () => {
   const { saved } = roundTrip(HUB());
   // 210x40 takes a row of 90, the two 153.6x76.7 are too wide to share one so
   // they take 126.7 each: 343 tall in a 380 bay
-  assert.equal(saved.container.parameters, '[[380mm,343mm,150mm]]<1>');
+  assert.equal(saved.container.parameters, '[[380mm,343mm,150mm]]<1[380mm,343mm,150mm,0,0,0]>');
   // the coordinate is relative to the hub the Element is contexted into, and the
   // bay is the discrete space it sits in - both, as page 100966 has them
   assert.equal(saved.elements[0].contextParameters, '[50mm,25mm,0mm]<1>');
@@ -266,7 +268,7 @@ test('save/load: moving a part to another bay writes a different discrete space'
   assert.match(b.contextParameters, /<2>$/, 'bay 2');
   // bay 2 starts a shared centre along: 380 - 50 + 50
   assert.match(b.contextParameters, /^\[380mm,/);
-  assert.match(saved.container.parameters, /<1,2>$/, 'the hub declares both bays');
+  assert.deepEqual(bayNames(saved.container.parameters), ['1', '2'], 'the hub declares both bays');
 });
 
 test('save/load: rotation, the one thing the syntax has no field for', () => {
@@ -291,17 +293,17 @@ test('save/load: a turned part is not confused with a genuinely square one', () 
 
 test('save/load: splitting into a new bay', () => {
   const { saved } = roundTrip(hl.splitToBay(HUB(), ['C']));
-  assert.match(saved.container.parameters, /<1,2>$/);
+  assert.deepEqual(bayNames(saved.container.parameters), ['1', '2']);
   assert.match(saved.elements.find((e) => e.ref === 'C').contextParameters, /<2>$/);
 });
 
 test('save/load: adding and removing a bay', () => {
   const three = hl.addBay(hl.addBay(HUB()));
   roundTrip(three);
-  assert.match(hl.save(three).container.parameters, /<1,2,3>$/);
+  assert.deepEqual(bayNames(hl.save(three).container.parameters), ['1', '2', '3']);
   const back = hl.removeBay(three, 2);
   const { saved } = roundTrip(back);
-  assert.match(saved.container.parameters, /<1,2>$/);
+  assert.deepEqual(bayNames(saved.container.parameters), ['1', '2']);
 });
 
 test('save/load: a wider bay is recorded in the capacity, not lost', () => {
@@ -468,7 +470,7 @@ test('joined bays keep every driver on the hub Position', () => {
   const bays = hl.addBay(HUB());
   const saved = hl.save(bays, { container: POS });
   assert.deepEqual(saved.slots, [], 'no enclosure Element is invented');
-  assert.match(saved.container.parameters, /<1,2>$/, 'the hub holds both bays itself');
+  assert.deepEqual(bayNames(saved.container.parameters), ['1', '2'], 'the hub holds both bays itself');
   for (const e of saved.elements) {
     assert.equal(e.contextType, 'Position');
     assert.equal(e.contextRef, 'P90001');
@@ -491,7 +493,7 @@ test('separating a bay makes it an enclosure Element named the way set 108908 na
   assert.equal(enc.typeRef, hl.ENCLOSURE_TYPE, 'one generic wrapper type, not a size catalogue');
   // the hub now states only the bay it still holds itself - bay 2's size went
   // with bay 2, so the hub is a single 380 bay again, not the 710 it was
-  assert.match(saved.container.parameters, /<1>$/);
+  assert.deepEqual(bayNames(saved.container.parameters), ['1']);
   assert.match(saved.container.parameters, /^\[\[380mm,/);
   assert.equal(saved.container.clear, false);
 });
@@ -567,13 +569,14 @@ test('splitting takes the parameters OFF the Position, it does not copy them', (
 
   // before: the Position states the whole hub, both bays
   const joined = hl.save(bays, { container: POS });
-  assert.match(joined.container.parameters, /^\[\[710mm,.*<1,2>$/);
+  assert.match(joined.container.parameters, /^\[\[710mm,/);
+  assert.deepEqual(bayNames(joined.container.parameters), ['1', '2']);
   assert.equal(joined.container.clear, false);
 
   // one bay out: the Position keeps only what it still holds
   const one = hl.save(bays, { container: POS, separate: [1] });
-  assert.match(one.container.parameters, /<1>$/);
-  assert.doesNotMatch(one.container.parameters, /<1,2>/, 'bay 2 is no longer the hub\'s to state');
+  assert.deepEqual(bayNames(one.container.parameters), ['1']);
+  assert.deepEqual(bayNames(one.container.parameters), ['1'], 'bay 2 is no longer the hub\'s to state');
   const encH = hl.parseParams(one.slots[0].parameters).capacity[1];
   assert.equal(encH, hl.bayHeight(bays[1]), 'bay 2\'s size went with bay 2');
 
@@ -617,4 +620,23 @@ test('a feed with no size of its own spans the bay, and never sets its width', (
   assert.equal(hl.spanFeeds([feed, drv], 500)[0].size[0], 400, 'a typed bay width is spanned instead');
   const stated = { ...feed, sizedBy: 'db', size: [300, 90, 50] };
   assert.equal(hl.spanFeeds([stated, drv])[0].size[0], 300, 'a size the type states is kept');
+});
+
+test('every bay width and start comes back from the saved rows alone', () => {
+  const I = (ref, w, h, extra = {}) => ({ ref, label: ref, size: [w, h, 30], ...extra });
+  const byRef = { F: I('F', 280, 105, { kind: 'feed' }), A: I('A', 153, 50), C: I('C', 228, 118), B: I('B', 210, 40), A2: I('A2', 153, 50) };
+  const bays = [[byRef.F, byRef.A], [{ ...byRef.C, rot: 90 }, byRef.B], [byRef.A2]];
+  const widths = [338, 500, 380];
+  const heights = [0, 700, 0];
+  const saved = hl.save(bays, { container: { ref: 'P1', contextType: 'Position' }, widths, heights, separate: [2], wrapperRefs: { 2: 'E9' } });
+  assert.equal(saved.container.parameters, '[[788mm,700mm,150mm]]<1[338mm,255mm,150mm,0,0,0],2[500mm,700mm,150mm,288mm,0,0]>');
+
+  // nothing from the session: only what the patch writes
+  const geo = hl.bayGeometry(saved.container.parameters);
+  const back = hl.load(saved, byRef, {});
+  const was = hl.placements(bays, { widths, heights }).map((p) => [p.ref, p.slot, p.x, p.y, p.rot ?? 0]);
+  const now = hl.placements(back, { widths: geo.widths }).map((p) => [p.ref, p.slot, p.x, p.y, p.rot ?? 0]);
+  assert.deepEqual(now, was);
+  assert.deepEqual(geo.heights.slice(0, 2), [255, 700], 'a stated height comes back as stated');
+  assert.equal(hl.extent(back.slice(0, 2), { widths: geo.widths.slice(0, 2), heights: geo.heights.slice(0, 2) }).w, 788);
 });

@@ -207,3 +207,68 @@ export function tbcFlags() {
   take(tbcText, 'TBC', (r) => r.ElementRef, 'E');
   return out;
 }
+
+// A driver's parts and each driver Element's own Parameters (DJ 101681 V1.9:
+// datc_ and date_ blocks). Both are empty from older hosts.
+let partsText = null;
+let elementText = null;
+export const setDriverExtras = ({ compositions = null, elements = null } = {}) => {
+  partsText = compositions ?? null;
+  elementText = elements ?? null;
+};
+
+// { [wrapperTypeRef]: [{ typeRef, quantity }] }, in the recipe's order.
+export function compositions() {
+  if (!partsText?.trim()) return {};
+  const { rows } = readCsv(partsText, [], 'Compositions', true);
+  const out = {};
+  for (const r of [...rows].sort((a, b) => (Number(a.SortOrder) || 0) - (Number(b.SortOrder) || 0))) {
+    const parent = String(r.ParentTypeRef ?? '').trim();
+    const child = String(r.ChildTypeRef ?? '').trim();
+    if (!parent || !child) continue;
+    (out[parent] ??= []).push({ typeRef: child, quantity: Number(r.Quantity) || 1 });
+  }
+  return out;
+}
+
+// What the hub already states, from the date_ block: the hub row (its bays and
+// their sizes), any bay separated into an Element, and every driver's placement,
+// as-placed size and junction boxes. This is what lets a layout saved by the
+// patch be drawn again with nothing from the session.
+export function hubRows() {
+  const out = { hub: null, bays: [], elements: {} };
+  if (!elementText?.trim()) return out;
+  const { rows } = readCsv(elementText, [], 'Hub rows', true);
+  for (const r of rows) {
+    const row = {
+      ref: String(r.Ref ?? r.ElementRef ?? '').trim(),
+      contextRef: String(r.ContextRef ?? '').trim() || null,
+      parameters: String(r.Parameters ?? ''),
+      contextParameters: String(r.ContextParameters ?? ''),
+    };
+    if (!row.ref) continue;
+    const kind = String(r.Kind ?? 'element').trim().toLowerCase();
+    if (kind === 'hub') out.hub = row;
+    else if (kind === 'bay') out.bays.push(row);
+    else out.elements[row.ref] = row;
+  }
+  return out;
+}
+
+// { [elementRef]: Parameters }
+export const elementParams = () => Object.fromEntries(Object.values(hubRows().elements)
+  .filter((e) => e.parameters).map((e) => [e.ref, e.parameters]));
+
+// { [typeRef]: { name, params, outputVoltageV } } from the type library.
+export function typeInfo() {
+  if (!raw?.types?.trim()) return {};
+  const { rows } = readCsv(raw.types, [], 'Types', true);
+  const out = {};
+  for (const r of rows) {
+    const ref = String(r.ElementTypeRef ?? r.Ref ?? '').trim();
+    if (!ref || out[ref]) continue;
+    const v = Number.parseFloat(r['OutputVoltage(V)']);
+    out[ref] = { name: String(r.ElementTypeName ?? r.Name ?? ''), params: String(r.Parameters ?? ''), outputVoltageV: Number.isFinite(v) ? v : null };
+  }
+  return out;
+}

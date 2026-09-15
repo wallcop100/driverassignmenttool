@@ -9,6 +9,8 @@ import * as L from '../../src/core/layout.js';
 const MOD = (ref, w = 17.5, h = 90) => ({ ref, label: ref, size: [w, h, 60] });
 const PANEL = { ref: 'E41592', name: '#LCP5', contextType: 'Element' };
 
+const bayNames = (params) => L.bayGeometry(params).held.map(String);
+
 test('a container holds slots and a slot holds items - no hub anywhere', () => {
   const slots = [[MOD('A'), MOD('B')], [MOD('C')]];
   const placed = L.placements(slots, { slotWidth: 250 });
@@ -32,7 +34,7 @@ test('the save/load round trip works for a panel as it does for a hub', () => {
   const saved = L.save(slots, opts);
 
   // the container names the slots it holds, in <discrete spaces>
-  assert.match(saved.container.parameters, /<1,2>$/);
+  assert.deepEqual(bayNames(saved.container.parameters), ['1', '2']);
   assert.equal(saved.container.contextType, 'Element', 'a panel is an Element');
   // every module is contexted into the panel, at a slot and a coordinate
   for (const e of saved.elements) {

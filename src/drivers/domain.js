@@ -79,6 +79,7 @@ export const drivers = makeDomain({
   // tender case, and lands on the estimate rather than a tray.
   parseInit: (msg, types) => {
     api.setTbcText(msg.tbc);
+    api.setDriverExtras({ compositions: msg.compositions, elements: msg.elements });
     return msg.assessment && !msg.links?.trim()
       ? api.parseEstimate(msg.assessment, types)
       : api.parseText(msg.form, msg.links, types);

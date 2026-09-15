@@ -73,18 +73,19 @@ export function loadTypes() {
 
 // Sizes typed in the space layout and TBC flags set here. Like presets they
 // belong to the set, not the hub, so they sit beside the presets slot.
-const EMPTY_EXTRAS = { typeSizes: {}, tbc: {} };
+const EMPTY_EXTRAS = { typeSizes: {}, tbc: {}, recipes: {}, jboxes: {} };
 export function loadTypeExtras() {
   try {
     const v = JSON.parse(localStorage.getItem(`${typesKey}:extras`) ?? '{}') ?? {};
-    return { typeSizes: v.typeSizes ?? {}, tbc: v.tbc ?? {} };
+    return { typeSizes: v.typeSizes ?? {}, tbc: v.tbc ?? {}, recipes: v.recipes ?? {}, jboxes: v.jboxes ?? {} };
   } catch { return { ...EMPTY_EXTRAS }; }
 }
 
-function saveTypeExtras({ typeSizes = {}, tbc = {} }) {
+function saveTypeExtras({ typeSizes = {}, tbc = {}, recipes = {}, jboxes = {} }) {
+  const extras = { typeSizes, tbc, recipes, jboxes };
   try {
-    if (!Object.keys(typeSizes).length && !Object.keys(tbc).length) localStorage.removeItem(`${typesKey}:extras`);
-    else localStorage.setItem(`${typesKey}:extras`, JSON.stringify({ typeSizes, tbc }));
+    if (Object.values(extras).every((v) => !Object.keys(v).length)) localStorage.removeItem(`${typesKey}:extras`);
+    else localStorage.setItem(`${typesKey}:extras`, JSON.stringify(extras));
   } catch { /* quota, or storage disabled */ }
 }
 

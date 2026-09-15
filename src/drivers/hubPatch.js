@@ -18,13 +18,39 @@ import { parseParams, formatParams } from '../core/params.js';
 
 // One source for the merge. TypeScript, because Office Scripts refuse an untyped
 // function; the tests strip the annotations and run this same text.
-export const MERGE_TS = `    const mergeFlavour = (current: string, flavour: string, value: string): string => {
-      let rest = String(current === null || current === undefined ? "" : current);
-      if (flavour === "size") rest = rest.replace(/(^|[^\\[])\\[[^\\[\\]]*\\](?!\\])/, "$1");
-      if (flavour === "capacity") rest = rest.replace(/\\[\\[[^\\]]*\\]\\]/, "");
-      if (flavour === "spaces") rest = rest.replace(/<[^>]*>/, "");
-      rest = rest.trim();
-      return value ? value + rest : rest;
+// Read by depth, as core/params.js reads it: a [size] inside a <space> belongs to
+// the space, so replacing the entity's size must never reach into one.
+export const MERGE_TS = `    const closeAt = (s: string, i: number, open: string): number => {
+      if (open === "[[") { const j = s.indexOf("]]", i + 2); return j < 0 ? -1 : j + 2; }
+      if (open === "[") { const j = s.indexOf("]", i + 1); return j < 0 ? -1 : j + 1; }
+      if (open === "{") {
+        let d = 0;
+        for (let k = i; k < s.length; k++) { if (s[k] === "{") { d++; } else if (s[k] === "}") { d--; if (d === 0) { return k + 1; } } }
+        return -1;
+      }
+      for (let k = i + 1; k < s.length; k++) {
+        if (s[k] === "[") { const inner = closeAt(s, k, s[k + 1] === "[" ? "[[" : "["); if (inner < 0) { return -1; } k = inner - 1; }
+        else if (s[k] === "(") { const j = s.indexOf(")", k + 1); if (j < 0) { return -1; } k = j; }
+        else if (s[k] === ">") { return k + 1; }
+      }
+      return -1;
+    };
+    const mergeFlavour = (current: string, flavour: string, value: string): string => {
+      const s = String(current === null || current === undefined ? "" : current);
+      let out = "";
+      let done = false;
+      let i = 0;
+      while (i < s.length) {
+        const c = s[i];
+        const open = c === "[" ? (s[i + 1] === "[" ? "[[" : "[") : (c === "{" || c === "<" ? c : "");
+        const end = open === "" ? -1 : closeAt(s, i, open);
+        if (end < 0) { out += c; i++; continue; }
+        const kind = open === "[[" ? "capacity" : open === "[" ? "size" : open === "{" ? "nodes" : "spaces";
+        if (kind === flavour && !done) { done = true; } else { out += s.slice(i, end); }
+        i = end;
+      }
+      out = out.trim();
+      return value ? value + out : out;
     };
 `;
 
@@ -38,8 +64,10 @@ const typeSizeSection = (types) => `    // --- CHANGE: ElementTypes sizes ---\n`
   + `      const row = rowOf_ET.get(t.ref);\n`
   + `      if (row === undefined) { console.log("WARNING: type " + t.ref + " not found in ElementTypes - size not written."); continue; }\n`
   + `      const was = String(data_ET[row][col_ET_Parameters]);\n`
-  + `      const next = mergeFlavour(was, "size", t.size);\n`
-  + `      if (next === was) { console.log("Type " + t.ref + " already " + t.size); continue; }\n`
+  + `      let next = t.size ? mergeFlavour(was, "size", t.size) : was;\n`
+  // a wrapper's parts, as named spaces with sizes and positions (page 1410108)
+  + `      if (t.setSpaces) { next = mergeFlavour(next, "spaces", t.spaces); }\n`
+  + `      if (next === was) { console.log("Type " + t.ref + " already " + next); continue; }\n`
   + `      WS_ET.getCell(row, col_ET_Parameters).setValue(next);\n`
   + `      WS_ET.getCell(row, col_ET_IsPropertiesTBC).${CLEAR};\n`
   + `      console.log("Type " + t.ref + ": " + was + " -> " + next);\n`
@@ -73,7 +101,11 @@ const elementSection = (rows) => `    // --- CHANGE: where each driver sits ---\
   + `        WS_E.getCell(row, col_E_ContextRef).setValue(it.contextRef);\n`
   + `      }\n`
   // turned: the Element states its as-placed size over its type's
-  + `      if (it.size) { WS_E.getCell(row, col_E_Parameters).setValue(mergeFlavour(String(data_E[row][col_E_Parameters]), "size", it.size)); }\n`
+  // turned: the Element states its as-placed size; junction boxes are spaces on it
+  + `      const wasP = String(data_E[row][col_E_Parameters]);\n`
+  + `      let nextP = it.size ? mergeFlavour(wasP, "size", it.size) : wasP;\n`
+  + `      if (it.setJb) { nextP = mergeFlavour(nextP, "spaces", it.jb); }\n`
+  + `      if (nextP !== wasP) { if (nextP === "") { WS_E.getCell(row, col_E_Parameters).${CLEAR}; } else { WS_E.getCell(row, col_E_Parameters).setValue(nextP); } }\n`
   + `      WS_E.getCell(row, col_E_IsPropertiesTBC).${CLEAR};\n`
   + `      console.log(it.ref + ": " + was + " -> " + next + (it.contextRef ? " in " + it.contextRef : ""));\n`
   + `    }\n\n`;
@@ -125,8 +157,10 @@ const flavours = (params) => {
 
 // saved: core/layout.save() output. hub: { ref, contextType }.
 // typeSizes: [{ ref, size: '[w,h,d]' }], one per driver ElementType.
+// typeSizes may carry `spaces`: a wrapper type's parts, '<PSU(...)[...]>'.
 // tbc: [{ ref, sheet: 'E' | 'ET', isTBC, isPropertiesTBC }], flags set here.
-export function hubPatch({ saved, hub = null, typeSizes = [], tbc = [], tool = 'Driver Assignment Tool' }) {
+// jb: { [elementRef]: '<JB.1[...],...>' | '' }, junction boxes set here ('' clears).
+export function hubPatch({ saved, hub = null, typeSizes = [], tbc = [], jb = {}, tool = 'Driver Assignment Tool' }) {
   const elements = (saved?.elements ?? [])
     .map((e) => {
       const cp = parseParams(e.contextParameters);
@@ -138,6 +172,9 @@ export function hubPatch({ saved, hub = null, typeSizes = [], tbc = [], tool = '
         contextType: moved ? 'Element' : null,
         contextRef: moved ? (e.contextRef ?? PLACEHOLDER_REF) : null,
         size: e.parameters ? formatParams({ size: parseParams(e.parameters).size }) : null,
+        // every row carries both keys: Office Scripts types the array from its rows
+        setJb: Object.hasOwn(jb, e.ref),
+        jb: jb[e.ref] ?? '',
       };
     });
   const bays = (saved?.slots ?? []).map((b) => ({
@@ -161,7 +198,10 @@ export function hubPatch({ saved, hub = null, typeSizes = [], tbc = [], tool = '
     body += header('ElementTypes', 'ET', ['Ref', 'Parameters', 'IsTBC', 'IsPropertiesTBC'], ['Parameters', 'IsTBC'])
       + rowMap('ET');
   }
-  if (typeSizes.length) body += typeSizeSection(typeSizes);
+  const typeRows = typeSizes.map((t) => ({
+    ref: t.ref, size: t.size ?? '', setSpaces: t.spaces != null, spaces: t.spaces ?? '',
+  }));
+  if (typeRows.length) body += typeSizeSection(typeRows);
   if (elements.length) body += elementSection(elements);
 
   if (hub?.ref) {

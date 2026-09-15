@@ -99,6 +99,10 @@ export function offsetsOf(count, opts = {}) {
 // The width a slot has to fill, between the two trunking bands.
 export const innerWidth = (slotWidth = SLOT_WIDTH) => slotWidth - 2 * TRUNK;
 
+// A slot's stated height: more room than its contents need, as a cabinet has.
+// Nothing stated is 0, and the contents decide.
+export const heightAt = (i, { heights = null } = {}) => (heights?.[i] > 0 ? heights[i] : 0);
+
 // The width a slot comes out at when nobody has typed one: its widest row plus
 // that row's trunking, so the far band sits against the equipment instead of at
 // 380. Rows still break at maxWidth, so a slot shrinks to what it holds and only
@@ -191,7 +195,7 @@ export function extent(slots, opts = {}) {
   if (joined) w -= (n - 1) * CLEAR_X;
   return {
     w: Math.round(width ?? w),
-    h: Math.max(0, ...slots.map((b, i) => slotHeight(b, widthAt(i, opts)))),
+    h: Math.max(0, ...slots.map((b, i) => Math.max(slotHeight(b, widthAt(i, opts)), heightAt(i, opts)))),
   };
 }
 
@@ -390,13 +394,41 @@ export function saveItem(placed, parent = null, { local = false } = {}) {
 export const saveContainer = (slots, opts = {}) => {
   const own = slots.map((_, i) => i).filter((i) => !(opts.separate ?? []).includes(i));
   if (!own.length) return '';
-  // the sub-list is re-indexed, so its widths have to travel with it
-  const ext = extent(own.map((i) => slots[i]), { ...opts, widths: own.map((i) => widthAt(i, opts)) });
+  // the sub-list is re-indexed, so its widths and heights travel with it
+  const sub = { ...opts, widths: own.map((i) => widthAt(i, opts)), heights: own.map((i) => heightAt(i, opts)) };
+  const ext = extent(own.map((i) => slots[i]), sub);
+  const depth = opts.depth ?? DEPTH_MM;
+  // Each slot it holds is a space with its own size and where it starts, the
+  // form page 1410108 gives spaces: <1[w,h,d,dx,dy,dz]>. Without it a typed width
+  // is lost on reload, because the total alone cannot say how it was split. The
+  // offset is in the same frame as every Element's [x,y,z], so the two agree.
+  const off = offsetsOf(slots.length, opts);
   return formatParams({
-    capacity: [ext.w, ext.h, opts.depth ?? DEPTH_MM],
-    spaces: own.map((i) => i + 1).join(','),
+    capacity: [ext.w, ext.h, depth],
+    spaceList: own.map((i, k) => ({
+      name: String(i + 1),
+      size: [sub.widths[k], Math.max(slotHeight(slots[i], sub.widths[k]), sub.heights[k]), depth],
+      at: [off[i], 0, 0],
+    })),
   });
 };
+
+// The slots a container row states, and each one's size and start where it says
+// them. Indexed by slot number - 1; null where the row does not say. A row
+// written before spaces carried sizes (<1,2>) gives names and nothing else.
+export function bayGeometry(params) {
+  const list = parseParams(typeof params === 'string' ? params : params?.parameters ?? '').spaceList ?? [];
+  const out = { held: [], widths: [], heights: [], offsets: [] };
+  for (const sp of list) {
+    const n = Number(sp.name);
+    if (!(n > 0)) continue;
+    out.held.push(n);
+    out.widths[n - 1] = sp.size?.[0] ?? null;
+    out.heights[n - 1] = sp.size?.[1] ?? null;
+    out.offsets[n - 1] = sp.at?.[0] ?? null;
+  }
+  return out;
+}
 
 export function save(slots, opts = {}) {
   const container = opts.container ?? null;
@@ -460,10 +492,12 @@ export function save(slots, opts = {}) {
 export function load({ container, slots: slotRows = [], elements }, byRef, opts = {}) {
   // a container saved before its kind was carried is a bare string; both are read
   const params = typeof container === 'string' ? container : container?.parameters ?? '';
-  const held = parseParams(params).spaces?.split(',').map(Number).filter(Boolean) ?? [];
+  const geo = bayGeometry(params);
   // the container's own slots plus the ones that were separated out into Elements
-  const count = Math.max(1, ...held, ...slotRows.map((b) => b.slot + 1), 1);
-  const off = offsetsOf(count, opts);
+  const count = Math.max(1, ...geo.held, ...slotRows.map((b) => b.slot + 1), 1);
+  // the widths the row states, then where it says each slot starts
+  const off = offsetsOf(count, { ...opts, widths: opts.widths ?? geo.widths });
+  geo.offsets.forEach((o, i) => { if (o != null && i < count) off[i] = o; });
   const ownerOf = new Map(slotRows.filter((b) => b.ref).map((b) => [b.ref, b]));
   const slots = Array.from({ length: count }, () => []);
   const rows = elements
