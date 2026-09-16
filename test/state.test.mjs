@@ -276,3 +276,34 @@ test('correcting a banned node name renames it and keeps every cable on it', () 
   // and the patch is told to sweep LinksMap
   assert.equal(fixed.fixNodeSyntax, true);
 });
+
+// A type invented from the datasheet is a preset before the model is rebuilt
+// from it, so "Create and add" used to look it up in the inventory, find
+// nothing, and throw on template.nodes - which unmounted the app to a blank
+// screen. It reads the preset instead.
+test('ADD_DRIVER works for a type that is still only a preset', () => {
+  let s = init();
+  const preset = { typeRef: 'ET-NEW-01', name: 'New part', powerType: 'CC', currentA: 0.5, maxPowerW: 50, outputs: 2 };
+  s = reducer(s, { type: 'SET_PRESET', preset });
+  s = reducer(s, { type: 'ADD_DRIVER', typeRef: 'ET-NEW-01', zone: 'HUB-A' });
+  assert.equal(s.addedDrivers.length, 1);
+  assert.equal(s.addedDrivers[0].typeRef, 'ET-NEW-01');
+  const added = s.addedDrivers[0].ref;
+  // its outputs are assignable straight away, as they are for a known type
+  assert.equal(Object.keys(s.assignments).filter((k) => k.startsWith(`${added}|`)).length, 2);
+});
+
+test('ADD_DRIVER for a type that exists nowhere leaves the state alone', () => {
+  const s = init();
+  assert.equal(reducer(s, { type: 'ADD_DRIVER', typeRef: 'ET-NOPE', zone: 'HUB-A' }), s);
+});
+
+test('SET_LAYOUTS keeps the space layout in the session', () => {
+  let s = init();
+  const layouts = { 'HUB-A': { bays: [[{ ref: 'E1' }]], opts: [{}], tray: [] } };
+  s = reducer(s, { type: 'SET_LAYOUTS', layouts });
+  assert.deepEqual(s.layouts, layouts);
+  // and a restore brings it back
+  const back = reducer(initialState, { type: 'RESTORE', saved: { model, assignments: {}, layouts } });
+  assert.deepEqual(back.layouts, layouts);
+});

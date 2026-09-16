@@ -93,16 +93,17 @@ export default function TypesPage({ state, dispatch, zone }) {
 
   const flagged = cards.filter((c) => c.f.length).length;
   const closeEdit = () => { setEditKey(null); setDraft(null); };
+  // Arriving from the space layout, every way out of here goes back to it.
+  const back = state.view?.from === 'layout' && zone
+    ? { page: 'layout', zone }
+    : (zone ? { page: 'zone', zone } : { page: 'landing' });
   const zoneCables = zone ? model.links.filter((l) => l.zone === zone && l.powerType).length : 0;
 
   return (
     <div className="container-fluid py-3 types-page">
       <div className="dp-head">
         <button className="btn btn-sm btn-outline-secondary d-flex align-items-center"
-          onClick={() => dispatch({
-            type: 'SET_VIEW',
-            view: zone ? { page: 'zone', zone } : { page: 'landing' },
-          })}>
+          onClick={() => dispatch({ type: 'SET_VIEW', view: back })}>
           <span className="material-icons small-icon">arrow_back</span> {zone ?? 'Zones'}
         </button>
         <h5 className="mb-0">{zone ? `Add a driver to ${zone}` : 'Driver types'}</h5>
@@ -184,7 +185,7 @@ export default function TypesPage({ state, dispatch, zone }) {
           <button className="btn btn-sm btn-primary ms-auto"
             onClick={() => {
               dispatch({ type: 'APPLY_PLAN', drivers: plan.drivers, placements: plan.placements });
-              dispatch({ type: 'SET_VIEW', view: { page: 'zone', zone } });
+              dispatch({ type: 'SET_VIEW', view: back });
             }}>
             Add these {plan.drivers.length} drivers
           </button>
@@ -194,7 +195,7 @@ export default function TypesPage({ state, dispatch, zone }) {
       <div className="tp-grid">
         {cards.map(({ t, spec, f }) => (
           <TypeRow key={t.typeRef} t={t} spec={spec} f={f} usage={usage.get(t.typeRef)}
-            zone={zone} dispatch={dispatch} presets={presets} inventory={model.inventory}
+            zone={zone} back={back} dispatch={dispatch} presets={presets} inventory={model.inventory}
             editing={editKey === t.typeRef} draft={draft} setDraft={setDraft}
             openEdit={() => { setEditKey(t.typeRef); setDraft(draftFrom(t)); setMenu(null); }}
             closeEdit={closeEdit}
@@ -221,6 +222,7 @@ export default function TypesPage({ state, dispatch, zone }) {
       )}
       {adding && (
         <NewTypeDialog zone={zone} inventory={model.inventory} dispatch={dispatch}
+          onCreated={(typeRef, alsoAdd) => alsoAdd && dispatch({ type: 'SET_VIEW', view: back })}
           onClose={() => setAdding(false)} />
       )}
       {setup && (
@@ -233,7 +235,7 @@ export default function TypesPage({ state, dispatch, zone }) {
 }
 
 function TypeRow(props) {
-  const { t, spec, f, usage, zone, dispatch, presets, inventory, editing, draft, setDraft,
+  const { t, spec, f, usage, zone, back, dispatch, presets, inventory, editing, draft, setDraft,
     openEdit, closeEdit, menuOpen, toggleMenu, closeMenu, onWarn, inHub } = props;
   const opts = currentOptions(t, spec);
   const fill = canFill(t, spec);
@@ -292,7 +294,7 @@ function TypeRow(props) {
       {zone && (
         <button className="btn btn-sm btn-primary tp-add" onClick={() => {
           dispatch({ type: 'ADD_DRIVER', typeRef: t.typeRef, zone });
-          dispatch({ type: 'SET_VIEW', view: { page: 'zone', zone } });
+          dispatch({ type: 'SET_VIEW', view: back });
         }}>Add</button>
       )}
     </TypeCard>

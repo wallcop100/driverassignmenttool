@@ -5,6 +5,7 @@ import driversDomain from './drivers/domain.js';
 import HubLayoutLab from './components/HubLayoutLab.jsx';
 import PanelLayout from './lcp/PanelLayout.jsx';
 import TypesPage from './components/TypesPage.jsx';
+import ErrorBoundary from './components/ErrorBoundary.jsx';
 import EstimatePage from './components/EstimatePage.jsx';
 import ImportScreen from './components/ImportScreen.jsx';
 import Landing from './components/Landing.jsx';
@@ -168,7 +169,7 @@ export default function App({ domain = driversDomain }) {
   useEffect(() => {
     saveSession(state);
     if (embedded && model) embed.send({ type: embed.topic('dirty'), changeCount: changeCount(state) });
-  }, [model, assignments, addedDrivers, state.prefs, state.presets, state.typeSizes, state.tbc, state.recipes, state.jboxes, state.view]);
+  }, [model, assignments, addedDrivers, state.prefs, state.presets, state.typeSizes, state.tbc, state.recipes, state.jboxes, state.layouts, state.view]);
 
   useEffect(() => {
     const onKey = (e) => {
@@ -187,7 +188,10 @@ export default function App({ domain = driversDomain }) {
   // otherwise the link lands on the import screen and the point is lost.
   useEffect(() => {
     if (lab && !model && !embedded) {
-      api.loadDemo().then((m) => dispatch({ type: 'INIT', model: m, demo: true }));
+      api.loadDemo().then((m) => dispatch({
+        // the demo is rebuilt on every reload, so only the layout is resumed
+        type: 'INIT', model: m, demo: true, layouts: loadSession()?.layouts ?? {},
+      }));
     }
   }, [lab, model]);
 
@@ -206,7 +210,9 @@ export default function App({ domain = driversDomain }) {
     screen = <div className="container py-5 text-secondary">Loading the demo…</div>;
   } else if (!model) {
     screen = <ImportScreen dispatch={dispatch} saved={saved} onResume={resume} onDiscard={discard} />;
-  } else if (lab === 'hub' || state.view.page === 'layout') {
+    // ?lab=hub opens on the layout, but must still be able to leave it: the
+    // Add drivers button goes to the types page and comes back.
+  } else if (state.view.page === 'layout' || (lab === 'hub' && state.view.page === 'landing')) {
     // Still a test surface. Two ways in: ?lab=hub for the standalone demo, and a
     // deliberately quiet mark on a hub's page. The overlay is bound to a hub, so
     // the hub page is the only place an embedded user can reach it from - and
@@ -242,7 +248,12 @@ export default function App({ domain = driversDomain }) {
           <button className="btn-close" onClick={() => setNotice(null)} />
         </div>
       )}
-      {screen}
+      {/* the screen as the person sees it: a lab keeps the view on 'landing',
+          which would send whoever reads the report to the wrong place */}
+      <ErrorBoundary context={state.context}
+        where={lab && state.view.page === 'landing' ? `lab:${lab}` : state.view.page}>
+        {screen}
+      </ErrorBoundary>
       </div>
       {state.demo && model && <Tutorial dispatch={dispatch} view={state.view} />}
     </LabelContext.Provider>

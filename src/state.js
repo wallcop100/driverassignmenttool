@@ -1,4 +1,4 @@
-import { nextDriverRef, outRef, sameRefs } from './engine.js';
+import { nextDriverRef, outRef, presetToType, sameRefs } from './engine.js';
 
 // Added drivers all export as the same placeholder ref; outRef strips the
 // internal tag that keeps them apart. Re-exported so components have one import.
@@ -47,6 +47,7 @@ export const initialState = {
   distributeNodes: [],   // node keys marked as distribution targets
   prefs: DEFAULT_PREFS, // persisted UI prefs (label config)
   presets: {},          // typeRef -> driver type preset patched/invented here
+  layouts: {},          // hub -> { bays, opts, tray, enclosures } from the space layout
   typeSizes: {},        // typeRef -> { size } typed in the space layout
   tbc: {},              // ref -> { sheet, isTBC, isPropertiesTBC } set here
   recipes: {},          // wrapper typeRef -> [part] arranged here
@@ -112,6 +113,7 @@ export function reducer(state, action) {
         tbc: action.tbc ?? {},
         recipes: action.recipes ?? {},
         jboxes: action.jboxes ?? {},
+        layouts: action.layouts ?? {},
         // an estimate has no cables to assign, so it never lands on a zone
         view: action.view ?? (action.model.mode === 'estimate'
           ? { page: 'estimate' }
@@ -205,9 +207,15 @@ export function reducer(state, action) {
         ...state.addedDrivers.map((d) => d.ref),
       ]);
       const ref = nextDriverRef(taken);
-      const template = state.model.inventory.find((t) => t.typeRef === typeRef);
+      // A type invented from the datasheet is a preset first: the model is
+      // rebuilt from presets in an effect, so "Create and add" dispatches
+      // SET_PRESET and lands here before the inventory has heard of it. Reading
+      // the preset directly is what the rebuild would have produced anyway.
+      const template = state.model.inventory.find((t) => t.typeRef === typeRef)
+        ?? (state.presets[typeRef] ? presetToType(state.presets[typeRef]) : null);
+      if (!template) return state;
       const assignments = cloneAssignments(state.assignments);
-      for (const node of template.nodes) {
+      for (const node of template.nodes ?? []) {
         assignments[keyOf(ref, node.name)] = { toEntityType: '', refs: [] };
       }
       return withUndo(state, {
@@ -350,6 +358,7 @@ export function reducer(state, action) {
         tbc: { ...(action.saved.tbc ?? {}), ...(action.tbc ?? {}) },
         recipes: { ...(action.saved.recipes ?? {}), ...(action.recipes ?? {}) },
         jboxes: { ...(action.saved.jboxes ?? {}), ...(action.jboxes ?? {}) },
+        layouts: action.saved.layouts ?? {},
         context: state.context, // host context outlives a resume
         // action.view pins where to land. Embedded that is the hub the host
         // opened this frame on: a resume must restore the *work*, not navigate
@@ -399,6 +408,12 @@ export function reducer(state, action) {
     }
     case 'SET_MODEL': // rebuilt with the current presets; assignments survive
       return { ...state, model: action.model };
+
+    // The space layout, kept per hub. It belongs to the session rather than to
+    // the screen: going to the allocation tab and back must not lose the bays.
+    // Out of undo, which the layout keeps its own stack for.
+    case 'SET_LAYOUTS':
+      return { ...state, layouts: action.layouts };
 
     case 'SET_PREFS':
       return { ...state, prefs: { ...state.prefs, ...action.prefs } };

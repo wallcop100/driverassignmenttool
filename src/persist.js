@@ -127,6 +127,7 @@ export function saveSession(state) {
     deletedDrivers: state.deletedDrivers,
     prefs: state.prefs,
     presets: state.presets,
+    layouts: state.layouts,
     view: state.view,
     savedAt: Date.now(),
   });

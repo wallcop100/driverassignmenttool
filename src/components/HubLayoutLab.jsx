@@ -183,7 +183,12 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
 
   const hubs = model.zones;
   const [hub, setHub] = useState(hubs.includes(zone) ? zone : hubs[0] ?? null);
-  const [st, setSt] = useState({});
+  // Kept in the session, not in this component: leaving for the allocation
+  // screen and coming back would otherwise start the hub from scratch.
+  const st = state.layouts ?? {};
+  const setSt = (next) => dispatch({
+    type: 'SET_LAYOUTS', layouts: typeof next === 'function' ? next(st) : next,
+  });
   const [sel, setSel] = useState([]);
   const [drag, setDrag] = useState(null);
   const [hist, setHist] = useState({ undo: [], redo: [] });
@@ -842,6 +847,17 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
             patch marks {dropEnclosures.length} enclosure{dropEnclosures.length === 1 ? '' : 's'} IsDeleted
           </span>
         )}
+        <button className="btn btn-sm btn-link p-0" title="Add a driver to this hub, then come back here"
+          onClick={() => dispatch({ type: 'SET_VIEW', view: { page: 'drivers', zone: hub, from: 'layout' } })}>
+          Add drivers
+        </button>
+        <button className="btn btn-sm btn-link p-0" title="One empty bay, everything back in the tray"
+          onClick={() => {
+            edit({ bays: [[]], opts: [bayDefaults()], tray: feedFirst([...cur.bays.flat(), ...tray]), enclosures: false });
+            setNotice('Blank slate: one empty bay, everything in the tray. Undo puts it back.');
+          }}>
+          Start blank
+        </button>
         <button className="btn btn-sm btn-link p-0" onClick={() => {
             // everything, the tray included
             const all = cur.bays.map((b, i) => (i === 0 ? [...b, ...tray] : b));
