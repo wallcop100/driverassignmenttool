@@ -1,0 +1,35 @@
+{
+  "_comment": "Permissions for an agent scoped to this project, started by `proj`. Committed with the code so the rules are reviewable in git diff rather than living on one machine. deny always beats allow.",
+  "permissions": {
+    "allow": [
+      "Read", "Edit", "Write", "Glob", "Grep",
+      "Bash(npm test*)",
+      "Bash(npm run build*)",
+      "Bash(npm run preview*)",
+      "Bash(node --test*)",
+      "Bash(node docs/*)",
+      "Bash(git status*)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Bash(git add*)",
+      "Bash(git commit*)",
+      "Bash(git checkout -b*)",
+      "Bash(git restore*)"
+    ],
+    "deny": [
+      "Bash(git push*)",
+      "Bash(git reset --hard*)",
+      "Bash(sudo*)",
+      "Bash(docker*)",
+      "Bash(systemctl*)",
+      "Bash(rm -rf*)",
+      "Bash(curl*)",
+      "Read(./.env*)",
+      "Read(//root/**)",
+      "Read(//home/erik/.ssh/**)",
+      "Read(//srv/compose/**)",
+      "Edit(//srv/**)",
+      "Edit(//etc/**)"
+    ]
+  }
+}
