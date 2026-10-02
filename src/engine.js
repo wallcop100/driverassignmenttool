@@ -222,6 +222,7 @@ function parseForm(text) {
         // a name is how anyone actually talks about one.
         name: s(row.ElementName ?? row.Name),
         typeName: s(row.ElementTypeName ?? row.TypeName),
+        controlType: s(row.ControlType) || null,
         powerType: d.powerType, maxPowerW: d.maxPowerW, currentA: d.currentA, outputVoltageV: d.outputVoltageV,
         undetermined: d.maxPowerW == null,
         driverRestrictions: row['Driver Restrictions'], nodeRestrictions: row['Node Restrictions'],
@@ -356,7 +357,8 @@ function buildInventory(drivers) {
       inv.set(d.typeRef, {
         typeRef: d.typeRef, name: d.typeName, powerType: d.powerType, maxPowerW: d.maxPowerW,
         currentA: d.currentA, outputVoltageV: d.outputVoltageV, undetermined: d.undetermined,
-        driverRestrictions: d.driverRestrictions, nodeRestrictions: d.nodeRestrictions, nodes: d.nodes,
+        driverRestrictions: d.driverRestrictions, nodeRestrictions: d.nodeRestrictions,
+        controlType: d.controlType ?? null, nodes: d.nodes,
       });
     }
   }
@@ -903,10 +905,9 @@ export function nextDriverRef(taken) {
 
 const fpKey = (l) => (l.powerType === 'CC' ? `CC·${g(l.currentA ?? 0)}A` : `CV·${g(l.voltageV ?? 0)}V`);
 // A DALI fitting needs a DALI driver; a Local (switched) one cannot take its
-// address. Blank on either side is unknown, not a mismatch.
+// address. A blank on either side is a mismatch: we cannot show it fits.
 const ctKey = (v) => String(v ?? '').trim().toLowerCase();
-const controlTypeOk = (l, t) => !ctKey(l.controlType) || !ctKey(t.controlType)
-  || ctKey(l.controlType) === ctKey(t.controlType);
+const controlTypeOk = (l, t) => !!ctKey(l.controlType) && ctKey(l.controlType) === ctKey(t.controlType);
 const sum = (xs) => xs.reduce((a, b) => a + b, 0);
 
 // Emergency drivers are stock for the emergency circuit, not spare capacity - 

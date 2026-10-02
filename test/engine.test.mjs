@@ -352,18 +352,23 @@ test('library ratings win, but the longer node list survives', () => {
 HUB-C1,E1,ET-P,,OP.1,,
 HUB-C1,E1,ET-P,,OP.2,,
 `;
-  const thin = 'ElementTypeRef,Node,Driver Restrictions\nET-P,OP.1,180W | 24V\n';
+  const thin = ctDali('ElementTypeRef,Node,Driver Restrictions\nET-P,OP.1,180W | 24V\n');
   const t = engine.buildModel(form, HUB_LINKS, thin).inventory.find((x) => x.typeRef === 'ET-P');
   assert.equal(t.nodes.length, 2);        // from the hub rows
   assert.equal(t.powerType, 'CV');        // from the library
   assert.equal(t.maxPowerW, 180);
 });
 
+// Append a ControlType column to a type-library CSV literal: a type must declare one
+// to be sized onto a fitting that does.
+const ctDali = (csv) => csv.replace(/\n$/, '').split('\n')
+  .map((l, i) => `${l},${i ? 'DALI' : 'ControlType'}`).join('\n') + '\n';
+
 // ---- greenfield: cables, a type library, and no drivers at all ----
-const GF_TYPES = 'ElementTypeRef,Driver Restrictions,Node Restrictions,Channels\nT100,100W | 0.35A,100W | 55fV,2\n';
+const GF_TYPES = 'ElementTypeRef,Driver Restrictions,Node Restrictions,Channels,ControlType\nT100,100W | 0.35A,100W | 55fV,2,DALI\n';
 const gfLinks = (n, group = 'CG1', startAt = 1) => [...Array(n)].map((_, i) =>
-  `L${startAt + i},HUB-G,20,0.35,10,CC,${group}`).join('\n');
-const GF_HEAD = 'LinkRef,PullZone,LinkSumPower(W),LinkCurrent,LinkForwardVoltage(Vf),SecondaryPowerType,ControlGroupText\n';
+  `L${startAt + i},HUB-G,20,0.35,10,CC,${group},DALI`).join('\n');
+const GF_HEAD = 'LinkRef,PullZone,LinkSumPower(W),LinkCurrent,LinkForwardVoltage(Vf),SecondaryPowerType,ControlGroupText,ControlType\n';
 const gfModel = (linksBody) => engine.buildModel(null, GF_HEAD + linksBody + '\n', GF_TYPES);
 
 test('links-only model: no drivers, library is the inventory, export still works', () => {
@@ -408,7 +413,7 @@ test('planDrivers sizes from load, and the margin costs a driver', () => {
 test('planDrivers sizes from forward voltage when fV is the binding limit', () => {
   // 4 × 5W cables (20W - one driver on load alone) but 30fV each against a 55fV
   // node: only one fits per node, so it takes two 2CH drivers.
-  const body = [...Array(4)].map((_, i) => `L${i + 1},HUB-G,5,0.35,30,CC,CG1`).join('\n');
+  const body = [...Array(4)].map((_, i) => `L${i + 1},HUB-G,5,0.35,30,CC,CG1,DALI`).join('\n');
   const p = engine.planDrivers(gfModel(body), {}, [], 'HUB-G', { margin: 0.05 });
   assert.equal(p.drivers.length, 2);
   assert.deepEqual(p.unplaced, []);
@@ -428,7 +433,7 @@ test('planDrivers keeps ControlGroups apart by default, mixes them when told to'
 });
 
 test('planDrivers reports cables no type in the library can take', () => {
-  const body = 'L1,HUB-G,20,,24,CV,CG1';
+  const body = 'L1,HUB-G,20,,24,CV,CG1,DALI';
   const p = engine.planDrivers(gfModel(body), {}, [], 'HUB-G');
   assert.deepEqual(p.drivers, []);
   assert.equal(p.unmatched.length, 1);
@@ -501,7 +506,7 @@ test('a type that declares nothing is not a sizing candidate', () => {
   // "185W" alone: no CC/CV, no current, no node fV. It passes every
   // compatibility test by default and its blank limits read as infinite, so it
   // used to win every bucket - the biggest driver with no fV ceiling.
-  const lib = `${GF_TYPES}TBIG,185W,,1\n`;
+  const lib = `${GF_TYPES}TBIG,185W,,1,DALI\n`;
   const m = engine.buildModel(null, GF_HEAD + gfLinks(5) + '\n', lib);
   const p = engine.planDrivers(m, {}, [], 'HUB-G');
   assert.deepEqual(p.proposals.map((x) => x.typeRef), ['T100']);
@@ -514,8 +519,8 @@ test('a type that declares nothing is not a sizing candidate', () => {
 });
 
 test('an emergency type loses a tie to an ordinary one', () => {
-  const lib = 'ElementTypeRef,Driver Restrictions,Node Restrictions,Channels\n'
-    + 'T-EM-01,100W | 0.35A,100W | 55fV,2\nT-STD-01,100W | 0.35A,100W | 55fV,2\n';
+  const lib = ctDali('ElementTypeRef,Driver Restrictions,Node Restrictions,Channels\n'
+    + 'T-EM-01,100W | 0.35A,100W | 55fV,2\nT-STD-01,100W | 0.35A,100W | 55fV,2\n');
   const m = engine.buildModel(null, GF_HEAD + gfLinks(2) + '\n', lib);
   assert.deepEqual(engine.planDrivers(m, {}, [], 'HUB-G').proposals.map((x) => x.typeRef), ['T-STD-01']);
 });
@@ -523,8 +528,8 @@ test('an emergency type loses a tie to an ordinary one', () => {
 test('forward voltage alone can drive the count on real-shaped ratings', () => {
   // 5 × 11.8W/35fV cables: 59W fits one 50W... no - but fV is the tighter one,
   // 55fV a node means one cable per node, so it takes three 2CH drivers.
-  const lib = 'ElementTypeRef,Driver Restrictions,Node Restrictions,Channels\nT-CC,50W | 0.3A,55fV,2\n';
-  const body = [...Array(5)].map((_, i) => `L${i + 1},HUB-G,11.8,0.3,35,CC,CG1`).join('\n');
+  const lib = ctDali('ElementTypeRef,Driver Restrictions,Node Restrictions,Channels\nT-CC,50W | 0.3A,55fV,2\n');
+  const body = [...Array(5)].map((_, i) => `L${i + 1},HUB-G,11.8,0.3,35,CC,CG1,DALI`).join('\n');
   const p = engine.planDrivers(engine.buildModel(null, GF_HEAD + body + '\n', lib), {}, [], 'HUB-G');
   assert.equal(p.drivers.length, 3);
   assert.deepEqual(p.unplaced, []);
@@ -533,13 +538,13 @@ test('forward voltage alone can drive the count on real-shaped ratings', () => {
 // ---- driver type presets: patched or invented in the UI ----
 const preset = (over = {}) => ({
   typeRef: 'T100', powerType: 'CC', maxPowerW: 100, currentA: 0.35,
-  channels: 2, nodeMaxLoadW: 100, nodeMaxFvV: 55, invented: false, ...over,
+  channels: 2, nodeMaxLoadW: 100, nodeMaxFvV: 55, controlType: 'DALI', invented: false, ...over,
 });
 
 test('a preset overrides the library and re-rates existing drivers of that type', () => {
   // TBIG declares only "185W": no CC/CV, no current, no fV. The hub has a driver
   // of that type, and it stays unusable until a human says what it is.
-  const lib = `${GF_TYPES}TBIG,185W,,1\n`;
+  const lib = `${GF_TYPES}TBIG,185W,,1,DALI\n`;
   const form = 'Pullzone,ElementRef,ElementTypeRef,Node,ToEntityType,ToEntityRefs\nHUB-G,E1,TBIG,OP.1,,\n';
   const links = GF_HEAD + gfLinks(2) + '\n';
   const before = engine.buildModel(form, links, lib);
@@ -557,7 +562,7 @@ test('a preset overrides the library and re-rates existing drivers of that type'
 });
 
 test('a preset rescues a bucket that no library type could take', () => {
-  const links = GF_HEAD + [...Array(3)].map((_, i) => `L${i + 1},HUB-G,20,1.05,10,CC,CG1`).join('\n') + '\n';
+  const links = GF_HEAD + [...Array(3)].map((_, i) => `L${i + 1},HUB-G,20,1.05,10,CC,CG1,DALI`).join('\n') + '\n';
   const bare = engine.planDrivers(engine.buildModel(null, links, GF_TYPES), {}, [], 'HUB-G');
   assert.equal(bare.unmatched.length, 1);           // 1.05A cables, 0.35A library
   assert.deepEqual(bare.drivers, []);
@@ -622,8 +627,8 @@ test('presets nobody uses are not patched, and no presets means the old script e
 });
 
 test('a preset keeps the type\'s own node names - Parameters must not rename outputs', () => {
-  const lib = 'ElementTypeRef,Node,Driver Restrictions,Node Restrictions\n'
-    + 'T-ODD,A,50W | 0.35A,55fV\nT-ODD,B,50W | 0.35A,55fV\n';
+  const lib = ctDali('ElementTypeRef,Node,Driver Restrictions,Node Restrictions\n'
+    + 'T-ODD,A,50W | 0.35A,55fV\nT-ODD,B,50W | 0.35A,55fV\n');
   const m = engine.buildModel(null, GF_HEAD + gfLinks(2) + '\n', lib,
     [preset({ typeRef: 'T-ODD', nodeNames: ['A', 'B'] })]);
   assert.deepEqual(m.inventory.find((t) => t.typeRef === 'T-ODD').nodes.map((n) => n.name), ['A', 'B']);
@@ -638,7 +643,7 @@ test('catalogue parts are addable and patch their datasheet columns', () => {
   assert.equal(local.stem, 'ET-CVR-S-24-1CH');  // unswitched is -S-, not derivable
 
   // an empty library still gets a usable type out of the catalogue
-  const links = GF_HEAD + [...Array(4)].map((_, i) => `L${i + 1},HUB-G,6,0.3,25,CC,CG1`).join('\n') + '\n';
+  const links = GF_HEAD + [...Array(4)].map((_, i) => `L${i + 1},HUB-G,6,0.3,25,CC,CG1,DALI`).join('\n') + '\n';
   const p = {
     typeRef: 'ET-CCR-D-300-1CH-01', name: solo.name, powerType: 'CC', maxPowerW: solo.maxPowerW,
     currentA: 0.3, outputs: solo.outputs, addresses: solo.addresses, nodeMaxFvV: solo.maxFvV,
@@ -705,7 +710,7 @@ test('mA notation parses as amps - a unit variation is not missing data', () => 
   assert.equal(engine.parseDriverRestrictions('180W | 24V').outputVoltageV, 24);
 
   // and such a type is now a sizing candidate rather than silently refused
-  const lib = 'ElementTypeRef,Driver Restrictions,Node Restrictions,Channels\nT-MA,50W | 350mA,50W | 55fV,2\n';
+  const lib = ctDali('ElementTypeRef,Driver Restrictions,Node Restrictions,Channels\nT-MA,50W | 350mA,50W | 55fV,2\n');
   const m = engine.buildModel(null, GF_HEAD + gfLinks(2) + '\n', lib);
   assert.equal(m.inventory[0].currentA, 0.35);
   assert.deepEqual(engine.planDrivers(m, {}, [], 'HUB-G').unmatched, []);
@@ -721,8 +726,8 @@ test('names travel with the refs, and are optional', () => {
   assert.equal(m.inventory.find((t) => t.typeRef === 'T100').name, 'DualDrive 560/A');
 
   // the library's own name wins, and a CSV without the columns still parses
-  const named = 'ElementTypeRef,ElementTypeName,Driver Restrictions,Node Restrictions,Channels\n'
-    + 'T100,DualDrive 560/A,100W | 0.35A,100W | 55fV,2\n';
+  const named = ctDali('ElementTypeRef,ElementTypeName,Driver Restrictions,Node Restrictions,Channels\n'
+    + 'T100,DualDrive 560/A,100W | 0.35A,100W | 55fV,2\n');
   assert.equal(engine.buildModel(null, GF_HEAD + gfLinks(1) + '\n', named).inventory[0].name, 'DualDrive 560/A');
   assert.equal(engine.buildModel(null, GF_HEAD + gfLinks(1) + '\n', GF_TYPES).inventory[0].name, '');
 });
@@ -730,9 +735,9 @@ test('names travel with the refs, and are optional', () => {
 // ---- third mode: estimate from a requirement assessment (DJ 100053) ----
 const ASSESS_HEAD = 'Link_SecondaryPowerRef,LocationName,ControlTypeRef,ControlGrouptext,'
   + 'PositionTypeRef,SumQuantity,ControlAddressCount,CC/CV,CV_Voltage,CC_Current,SumVf,SumPower\n';
-const EST_TYPES = 'ElementTypeRef,ElementTypeName,Driver Restrictions,Node Restrictions,Channels\n'
-  + 'ET-CCR-D-350-2CH-01,EldoLED DualDrive 560/A,50W | 0.35A,55fV,2\n'
-  + 'ET-CVR-D-24-2CH-01,EldoLED LinearDrive 220D,185W | 24V,,2\n';
+const EST_TYPES = ('ElementTypeRef,ElementTypeName,Driver Restrictions,Node Restrictions,Channels,ControlType\n'
+  + 'ET-CCR-D-350-2CH-01,EldoLED DualDrive 560/A,50W | 0.35A,55fV,2,DALI\n'
+  + 'ET-CVR-D-24-2CH-01,EldoLED LinearDrive 220D,185W | 24V,,2,DALI\n');
 // 40 downlights, 3W and 12fV each
 const DL40 = 'P50447,Study,DALI,CG1,PT-DL,40,1,CC,,0.35,480,120\n';
 
@@ -843,11 +848,11 @@ test('a links CSV with a header and no cables parses, then names what is missing
 });
 
 test('a type library may state the ElementTypes columns instead of the composed string', () => {
-  const explicit = 'ElementTypeRef,ElementTypeName,MaxPower(W),CurrentRange,OutputVoltage(V),'
+  const explicit = ctDali('ElementTypeRef,ElementTypeName,MaxPower(W),CurrentRange,OutputVoltage(V),'
     + 'NodeMaxPower(W),NodeMaxForwardVoltage(fV),ControlType,BallastCountPerUoM,Channels\n'
-    + 'ET-CCR-D-350-2CH-01,EldoLED DualDrive 560/A,50,0.35,,,55,DALI,2,2\n';
-  const composed = 'ElementTypeRef,ElementTypeName,Driver Restrictions,Node Restrictions,Channels\n'
-    + 'ET-CCR-D-350-2CH-01,EldoLED DualDrive 560/A,50W | 0.35A,55fV,2\n';
+    + 'ET-CCR-D-350-2CH-01,EldoLED DualDrive 560/A,50,0.35,,,55,DALI,2,2\n');
+  const composed = ctDali('ElementTypeRef,ElementTypeName,Driver Restrictions,Node Restrictions,Channels\n'
+    + 'ET-CCR-D-350-2CH-01,EldoLED DualDrive 560/A,50W | 0.35A,55fV,2\n');
   const a = engine.parseTypes(explicit)[0];
   const b = engine.parseTypes(composed)[0];
   for (const k of ['typeRef', 'name', 'powerType', 'maxPowerW', 'currentA', 'driverRestrictions']) {
@@ -875,9 +880,9 @@ test('the estimate ranks types by ITS count, not by watts', () => {
   // node. So a 2CH part holds the pair on one driver and a 1CH part of the same
   // wattage needs two. Ranking on watts prefers the 1CH (less wasted capacity)
   // and doubles the estimate - real data at P50446 went 12 drivers instead of 7.
-  const types = 'ElementTypeRef,ElementTypeName,MaxPower(W),CurrentRange,NodeMaxForwardVoltage(fV),Channels\n'
+  const types = ctDali('ElementTypeRef,ElementTypeName,MaxPower(W),CurrentRange,NodeMaxForwardVoltage(fV),Channels\n'
     + 'ET-1CH,SoloDrive,30,0.3,55,1\n'
-    + 'ET-2CH,DualDrive,50,0.3,55,2\n';
+    + 'ET-2CH,DualDrive,50,0.3,55,2\n');
   const rows = ASSESS_HEAD + 'P50446,Drawing Rooms,DALI,L103-H-03,B02w,2,1,CC,,0.3,70,23.6\n';
   const m = engine.buildEstimate(rows, types);
 
@@ -896,13 +901,13 @@ test('the estimate ranks types by ITS count, not by watts', () => {
   assert.equal(early.count, 2);
 
   // and with only the 1CH part available either setting answers the same way
-  const only1 = 'ElementTypeRef,MaxPower(W),CurrentRange,NodeMaxForwardVoltage(fV),Channels\nET-1CH,30,0.3,55,1\n';
+  const only1 = ctDali('ElementTypeRef,MaxPower(W),CurrentRange,NodeMaxForwardVoltage(fV),Channels\nET-1CH,30,0.3,55,1\n');
   assert.equal(engine.estimate(engine.buildEstimate(rows, only1), { margin: 0.05 })[0].lines[0].count, 2);
 });
 
 test('each constraint is a coarser bucket, and coarser means more drivers', () => {
-  const types = 'ElementTypeRef,MaxPower(W),CurrentRange,NodeMaxForwardVoltage(fV),Channels\n'
-    + 'ET-2CH,50,0.3,55,2\n';
+  const types = ctDali('ElementTypeRef,MaxPower(W),CurrentRange,NodeMaxForwardVoltage(fV),Channels\n'
+    + 'ET-2CH,50,0.3,55,2\n');
   // same current, same hub: two fitting types, two ControlGroups, two rooms
   const rows = ASSESS_HEAD
     + 'P1,Study,DALI,CG1,B02w,1,1,CC,,0.3,20,11.8\n'
@@ -919,15 +924,15 @@ test('each constraint is a coarser bucket, and coarser means more drivers', () =
 test('preferring a single output never reaches for an emergency driver', () => {
   // A 1-output EM part and a 2-output ordinary one, both able to take the work.
   // Wanting single outputs must not be enough to choose the emergency stock.
-  const types = 'ElementTypeRef,MaxPower(W),CurrentRange,NodeMaxForwardVoltage(fV),Channels\n'
+  const types = ctDali('ElementTypeRef,MaxPower(W),CurrentRange,NodeMaxForwardVoltage(fV),Channels\n'
     + 'ET-CCR-D-300-1CH-EM-01,30,0.3,55,1\n'
-    + 'ET-CCR-D-300-2CH-01,50,0.3,55,2\n';
+    + 'ET-CCR-D-300-2CH-01,50,0.3,55,2\n');
   const rows = ASSESS_HEAD + 'P1,Study,DALI,CG1,B02w,2,1,CC,,0.3,70,23.6\n';
   const [z] = engine.estimate(engine.buildEstimate(rows, types), { margin: 0.05 });
   assert.equal(z.lines[0].typeRef, 'ET-CCR-D-300-2CH-01');
 
   // with an ordinary single-output part available, that one wins
-  const withPlain = types + 'ET-CCR-D-300-1CH-01,30,0.3,55,1\n';
+  const withPlain = types + 'ET-CCR-D-300-1CH-01,30,0.3,55,1,DALI\n';
   assert.equal(
     engine.estimate(engine.buildEstimate(rows, withPlain), { margin: 0.05 })[0].lines[0].typeRef,
     'ET-CCR-D-300-1CH-01',
@@ -939,11 +944,11 @@ test('a preset on an existing type keeps what the DesignDB said', () => {
   // preset supplies the real ratings, and both have to survive: sizing needs
   // the preset, and the page must be able to show the design's own numbers
   // rather than quietly showing ours in their place.
-  const lib = 'ElementTypeRef,ElementTypeName,MaxPower(W),Channels\n'
-    + 'ET-CCR-D-1050-1CH-01,EldoLED SOLODrive 360/A at 1050mA,185,1\n';
-  const links = GF_HEAD + [...Array(3)].map((_, i) => `L${i + 1},HUB-G,9,1.05,18,CC,CG1`).join('\n') + '\n';
+  const lib = ctDali('ElementTypeRef,ElementTypeName,MaxPower(W),Channels\n'
+    + 'ET-CCR-D-1050-1CH-01,EldoLED SOLODrive 360/A at 1050mA,185,1\n');
+  const links = GF_HEAD + [...Array(3)].map((_, i) => `L${i + 1},HUB-G,9,1.05,18,CC,CG1,DALI`).join('\n') + '\n';
   const p = { typeRef: 'ET-CCR-D-1050-1CH-01', powerType: 'CC', maxPowerW: 30, currentA: 1.05,
-    outputs: 1, addresses: 1, nodeMaxFvV: 55, invented: false };
+    outputs: 1, addresses: 1, nodeMaxFvV: 55, controlType: 'DALI', invented: false };
   const m = engine.buildModel(null, links, lib, [p]);
   const t = m.inventory.find((x) => x.typeRef === 'ET-CCR-D-1050-1CH-01');
 
@@ -1105,18 +1110,18 @@ test('every sheet the script opens is one it actually writes to', () => {
 });
 
 test('a project with no driver attributes anywhere is an onboarding, not a fault', () => {
-  const bare = 'ElementTypeRef,ElementTypeName,Channels\n'
+  const bare = ctDali('ElementTypeRef,ElementTypeName,Channels\n'
     + 'ET-CCR-D-350-1CH-01,EldoLED - SoloDrive 360/A,1\n'
-    + 'ET-CVR-D-24-2CH-01,EldoLED - LIN200D-D2Z2D & Meanwell HLG-185-24,2\n';
+    + 'ET-CVR-D-24-2CH-01,EldoLED - LIN200D-D2Z2D & Meanwell HLG-185-24,2\n');
   const m = engine.buildModel(null, GF_HEAD + gfLinks(1) + '\n', bare);
   assert.equal(engine.needsSetup(m), true);
   assert.equal(engine.statedAttributes(m.inventory[0]), 0);
 
   // one type stating one thing means somebody has started: an ordinary gap now,
   // for the types page to flag, not a whole-project onboarding
-  const started = 'ElementTypeRef,ElementTypeName,Channels,MaxPower(W)\n'
+  const started = ctDali('ElementTypeRef,ElementTypeName,Channels,MaxPower(W)\n'
     + 'ET-CCR-D-350-1CH-01,EldoLED - SoloDrive 360/A,1,30\n'
-    + 'ET-CVR-D-24-2CH-01,EldoLED - LIN200D-D2Z2D & Meanwell HLG-185-24,2,\n';
+    + 'ET-CVR-D-24-2CH-01,EldoLED - LIN200D-D2Z2D & Meanwell HLG-185-24,2,\n');
   const m2 = engine.buildModel(null, GF_HEAD + gfLinks(1) + '\n', started);
   assert.equal(engine.needsSetup(m2), false);
   assert.ok(engine.statedAttributes(m2.inventory.find((t) => t.typeRef === 'ET-CCR-D-350-1CH-01')) > 0);
@@ -1175,9 +1180,9 @@ test('the patch sweeps the banned colon out of LinksMap across the whole sheet',
 });
 
 test('a banned node name is spotted wherever the type states it', () => {
-  const types = 'ElementTypeRef,Node,Driver Restrictions,Node Restrictions\n'
+  const types = ctDali('ElementTypeRef,Node,Driver Restrictions,Node Restrictions\n'
     + 'ET-CVR-D-24-1CH-01,OP.1:2,185W | 24V,\n'
-    + 'ET-CCR-D-350-1CH-01,OP.1,30W | 0.35A,55fV\n';
+    + 'ET-CCR-D-350-1CH-01,OP.1,30W | 0.35A,55fV\n');
   const m = engine.buildModel(null, GF_HEAD + gfLinks(1) + '\n', types);
   const found = engine.bannedNodes(m);
   assert.equal(found.length, 1);
@@ -1190,9 +1195,9 @@ test('a banned node name is spotted wherever the type states it', () => {
 test('a ballast count alone does not mean the project has been filled in', () => {
   // set 109311's shape: every driver type carries BallastCountPerUoM and a
   // ControlType, and not one electrical rating. That is an unfilled project.
-  const types = 'ElementTypeRef,ElementTypeName,BallastCountPerUoM,ControlType,Channels\n'
+  const types = ('ElementTypeRef,ElementTypeName,BallastCountPerUoM,ControlType,Channels\n'
     + 'ET-CCR-D-1CH-500-01,EldoLED - SoloDrive 360/A,1,DALI,1\n'
-    + 'ET-CVR-D-24-2CH-01,EldoLED - LIN200D-D2Z2D,2,DALI,2\n';
+    + 'ET-CVR-D-24-2CH-01,EldoLED - LIN200D-D2Z2D,2,DALI,2\n');
   const m = engine.buildModel(null, GF_HEAD + gfLinks(1) + '\n', types);
   assert.equal(engine.statedAttributes(m.inventory[0]), 0);
   assert.equal(engine.needsSetup(m), true);
@@ -1220,10 +1225,10 @@ test('the mA in a CC ref is found wherever the project puts it', () => {
 test('control gear is not a driver type, however the host sends it', () => {
   // the library filter lets a Crestron DIN module through - it has '<' nodes - 
   // but its nodes are DALI B 1 / CRESNET, not LED outputs
-  const types = 'ElementTypeRef,Node,Driver Restrictions,ElementTypeName\n'
+  const types = ctDali('ElementTypeRef,Node,Driver Restrictions,ElementTypeName\n'
     + 'ET-CCR-D-1CH-500-01,OP.01,,EldoLED - SoloDrive 360/A\n'
     + 'ET-MOD-DALI,DALI B 1,,Crestron - DIN-DLI\n'
-    + 'ET-PROCESSOR-C,CRESNET,,Crestron - DIN-AP4\n';
+    + 'ET-PROCESSOR-C,CRESNET,,Crestron - DIN-AP4\n');
   const m = engine.buildModel(null, GF_HEAD + gfLinks(1) + '\n', types);
   assert.equal(m.inventory.length, 3, 'all three arrive');
   assert.deepEqual(engine.driverTypes(m).map((t) => t.typeRef), ['ET-CCR-D-1CH-500-01']);
@@ -1232,10 +1237,10 @@ test('control gear is not a driver type, however the host sends it', () => {
 });
 
 test('a project-wide library is filled in from its names and refs alone', () => {
-  const types = 'ElementTypeRef,Node,Driver Restrictions,ElementTypeName\n'
+  const types = ctDali('ElementTypeRef,Node,Driver Restrictions,ElementTypeName\n'
     + 'ET-CCR-D-1CH-500-01,OP.01,,EldoLED - SoloDrive 360/A\n'
     + 'ET-CVR-D-24-2CH-01,OP.01,,EldoLED - LinDrive 200D & Meanwell HLG-185-24\n'
-    + 'ET-CVR-D-24-2CH-01,OP.02,,EldoLED - LinDrive 200D & Meanwell HLG-185-24\n';
+    + 'ET-CVR-D-24-2CH-01,OP.02,,EldoLED - LinDrive 200D & Meanwell HLG-185-24\n');
   const m = engine.buildModel(null, GF_HEAD + gfLinks(1) + '\n', types);
   const { ready, asks } = tf.autoFillable(engine.driverTypes(m), engine.resolveSpec);
   assert.equal(asks.length, 0, 'the Name names the supply and the Ref names the current');
@@ -1250,9 +1255,9 @@ test('a project-wide library is filled in from its names and refs alone', () => 
 
 test('a ref and a name that disagree about the current are asked about, not guessed', () => {
   // branch 10568 has ET-CCR-D-350-1CH-01 named "SOLODrive 360/A, set to 500mA"
-  const types = 'ElementTypeRef,ElementTypeName,Channels\n'
+  const types = ctDali('ElementTypeRef,ElementTypeName,Channels\n'
     + 'ET-CCR-D-350-1CH-01,"EldoLED - SOLODrive 360/A, set to 500mA",1\n'
-    + 'ET-CCR-D-500-1CH-01,"EldoLED - SOLODrive 360/A, set to 500mA",1\n';
+    + 'ET-CCR-D-500-1CH-01,"EldoLED - SOLODrive 360/A, set to 500mA",1\n');
   const m = engine.buildModel(null, GF_HEAD + gfLinks(1) + '\n', types);
   const { ready, asks } = tf.autoFillable(engine.driverTypes(m), engine.resolveSpec);
   assert.deepEqual(ready.map((r) => r.t.typeRef), ['ET-CCR-D-500-1CH-01']);
@@ -1263,8 +1268,8 @@ test('a ref and a name that disagree about the current are asked about, not gues
 test('a driver type with no Parameters at all is still a driver to fill in', () => {
   // branch 10568: every driver type has an empty Parameters column, which is
   // exactly what onboarding exists to fix - so they must not be filtered out
-  const types = 'ElementTypeRef,ElementTypeName,Channels\n'
-    + 'ET-CVR-D-24-2CH-01,"EldoLED - LinDrive 220D & Meanwell - HLG-185-24",1\n';
+  const types = ctDali('ElementTypeRef,ElementTypeName,Channels\n'
+    + 'ET-CVR-D-24-2CH-01,"EldoLED - LinDrive 220D & Meanwell - HLG-185-24",1\n');
   const m = engine.buildModel(null, GF_HEAD + gfLinks(1) + '\n', types);
   assert.equal(engine.driverTypes(m).length, 1, 'a synthesised OP.1 node still reads as a driver');
   assert.equal(engine.needsSetup(m), true);
