@@ -1306,3 +1306,20 @@ test('estimate never sizes a DALI fitting onto a Local driver', () => {
   const { lines } = engine.planFromRequirements(model, 'Z');
   assert.equal(lines[0].typeRef, 'DALI-SMALL');
 });
+
+test('keeping groups apart per output lets one driver carry both, one on each output', () => {
+  const types = ctDali('ElementTypeRef,MaxPower(W),CurrentRange,NodeMaxForwardVoltage(fV),Channels\n'
+    + 'ET-CCR-D-300-2CH-01,50,0.3,55,2\n');
+  const rows = ASSESS_HEAD + 'P1,Study,DALI,CG1,B02w,1,1,CC,,0.3,35,11.8\n'
+    + 'P1,Study,DALI,CG2,B02w,1,1,CC,,0.3,35,11.8\n';
+  const m = engine.buildEstimate(rows, types);
+  const perDriver = engine.estimate(m, { margin: 0.05, preferSingleOutput: false })[0];
+  assert.equal(perDriver.drivers, 2);                 // one group per driver
+  const perOutput = engine.estimate(m, { margin: 0.05, preferSingleOutput: false,
+    restrictControlGroup: false, nodeControlGroup: true })[0];
+  assert.equal(perOutput.drivers, 1);                 // a group per output
+  assert.equal(perOutput.lines[0].outputs, 2);
+  const loose = engine.estimate(m, { margin: 0.05, preferSingleOutput: false,
+    restrictControlGroup: false })[0];
+  assert.equal(loose.drivers, 1);
+});

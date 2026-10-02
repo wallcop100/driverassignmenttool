@@ -6,6 +6,7 @@ import HubLayoutLab from './components/HubLayoutLab.jsx';
 import PanelLayout from './lcp/PanelLayout.jsx';
 import TypesPage from './components/TypesPage.jsx';
 import ErrorBoundary from './components/ErrorBoundary.jsx';
+import BugReporter from './components/BugReporter.jsx';
 import EstimatePage from './components/EstimatePage.jsx';
 import ImportScreen from './components/ImportScreen.jsx';
 import Landing from './components/Landing.jsx';
@@ -255,6 +256,12 @@ export default function App({ domain = driversDomain }) {
         {screen}
       </ErrorBoundary>
       </div>
+      <BugReporter screen={state.view.page}
+        getApp={() => ({
+          zone: state.view.zone,
+          counts: model ? { drivers: model.drivers.length, links: model.links.length,
+            requirements: (model.requirements || []).length, assigned: Object.keys(assignments).length } : undefined,
+        })} />
       {state.demo && model && <Tutorial dispatch={dispatch} view={state.view} />}
     </LabelContext.Provider>
     </DomainProvider>

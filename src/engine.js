@@ -1032,6 +1032,12 @@ export function planFromRequirements(model, zone, opts = {}) {
     splitByLocation = false,
     preferSingleOutput = true,
     margin = 0.05,
+    // Per OUTPUT: the same three rules, one level down. A driver may carry
+    // several groups, types or rooms so long as each sits on its own output. A
+    // rule already kept separate per driver is implied here.
+    nodeControlGroup = false,
+    nodeSplitByType = false,
+    nodeSplitByLocation = false,
   } = opts;
   const keep = 1 - margin;
   const rows = (model.requirements || []).filter((r) => r.zone === zone && !!r.powerType);
@@ -1060,9 +1066,26 @@ export function planFromRequirements(model, zone, opts = {}) {
     // difference between this and packing cables.
     const units = group.map((r) => ({ ...r, loadW: r.wPer, fvV: r.fvPer }));
     const qty = group.reduce((n, r) => n + r.qty, 0);
-    const wPer = Math.max(...group.map((r) => r.wPer));
-    const fvPer = Math.max(...group.map((r) => r.fvPer ?? 0));
     const totalW = group.reduce((w, r) => w + r.loadW, 0);
+
+    // Per-output rules split the driver's rows into runs that each need their
+    // own output. Only dimensions not already split per driver can differ here.
+    const subs = new Map();
+    for (const r of group) {
+      const k = [
+        !restrictControlGroup && nodeControlGroup ? (r.controlGroup || '-') : null,
+        !splitByType && nodeSplitByType ? (r.positionType || '-') : null,
+        !splitByLocation && nodeSplitByLocation ? (r.location || '-') : null,
+      ].join('\u0001');
+      if (!subs.has(k)) subs.set(k, []);
+      subs.get(k).push(r);
+    }
+    const runs = [...subs.values()].map((rs) => ({
+      qty: rs.reduce((n, r) => n + r.qty, 0),
+      wPer: Math.max(...rs.map((r) => r.wPer)),
+      fvPer: Math.max(...rs.map((r) => r.fvPer ?? 0)),
+    }));
+    const wPer = Math.max(...runs.map((r) => r.wPer));
 
     // Rank candidates by the count THIS arithmetic gives, not by pickType's,
     // which ranks on watts. When forward voltage binds - and it usually does - 
@@ -1072,20 +1095,45 @@ export function planFromRequirements(model, zone, opts = {}) {
     let best = null;
     for (const t of sizingCandidates(model.inventory, units)) {
       const node = t.nodes[0] ?? {};
-      const perNodeFv = fvPer > 0 && node.maxFvV != null
-        ? Math.floor((node.maxFvV * keep) / fvPer) : Infinity;
-      const perNodeW = node.maxLoadW != null
-        ? Math.floor((node.maxLoadW * keep) / wPer) : Infinity;
-      const perNode = Math.min(perNodeFv, perNodeW);
-      const perDriverW = Math.floor((t.maxPowerW * keep) / wPer);
-      const perDriver = Math.min(perNode * t.nodes.length, perDriverW);
-      if (!(perDriver > 0)) continue;
+      const fit = (run) => {
+        const perNodeFv = run.fvPer > 0 && node.maxFvV != null
+          ? Math.floor((node.maxFvV * keep) / run.fvPer) : Infinity;
+        const perNodeW = node.maxLoadW != null
+          ? Math.floor((node.maxLoadW * keep) / run.wPer) : Infinity;
+        return { perNodeFv, perNodeW, perNode: Math.min(perNodeFv, perNodeW),
+          perDriverW: Math.floor((t.maxPowerW * keep) / run.wPer) };
+      };
+      const f = fit({ wPer, fvPer: Math.max(...runs.map((r) => r.fvPer)) });
+      const { perNodeFv, perNodeW, perNode, perDriverW } = f;
+      let perDriver;
+      let count;
+      let outputs;
+      if (runs.length === 1) {
+        perDriver = Math.min(perNode * t.nodes.length, perDriverW);
+        if (!(perDriver > 0)) continue;
+        count = Math.ceil(qty / perDriver);
+        outputs = Math.ceil(qty / Math.min(perNode, perDriverW));
+      } else {
+        // each run needs whole outputs of its own; the driver count follows
+        outputs = 0;
+        let usable = true;
+        for (const run of runs) {
+          const x = fit(run);
+          const per = Math.min(x.perNode, x.perDriverW);
+          if (!(per > 0)) { usable = false; break; }
+          outputs += Math.ceil(run.qty / per);
+        }
+        if (!usable) continue;
+        count = Math.max(Math.ceil(outputs / t.nodes.length),
+          Math.ceil(totalW / (t.maxPowerW * keep)));
+        perDriver = Math.ceil(qty / count);
+      }
 
-      const count = Math.ceil(qty / perDriver);
       const cand = {
         t,
         count,
         perDriver,
+        outputs,
         perNode: Number.isFinite(perNode) ? perNode : null,
         em: isEmergency(t.typeRef) ? 1 : 0,
         waste: count * t.maxPowerW * keep - totalW,
@@ -1121,6 +1169,7 @@ export function planFromRequirements(model, zone, opts = {}) {
       count: best.count,
       qty,
       perDriver: best.perDriver,
+      outputs: best.outputs,
       perNode: best.perNode,
       limit: best.limit,
       loadW: totalW,

@@ -27,6 +27,9 @@ export const DEFAULT_PREFS = {
   margin: 0.05,
   splitByType: true,
   splitByLocation: false,
+  nodeControlGroup: false,   // the same three rules, kept apart per output
+  nodeSplitByType: false,
+  nodeSplitByLocation: false,
   preferSingleOutput: true,
   snapMm: 5,            // resize grid in the space layout
 };
