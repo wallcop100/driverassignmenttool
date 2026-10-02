@@ -31,6 +31,7 @@ export const DEFAULT_PREFS = {
   nodeSplitByType: false,
   nodeSplitByLocation: false,
   preferSingleOutput: true,
+  allowLocal: false,    // Local control type drivers: left out of sizing, flagged in a hub
   snapMm: 5,            // resize grid in the space layout
 };
 
@@ -204,12 +205,12 @@ export function reducer(state, action) {
     }
 
     case 'ADD_DRIVER': {
-      const { typeRef, zone } = action;
+      const { typeRef, zone, quantity = 1 } = action;
       const taken = new Set([
         ...state.model.drivers.map((d) => d.ref),
         ...state.addedDrivers.map((d) => d.ref),
       ]);
-      const ref = nextDriverRef(taken);
+      const n = Math.max(1, Math.floor(quantity) || 1);
       // A type invented from the datasheet is a preset first: the model is
       // rebuilt from presets in an effect, so "Create and add" dispatches
       // SET_PRESET and lands here before the inventory has heard of it. Reading
@@ -218,13 +219,16 @@ export function reducer(state, action) {
         ?? (state.presets[typeRef] ? presetToType(state.presets[typeRef]) : null);
       if (!template) return state;
       const assignments = cloneAssignments(state.assignments);
-      for (const node of template.nodes ?? []) {
-        assignments[keyOf(ref, node.name)] = { toEntityType: '', refs: [] };
+      const added = [];
+      for (let i = 0; i < n; i += 1) {
+        const ref = nextDriverRef(taken);
+        taken.add(ref);
+        for (const node of template.nodes ?? []) {
+          assignments[keyOf(ref, node.name)] = { toEntityType: '', refs: [] };
+        }
+        added.push({ ref, typeRef, zone });
       }
-      return withUndo(state, {
-        assignments,
-        addedDrivers: [...state.addedDrivers, { ref, typeRef, zone }],
-      });
+      return withUndo(state, { assignments, addedDrivers: [...state.addedDrivers, ...added] });
     }
 
     // Removing a driver is two different things. One added here has no row in

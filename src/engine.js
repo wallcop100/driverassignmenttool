@@ -517,7 +517,7 @@ function materializeAdded(ctx, added) {
 }
 const effectiveDrivers = (ctx, added) => [...ctx.model.drivers, ...materializeAdded(ctx, added)];
 
-function validateDriver(ctx, assignments, driver) {
+function validateDriver(ctx, assignments, driver, opts = {}) {
   const flags = [];
   const flag = (level, check, message, node = null, link = null) =>
     flags.push({ driver: driver.ref, node, link, level, check, message });
@@ -529,6 +529,11 @@ function validateDriver(ctx, assignments, driver) {
     perNode[node.name] = refs.filter((r) => ctx.linksByRef[r]).map((r) => ctx.linksByRef[r]);
     const unknown = refs.filter((r) => !ctx.linksByRef[r]);
     if (unknown.length) flag('WARN', 'EntityLoad', `no load data for ${unknown.join(', ')} (not in Links CSV)`, node.name);
+  }
+  // A Local driver in a hub is flagged whether or not it has cables yet
+  const ct = driver.controlType ?? ctx.inventoryByType[driver.typeRef]?.controlType;
+  if (!opts.allowLocal && isLocal(ct)) {
+    flag('WARN', 'ControlType', `${driver.typeRef} is a Local control type driver`);
   }
   const allLinks = Object.values(perNode).flat();
   if (!allLinks.length) return flags;
@@ -624,9 +629,9 @@ function validateDriver(ctx, assignments, driver) {
   return flags;
 }
 
-export function validate(model, assignments, added) {
+export function validate(model, assignments, added, opts = {}) {
   const ctx = makeCtx(model);
-  return effectiveDrivers(ctx, added).flatMap((d) => validateDriver(ctx, assignments || {}, d));
+  return effectiveDrivers(ctx, added).flatMap((d) => validateDriver(ctx, assignments || {}, d, opts));
 }
 
 export function fingerprintCompatible(link, driver) {
@@ -908,6 +913,7 @@ const fpKey = (l) => (l.powerType === 'CC' ? `CC·${g(l.currentA ?? 0)}A` : `CV�
 // address. A blank on either side is a mismatch: we cannot show it fits.
 const ctKey = (v) => String(v ?? '').trim().toLowerCase();
 const controlTypeOk = (l, t) => !!ctKey(l.controlType) && ctKey(l.controlType) === ctKey(t.controlType);
+const isLocal = (v) => ctKey(v) === 'local';
 const sum = (xs) => xs.reduce((a, b) => a + b, 0);
 
 // Emergency drivers are stock for the emergency circuit, not spare capacity - 
@@ -922,8 +928,10 @@ const isEmergency = (ref) => /(^|[-_ ])EM([-_ ]|\d|$)/i.test(String(ref));
 // win every bucket (most watts, no fV ceiling, so always the fewest drivers).
 // It is still fine to *hold* cables (validation only warns); it is not fine to
 // recommend buying one.
-function sizingCandidates(inventory, links) {
+function sizingCandidates(inventory, links, allowLocal = false) {
   return inventory.filter((t) => {
+    // Local (switched, unaddressed) stock is off the table unless asked for
+    if (!allowLocal && isLocal(t.controlType)) return false;
     if (!t.powerType || t.maxPowerW == null || !t.nodes.length) return false;
     if (t.powerType === 'CC' && t.currentA == null) return false;
     if (t.powerType === 'CV' && t.outputVoltageV == null) return false;
@@ -939,14 +947,14 @@ function sizingCandidates(inventory, links) {
 // fewest drivers → ordinary before emergency → least wasted capacity
 const betterFit = (a, b) => a.count - b.count || a.em - b.em || a.waste - b.waste;
 
-function pickType(inventory, links, margin) {
+function pickType(inventory, links, margin, allowLocal = false) {
   const keep = (1 - margin);
   const totalW = sum(links.map((l) => l.loadW ?? 0));
   const totalFv = sum(links.map((l) => l.fvV ?? 0));
   const maxW = Math.max(...links.map((l) => l.loadW ?? 0));
   const maxFv = Math.max(...links.map((l) => l.fvV ?? 0));
   let best = null;
-  for (const t of sizingCandidates(inventory, links)) {
+  for (const t of sizingCandidates(inventory, links, allowLocal)) {
     const nodeW = Math.min(...t.nodes.map((n) => n.maxLoadW ?? Infinity), t.maxPowerW) * keep;
     const nodeFv = Math.min(...t.nodes.map((n) => n.maxFvV ?? Infinity)) * keep;
     if (maxW > nodeW || maxFv > nodeFv) continue;
@@ -965,7 +973,7 @@ function pickType(inventory, links, margin) {
 // derated ratings) with a retry: mixed cable sizes can defeat the estimate, so
 // if the packer leaves anything over, add a driver and pack again.
 export function planDrivers(model, assignments, added, zone, opts = {}) {
-  const { restrictControlGroup = true, margin = 0.05 } = opts;
+  const { restrictControlGroup = true, margin = 0.05, allowLocal = false } = opts;
   const ctx = makeCtx(model);
   const a = assignments || {};
   const assigned = new Set(Object.values(a).flatMap((e) => e.refs || []));
@@ -989,7 +997,7 @@ export function planDrivers(model, assignments, added, zone, opts = {}) {
   const unmatched = [];
 
   for (const [key, links] of [...buckets.entries()].sort()) {
-    const choice = pickType(ctx.model.inventory, links, margin);
+    const choice = pickType(ctx.model.inventory, links, margin, allowLocal);
     if (!choice) { unmatched.push({ key, count: links.length }); continue; }
     const refs = links.map((l) => l.ref);
     let count = Math.min(choice.count, refs.length);
@@ -1035,6 +1043,7 @@ export function planFromRequirements(model, zone, opts = {}) {
     // Per OUTPUT: the same three rules, one level down. A driver may carry
     // several groups, types or rooms so long as each sits on its own output. A
     // rule already kept separate per driver is implied here.
+    allowLocal = false,
     nodeControlGroup = false,
     nodeSplitByType = false,
     nodeSplitByLocation = false,
@@ -1093,7 +1102,7 @@ export function planFromRequirements(model, zone, opts = {}) {
     // 2CH part holds them on one driver while a 1CH part of the same wattage
     // needs two. Ranking on watts picks the 1CH and doubles the estimate.
     let best = null;
-    for (const t of sizingCandidates(model.inventory, units)) {
+    for (const t of sizingCandidates(model.inventory, units, allowLocal)) {
       const node = t.nodes[0] ?? {};
       const fit = (run) => {
         const perNodeFv = run.fvPer > 0 && node.maxFvV != null

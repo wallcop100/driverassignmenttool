@@ -69,10 +69,10 @@ export default function TypesPage({ state, dispatch, zone }) {
     if (!canSuggest) return undefined;
     let stale = false;
     api.plan(zone, assignments, addedDrivers, {
-      restrictControlGroup: prefs.restrictControlGroup, margin: prefs.margin,
+      restrictControlGroup: prefs.restrictControlGroup, margin: prefs.margin, allowLocal: prefs.allowLocal,
     }).then((p) => !stale && setPlan(p)).catch(console.error);
     return () => { stale = true; };
-  }, [canSuggest, zone, assignments, addedDrivers, prefs.restrictControlGroup, prefs.margin, model]);
+  }, [canSuggest, zone, assignments, addedDrivers, prefs.restrictControlGroup, prefs.margin, prefs.allowLocal, model]);
 
   // From a hub, the type you want is usually one this hub already uses; on the
   // catalogue, the reason you opened it is the flagged ones.
@@ -237,6 +237,7 @@ export default function TypesPage({ state, dispatch, zone }) {
 function TypeRow(props) {
   const { t, spec, f, usage, zone, back, dispatch, presets, inventory, editing, draft, setDraft,
     openEdit, closeEdit, menuOpen, toggleMenu, closeMenu, onWarn, inHub } = props;
+  const [qty, setQty] = useState(1);
   const opts = currentOptions(t, spec);
   const fill = canFill(t, spec);
   const replace = canReplace(t, spec);
@@ -292,10 +293,15 @@ function TypeRow(props) {
       {/* the one thing that differs between arriving from a hub and arriving
           on your own - not enough to be a second page */}
       {zone && (
-        <button className="btn btn-sm btn-primary tp-add" onClick={() => {
-          dispatch({ type: 'ADD_DRIVER', typeRef: t.typeRef, zone });
-          dispatch({ type: 'SET_VIEW', view: back });
-        }}>Add</button>
+        <span className="tp-add d-inline-flex gap-1">
+          <input type="number" min="1" className="form-control form-control-sm" style={{ width: '4rem' }}
+            title="Quantity" aria-label="Quantity" value={qty}
+            onChange={(e) => setQty(e.target.value)} />
+          <button className="btn btn-sm btn-primary" onClick={() => {
+            dispatch({ type: 'ADD_DRIVER', typeRef: t.typeRef, zone, quantity: Number(qty) || 1 });
+            dispatch({ type: 'SET_VIEW', view: back });
+          }}>Add</button>
+        </span>
       )}
     </TypeCard>
   );

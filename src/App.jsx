@@ -140,11 +140,11 @@ export default function App({ domain = driversDomain }) {
   useEffect(() => {
     if (!model) return;
     let stale = false;
-    domain.validate(model, assignments, addedDrivers)
+    domain.validate(model, assignments, addedDrivers, { allowLocal: state.prefs.allowLocal })
       .then((r) => !stale && dispatch({ type: 'SET_FLAGS', flags: r.flags }))
       .catch(console.error);
     return () => { stale = true; };
-  }, [model, assignments, addedDrivers]);
+  }, [model, assignments, addedDrivers, state.prefs.allowLocal]);
 
   // One eligibility fetch per zone/state change powers dim-the-impossible,
   // fill-node, target counts and orphan detection.

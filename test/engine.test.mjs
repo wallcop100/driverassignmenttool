@@ -1323,3 +1323,23 @@ test('keeping groups apart per output lets one driver carry both, one on each ou
     restrictControlGroup: false })[0];
   assert.equal(loose.drivers, 1);
 });
+
+test('Local drivers are left out of sizing by default and flagged in a hub', () => {
+  const mk = (typeRef, controlType, maxPowerW) => ({ typeRef, controlType, powerType: 'CC', currentA: 0.35,
+    maxPowerW, nodes: [{ name: 'OP.1', maxLoadW: 100, maxFvV: 55 }] });
+  const model = {
+    inventory: [mk('LOC', 'Local', 100), mk('DAL', 'DALI', 20)],
+    requirements: [{ ref: 'R1', zone: 'Z', qty: 2, powerType: 'CC', currentA: 0.35, loadW: 10,
+      wPer: 5, fvPer: 10, fvV: 20, controlType: 'Local' }],
+  };
+  assert.equal(engine.planFromRequirements(model, 'Z').unmatched.length, 1);
+  const on = engine.planFromRequirements(model, 'Z', { allowLocal: true });
+  assert.equal(on.lines[0].typeRef, 'LOC');
+
+  const m = gfModel(gfLinks(1));
+  m.inventory[0].controlType = 'Local';
+  const added = [{ ref: 'E5000X', typeRef: 'T100', zone: 'HUB-G' }];
+  const flagged = engine.validate(m, {}, added).filter((f) => f.check === 'ControlType');
+  assert.equal(flagged.length, 1);
+  assert.equal(engine.validate(m, {}, added, { allowLocal: true }).filter((f) => f.check === 'ControlType').length, 0);
+});
