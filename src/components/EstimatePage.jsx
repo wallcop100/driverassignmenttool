@@ -26,6 +26,9 @@ export default function EstimatePage({ state, dispatch, zone }) {
     restrictControlGroup: prefs.restrictControlGroup,
     splitByType: prefs.splitByType,
     splitByLocation: prefs.splitByLocation,
+    nodeControlGroup: prefs.nodeControlGroup,
+    nodeSplitByType: prefs.nodeSplitByType,
+    nodeSplitByLocation: prefs.nodeSplitByLocation,
     preferSingleOutput: prefs.preferSingleOutput,
     margin: prefs.margin,
   };
@@ -34,7 +37,7 @@ export default function EstimatePage({ state, dispatch, zone }) {
     api.estimate(opts, zone).then((z) => !stale && setZones(z)).catch((e) => setError(e.message));
     return () => { stale = true; };
   }, [model, zone, prefs.restrictControlGroup, prefs.splitByType, prefs.splitByLocation,
-      prefs.preferSingleOutput, prefs.margin]);
+      prefs.nodeControlGroup, prefs.nodeSplitByType, prefs.nodeSplitByLocation, prefs.preferSingleOutput, prefs.margin]);
 
   const setPref = (p) => dispatch({ type: 'SET_PREFS', prefs: p });
   const marginPct = Math.round((prefs.margin ?? 0) * 100);
@@ -63,6 +66,27 @@ export default function EstimatePage({ state, dispatch, zone }) {
     }
     return m;
   }, [zones]);
+
+  // click a header to sort the assessment rows; again to reverse
+  const [sort, setSort] = useState({ key: null, dir: 1 });
+  const sortBy = (key) => setSort((p) => (p.key === key ? { key, dir: -p.dir } : { key, dir: 1 }));
+  const sortedRows = useMemo(() => {
+    if (!sort.key) return rows;
+    const val = (r) => (sort.key === 'driver' ? servedBy.get(r.ref) : sort.key === 'fvPer' ? r.fvPer : r[sort.key]);
+    return [...rows].sort((a, b) => {
+      const x = val(a);
+      const y = val(b);
+      if (x == null || x === '') return y == null || y === '' ? 0 : 1;   // blanks last
+      if (y == null || y === '') return -1;
+      return (typeof x === 'number' && typeof y === 'number' ? x - y
+        : String(x).localeCompare(String(y), undefined, { numeric: true })) * sort.dir;
+    });
+  }, [rows, sort, servedBy]);
+  const Th = ({ k, className = '', children, ...rest }) => (
+    <th className={`${className} sortable`} onClick={() => sortBy(k)} {...rest}>
+      {children}{sort.key === k ? (sort.dir > 0 ? ' ▲' : ' ▼') : ''}
+    </th>
+  );
 
   const copyPatch = async () => {
     setError(null);
@@ -114,14 +138,24 @@ export default function EstimatePage({ state, dispatch, zone }) {
       <div className="est-constraints">
         <span className="est-c-label">Keep separate</span>
         {[
-          ['restrictControlGroup', 'ControlGroups', 'Never put two ControlGroups on one driver'],
-          ['splitByType', 'Fitting types', 'Never put two fitting types on one driver'],
-          ['splitByLocation', 'Rooms', 'Never let a driver serve more than one room'],
-        ].map(([k, label, tip]) => (
-          <label key={k} className="est-c" title={tip}>
-            <input type="checkbox" checked={!!prefs[k]} onChange={(e) => setPref({ [k]: e.target.checked })} />
+          ['restrictControlGroup', 'nodeControlGroup', 'ControlGroups', 'ControlGroup'],
+          ['splitByType', 'nodeSplitByType', 'Fitting types', 'fitting type'],
+          ['splitByLocation', 'nodeSplitByLocation', 'Rooms', 'room'],
+        ].map(([dk, nk, label, what]) => (
+          <span key={dk} className="est-c est-c-pair">
             {label}
-          </label>
+            <label className="est-c" title={`Never put two ${what}s on one driver`}>
+              <input type="checkbox" checked={!!prefs[dk]} onChange={(e) => setPref({ [dk]: e.target.checked })} />
+              driver
+            </label>
+            <label className="est-c"
+              title={prefs[dk] ? `Implied: a driver already carries one ${what}`
+                : `Never put two ${what}s on one output. A driver may still carry several, one per output`}>
+              <input type="checkbox" checked={!!prefs[dk] || !!prefs[nk]} disabled={!!prefs[dk]}
+                onChange={(e) => setPref({ [nk]: e.target.checked })} />
+              output
+            </label>
+          </span>
         ))}
         <span className="est-c-label ms-3">Choosing a part</span>
         <label className="est-c" title="Reach for a single-output driver rather than consolidating a pair onto one 2-output driver. Consolidating is a decision for the detail design, not the estimate">
@@ -203,19 +237,20 @@ export default function EstimatePage({ state, dispatch, zone }) {
           <table className="table table-sm align-middle mt-2">
             <thead>
               <tr>
-                <th>Hub</th><th>Location</th><th>PositionType</th><th>ControlGroup</th>
-                <th className="text-end" title="SumQuantity - in the PositionType's UoM: metres for tape, pieces for fittings. DJ 100053 strips the unit off P.Dim, so the number does not say which">
+                <Th k="zone">Hub</Th><Th k="location">Location</Th><Th k="positionType">PositionType</Th>
+                <Th k="controlGroup">ControlGroup</Th>
+                <Th k="qty" className="text-end" title="SumQuantity - in the PositionType's UoM: metres for tape, pieces for fittings. DJ 100053 strips the unit off P.Dim, so the number does not say which">
                   Quantity
-                </th>
-                <th className="text-end" title="PowerPerUoM - watts per metre for tape, per piece for a fitting">PowerPerUoM</th>
-                <th className="text-end" title="Forward voltage per UoM, from CC_Vf ÷ SumQuantity">fV per UoM</th>
-                <th>CC/CV</th>
-                <th className="text-end" title="CurrentPerUoM - the current this fitting is driven at">CC_Current</th>
-                <th title="The driver this row was sized onto">Driver</th>
+                </Th>
+                <Th k="wPer" className="text-end" title="PowerPerUoM - watts per metre for tape, per piece for a fitting">PowerPerUoM</Th>
+                <Th k="fvPer" className="text-end" title="Forward voltage per UoM, from CC_Vf ÷ SumQuantity">fV per UoM</Th>
+                <Th k="powerType">CC/CV</Th>
+                <Th k="currentA" className="text-end" title="CurrentPerUoM - the current this fitting is driven at">CC_Current</Th>
+                <Th k="driver" title="The driver this row was sized onto">Driver</Th>
               </tr>
             </thead>
             <tbody>
-              {rows.map((r) => {
+              {sortedRows.map((r) => {
                 const part = resolveSpec(r.positionType);
                 return (
                   <tr key={r.ref}>
