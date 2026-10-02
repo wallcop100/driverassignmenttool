@@ -30,6 +30,7 @@ export default function EstimatePage({ state, dispatch, zone }) {
     nodeSplitByType: prefs.nodeSplitByType,
     nodeSplitByLocation: prefs.nodeSplitByLocation,
     preferSingleOutput: prefs.preferSingleOutput,
+    allowLocal: prefs.allowLocal,
     margin: prefs.margin,
   };
   useEffect(() => {
@@ -37,7 +38,7 @@ export default function EstimatePage({ state, dispatch, zone }) {
     api.estimate(opts, zone).then((z) => !stale && setZones(z)).catch((e) => setError(e.message));
     return () => { stale = true; };
   }, [model, zone, prefs.restrictControlGroup, prefs.splitByType, prefs.splitByLocation,
-      prefs.nodeControlGroup, prefs.nodeSplitByType, prefs.nodeSplitByLocation, prefs.preferSingleOutput, prefs.margin]);
+      prefs.nodeControlGroup, prefs.nodeSplitByType, prefs.nodeSplitByLocation, prefs.allowLocal, prefs.preferSingleOutput, prefs.margin]);
 
   const setPref = (p) => dispatch({ type: 'SET_PREFS', prefs: p });
   const marginPct = Math.round((prefs.margin ?? 0) * 100);
@@ -162,6 +163,11 @@ export default function EstimatePage({ state, dispatch, zone }) {
           <input type="checkbox" checked={!!prefs.preferSingleOutput}
             onChange={(e) => setPref({ preferSingleOutput: e.target.checked })} />
           Prefer single output
+        </label>
+        <label className="est-c ms-3" title="Local (switched, unaddressed) drivers are left out of sizing and flagged in a hub unless this is on">
+          <input type="checkbox" checked={!!prefs.allowLocal}
+            onChange={(e) => setPref({ allowLocal: e.target.checked })} />
+          Allow Local drivers
         </label>
         <span className="est-c-label ms-3">Spare capacity</span>
         <label className="est-c" title="Capacity left free on every driver">

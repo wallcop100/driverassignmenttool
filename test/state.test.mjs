@@ -307,3 +307,16 @@ test('SET_LAYOUTS keeps the space layout in the session', () => {
   const back = reducer(initialState, { type: 'RESTORE', saved: { model, assignments: {}, layouts } });
   assert.deepEqual(back.layouts, layouts);
 });
+
+test('ADD_DRIVER adds the quantity asked for, one by default', async () => {
+  const engine = await import('../src/engine.js');
+  const { reducer, initialState } = await import('../src/state.js');
+  const model = engine.buildModel(null,
+    'LinkRef,PullZone,LinkSumPower(W),LinkCurrent,LinkForwardVoltage(Vf),SecondaryPowerType,ControlGroupText\nL1,HUB,5,0.35,10,CC,CG\n',
+    'ElementTypeRef,Driver Restrictions,Node Restrictions,Channels\nT1,50W | 0.35A,55fV,2\n');
+  const s0 = { ...initialState, model };
+  assert.equal(reducer(s0, { type: 'ADD_DRIVER', typeRef: 'T1', zone: 'HUB' }).addedDrivers.length, 1);
+  const s3 = reducer(s0, { type: 'ADD_DRIVER', typeRef: 'T1', zone: 'HUB', quantity: 3 });
+  assert.equal(s3.addedDrivers.length, 3);
+  assert.equal(new Set(s3.addedDrivers.map((d) => d.ref)).size, 3);
+});

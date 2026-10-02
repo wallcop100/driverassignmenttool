@@ -85,7 +85,7 @@ export const drivers = makeDomain({
       : api.parseText(msg.form, msg.links, types);
   },
 
-  validate: (model, assignments, added) => api.validate(assignments, added),
+  validate: (model, assignments, added, opts) => api.validate(assignments, added, opts),
   eligibility: (model, zone, assignments, added) => api.eligibility(zone, assignments, added),
   rebuild: (presets) => api.rebuild(presets),
 });

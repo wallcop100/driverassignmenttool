@@ -102,8 +102,8 @@ export function loadDemo() {
   return demo().then(([form, links, assessment]) => parseText(form, links, null, assessment));
 }
 
-export async function validate(assignments, addedDrivers) {
-  return { flags: engine.validate(model, assignments, addedDrivers) };
+export async function validate(assignments, addedDrivers, opts) {
+  return { flags: engine.validate(model, assignments, addedDrivers, opts) };
 }
 
 export async function eligibility(zone, assignments, addedDrivers) {
