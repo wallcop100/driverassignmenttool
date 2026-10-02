@@ -902,6 +902,11 @@ export function nextDriverRef(taken) {
 }
 
 const fpKey = (l) => (l.powerType === 'CC' ? `CC·${g(l.currentA ?? 0)}A` : `CV·${g(l.voltageV ?? 0)}V`);
+// A DALI fitting needs a DALI driver; a Local (switched) one cannot take its
+// address. Blank on either side is unknown, not a mismatch.
+const ctKey = (v) => String(v ?? '').trim().toLowerCase();
+const controlTypeOk = (l, t) => !ctKey(l.controlType) || !ctKey(t.controlType)
+  || ctKey(l.controlType) === ctKey(t.controlType);
 const sum = (xs) => xs.reduce((a, b) => a + b, 0);
 
 // Emergency drivers are stock for the emergency circuit, not spare capacity - 
@@ -921,7 +926,8 @@ function sizingCandidates(inventory, links) {
     if (!t.powerType || t.maxPowerW == null || !t.nodes.length) return false;
     if (t.powerType === 'CC' && t.currentA == null) return false;
     if (t.powerType === 'CV' && t.outputVoltageV == null) return false;
-    return links.every((l) => l.powerType === t.powerType && fingerprintCompatible(l, t));
+    return links.every((l) => l.powerType === t.powerType && fingerprintCompatible(l, t)
+      && controlTypeOk(l, t));
   });
 }
 
@@ -969,7 +975,7 @@ export function planDrivers(model, assignments, added, zone, opts = {}) {
     // fingerprint always splits (a CC cable can't share a CV driver); the
     // ControlGroup split is optional but on by default - check 7 FAILs a node
     // serving two groups, so mixing them would only create work.
-    const key = restrictControlGroup ? `${l.controlGroup || '-'} · ${fpKey(l)}` : fpKey(l);
+    const key = `${restrictControlGroup ? `${l.controlGroup || '-'} · ` : ''}${fpKey(l)}${l.controlType ? ` · ${l.controlType}` : ''}`;
     if (!buckets.has(key)) buckets.set(key, []);
     buckets.get(key).push(l);
   }
@@ -1037,6 +1043,7 @@ export function planFromRequirements(model, zone, opts = {}) {
   for (const r of rows) {
     const key = [
       fpKey(r),                                        // a CC fitting cannot share a CV driver
+      r.controlType || null,                           // nor a DALI fitting a Local driver
       restrictControlGroup ? (r.controlGroup || '-') : null,
       splitByType ? (r.positionType || '-') : null,
       splitByLocation ? (r.location || '-') : null,

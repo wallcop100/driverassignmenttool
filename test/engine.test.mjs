@@ -1288,3 +1288,16 @@ test('a hub that is an Element is not filed as a Position', () => {
   assert.match(script, /"contextRef":"E80023"/);
   assert.doesNotMatch(script, /CHECK ContextType/);
 });
+
+test('estimate never sizes a DALI fitting onto a Local driver', () => {
+  const node = { name: 'OP.1', maxLoadW: 100, maxFvV: 55 };
+  const mk = (typeRef, controlType, maxPowerW) => ({ typeRef, controlType, powerType: 'CC',
+    currentA: 0.35, maxPowerW, nodes: [node] });
+  const model = {
+    inventory: [mk('LOCAL-BIG', 'Local', 100), mk('DALI-SMALL', 'DALI', 20)],
+    requirements: [{ ref: 'R1', zone: 'Z', qty: 2, powerType: 'CC', currentA: 0.35, loadW: 10,
+      wPer: 5, fvPer: 10, fvV: 20, controlType: 'DALI' }],
+  };
+  const { lines } = engine.planFromRequirements(model, 'Z');
+  assert.equal(lines[0].typeRef, 'DALI-SMALL');
+});
