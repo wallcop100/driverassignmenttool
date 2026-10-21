@@ -1,6 +1,6 @@
 # driverassignmenttool — state
 
-Updated: 2026-09-17
+Updated: 2026-10-21
 
 <!-- Now / Next / Blocked are rewritten in place and never grow. Finish something, delete the
      line. Only Log appends. Format: /srv/projects/FORMAT.md -->
@@ -20,6 +20,11 @@ host. Decide whether it is finished and commit it, or note here what is still wr
 Nothing.
 
 ## Log
+
+## 2026-10-21
+
+- Rebased the two local record commits onto PRs #1–#3 and pushed (main was diverged 2/3). The
+  uncommitted `sysex-overlay-DJ101681.sql` is untouched.
 
 ## 2026-09-17
 
