@@ -24,14 +24,22 @@ Nothing.
 
 ## 2026-10-27
 
-- Fixed the three filed reports (uncommitted on `dev`). RSM4NL: on resume `api.js` had no model,
+- ContextRef bug (uncommitted). The estimate patch wrote the hub label as `Elements.ContextRef`,
+  and the assignment patch fell back to it. Both now take the Position Ref: the host's
+  `hubRef`, or the assessment's `Link_SecondaryPowerRef`. When neither is known, ContextRef is left
+  blank with a CHECK note. 342 tests green.
+- Demo data for the assessment (uncommitted): every cabled demo hub now carries assessment rows
+  rolled up from its own cables (CC counted per cable; CV strip as metres at 24 W/m, as HUB-J
+  does). So Cables vs Assessment and "Estimate and hub disagree" can be seen on any hub. HUB-J
+  gained a no-load row that must add no driver.
+- Fixed the three filed reports (merged to `dev` in #10, 329f0c9). RSM4NL: on resume `api.js` had no model,
   so App now hands it over (`domain.adopt`). ZQTY7D: rows with no load are left out of the estimate.
   CGNAM8: the Elements patch names rows after their ControlGroups, with a choice of one row per
   driver (Quantity 1) or one per type per hub. That choice lives in a "Copy Elements patch" dialog
   with a preview of the rows, and is remembered across sessions (`prefs.patchPerDriver`). Resume and
   the dialog were clicked through with no error. The crash screen now leads with "Send the report"
   whenever a companion answers; a forced crash posted `kind: crash` to a mocked companion. 341 tests green, build clean. Filing is unconfirmed, because Kaizen was disconnected.
-- Estimate list redone (uncommitted on `dev`): one foldable line per type, a limit chip with a
+- Estimate list redone (merged to `dev` in #10): one foldable line per type, a limit chip with a
   popup, rows with load and drive chips, and the working folded away. The engine returns `working` per
   line, and "Calculation looks wrong" sends it as `estimate`. Header redone as Erik's pick G: "Secondary
   Power Assessment", the result card left, and an assumptions panel right ("Keep separate" grid and

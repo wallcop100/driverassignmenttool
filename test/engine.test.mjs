@@ -479,7 +479,7 @@ test('an added driver is appended to Elements, not only pointed at', () => {
   assert.match(script, /col_E_ContextType\)\.setValue\(el\.contextType\)/);
   assert.match(script, /"contextType":"Position"/, 'defaults to Position when the host is silent');
   assert.match(script, /CHECK ContextType: assumed Position/);
-  assert.match(script, /"contextRef":"HUB-G"/);
+  assert.match(script, /"contextRef":""/, 'never the label');
   // Quantity 1 is the schema default, so it is left blank rather than written
   assert.match(script, /if \(el.quantity !== 1\)/);
   assert.ok(!script.includes('EL_IsPropertiesTBC'));
@@ -1044,14 +1044,13 @@ test('each demo hub reports its own mode', () => {
 
 test('both views are offered by what the hub holds, not its mode', () => {
   const m = demoModel();
-  assert.deepEqual(engine.zoneViews(m, 'HUB-A'), { cables: true, assessment: false });
   assert.deepEqual(engine.zoneViews(m, 'HUB-J'), { cables: false, assessment: true });
   // a cabled hub keeps its assessment rows when the host sends them too
-  const reqs = [...m.requirements.map((r) => ({ ...r, zone: 'HUB-A' })), ...m.requirements];
-  const both = { ...m, requirements: reqs };
-  assert.deepEqual(engine.zoneViews(both, 'HUB-A'), { cables: true, assessment: true });
-  assert.equal(engine.zoneMode(both, 'HUB-A'), 'assign');
-  assert.ok(engine.estimate(both, {}, 'HUB-A')[0].drivers > 0);
+  assert.deepEqual(engine.zoneViews(m, 'HUB-A'), { cables: true, assessment: true });
+  assert.equal(engine.zoneMode(m, 'HUB-A'), 'assign');
+  assert.ok(engine.estimate(m, {}, 'HUB-A')[0].drivers > 0);
+  const bare = { ...m, requirements: m.requirements.filter((r) => r.zone !== 'HUB-A') };
+  assert.deepEqual(engine.zoneViews(bare, 'HUB-A'), { cables: true, assessment: false });
 });
 
 test('assessment rows land on the hub label, not its Position Ref', () => {
@@ -1131,10 +1130,22 @@ test('Elements.ContextRef takes the hub Position Ref, not its label', () => {
   assert.match(withCtx, /"contextRef":"P8110"/);
   assert.ok(!withCtx.includes('CHECK ContextRef'));
 
-  // Standalone, only the label was ever known - say so rather than pretend.
+  // Standalone, only the label was ever known - leave it blank and say so,
+  // because a label that is an ExtRef is not a key at all.
   const without = engine.generatePatchScript(m, a, added, []);
-  assert.match(without, /"contextRef":"CSB"/);
-  assert.match(without, /CHECK ContextRef: CSB is the hub label, not its Position Ref/);
+  assert.match(without, /"contextRef":""/);
+  assert.match(without, /CHECK ContextRef: left blank - the Position Ref of CSB is not known/);
+  // an assessment row for the hub carries its Position Ref, so that is used
+  const reqs = { ...m, requirements: [{ zone: 'CSB', hubRef: 'P8110' }] };
+  assert.match(engine.generatePatchScript(reqs, a, added, []), /"contextRef":"P8110"/);
+});
+
+test('the estimate patch takes the Position Ref, not the hub label', () => {
+  const m = engine.buildEstimate(ASSESS_HEAD + DL40, EST_TYPES, null, { P50447: 'CSB' });
+  const est = engine.estimate(m, { margin: 0 });
+  assert.equal(est[0].zone, 'CSB');
+  const rows = engine.estimatePatchRows(est);
+  assert.ok(rows.length && rows.every((r) => r.contextRef === 'P50447'));
 });
 
 
