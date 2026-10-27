@@ -138,6 +138,11 @@ node docs/hub-layout-shots.mjs
 - **`src/api.js` holds its own module-level `model`**, set only by the parse functions. Any path
   that puts a model into state some other way, like a resume, must hand it over via `domain.adopt`
   or the engine runs against null (2026-10-27).
+- **ControlGroups never share an output** — an output is dimmed as one. In the estimate only the
+  per-driver rule is a choice; per output it is always on (2026-10-27).
+- **A forced driver type is keyed by `zone|line key`**, and the line key comes from the
+  Keep-separate options. Changing those options re-buckets the lines, so earlier forced choices
+  quietly stop applying (2026-10-27).
 - **For real datasets the deciding constraints are ControlGroup and capacity.** CC/CV is a trivial
   eyeball, CV voltage is a no-op (all 24 V) and CC current is unpopulated — so surfacing those two
   loudly and quieting the rest is deliberate, not an oversight (2026-07-06).

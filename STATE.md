@@ -24,11 +24,14 @@ Nothing.
 
 ## 2026-10-27
 
-- ContextRef bug (uncommitted). The estimate patch wrote the hub label as `Elements.ContextRef`,
+- Own line per PositionType (merged to `dev` in #12). A PositionTypeRef suffixed `E` or `Em`, case-sensitive (the emergency variant, e.g. `B02wE`), is taken out of a bundled estimate line onto its own line by default. Any type can be toggled in or out from the row's ⋮ menu (`OWN_LINE`, `state.ownLine`, saved with the session; engine `isOwnLine`). This only matters while "Fitting types" is not kept separate per driver. 347 tests green, build clean; not clicked through.
+- Force a driver type per estimate line (merged to `dev` in #12). There is a "Driver type" select on each line. `FORCE_TYPE` stores the choice in `state.forcedTypes`, keyed by zone and line key, and it is saved with the session. The engine sizes the forced type even when it does not match the fittings, and flags it as `mismatch` (a red step and a "⚠ forced" chip). If the type cannot be sized, it keeps the automatic pick and reports `forcedIssue`. The working still shows the automatic pick as an untaken branch. 346 tests green, build clean, clicked through on HUB-A.
+- Estimate working with several ControlGroups (merged to `dev` in #12). ControlGroups now always sit on separate outputs. An output is dimmed as one, so the per-output box is locked on and `prefs.nodeControlGroup` is gone. The working shows one step per group or per fitting type: "qty ÷ per = N outputs". After those comes "Drivers = max(outputs ÷ n, W ÷ usable W)", and a new `outputs` limit chip. Each line also lists the driver types it compared and why each lost (`considered`, using the same order as the ranking). Clicked through on demo HUB-A. 344 tests green, build clean. Erik turned down the vertical trace and kept the left-to-right row. Wherever the engine chose, the row now shows a fork: the options stacked in one column, the taken one solid and the others dashed. The forks are driver type, the tightest per-driver limit, each group, and enough drivers for both outputs and watts. "Prefer single output" became "Pick by": Single output, Fewest drivers or Spare outputs (`prefs.pickBy`, `PICK_BY` in the engine). Emergency stock always loses, and the reason a type lost comes from the same rules. 345 tests green.
+- ContextRef bug (merged to `dev` in #11). The estimate patch wrote the hub label as `Elements.ContextRef`,
   and the assignment patch fell back to it. Both now take the Position Ref: the host's
   `hubRef`, or the assessment's `Link_SecondaryPowerRef`. When neither is known, ContextRef is left
   blank with a CHECK note. 342 tests green.
-- Demo data for the assessment (uncommitted): every cabled demo hub now carries assessment rows
+- Demo data for the assessment (merged to `dev` in #11): every cabled demo hub now carries assessment rows
   rolled up from its own cables (CC counted per cable; CV strip as metres at 24 W/m, as HUB-J
   does). So Cables vs Assessment and "Estimate and hub disagree" can be seen on any hub. HUB-J
   gained a no-load row that must add no driver.
