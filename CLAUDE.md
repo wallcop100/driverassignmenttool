@@ -32,6 +32,8 @@ It works out which of its three modes it is in from the data, not from which fil
 | Deploy | push to `main` → `.github/workflows/pages.yml` → `npm ci && npm test && npm run build` → Pages |
 | CI | `.github/workflows/ci.yml` — test + build on every PR and non-`main` push; protect `main` on this check |
 | Embedded in | DJ 101681, via `sysex-overlay-DJ101681.sql` — see `EMBEDDING.md` |
+| Connected | the same build self-hosted with a companion (bug reports sent, not just saved) — a private bridge on rosetta; see `docs/companion.md` |
+| Branches | work goes to `dev` (CI only); `main` is what Pages serves |
 
 ```bash
 npm install && npm run dev      # dev server
@@ -44,7 +46,10 @@ npm run build                   # -> dist/
 - **Static and client-side only. Never add a server, a database, or a build-time secret.** The data
   never leaving the browser is a real property of a tool handling clients' design data, not a
   convenience. A backend would add deployment surface for no benefit — parsing, validation and
-  bin-packing are pure functions over a few hundred rows.
+  bin-packing are pure functions over a few hundred rows. The one exception is the optional
+  companion (`src/companion.js`): the app must stay complete without it, and only a bug report the
+  person chooses to send leaves the browser, built from allowlists in `remoteReport()`. Never send
+  a CSV, the session, or any free text from the screen.
 - **`src/engine.js` stays plain exported functions over a `model`** — no classes, no internal mutable
   state, no singleton. That is exactly how `test/engine.test.mjs` uses them: build a synthetic model,
   assert on the output, no mocking. An OO layer would be pure indirection.
@@ -78,6 +83,8 @@ npm run build                   # -> dist/
 | `src/catalogue.js` | 34 driver parts transcribed from the Driver Specs page group |
 | `src/components/` | ~30 components; `ImportScreen`, `Landing`, `ZonePage`, `Tray`, `DriverBin`, `ReviewModal` are the spine |
 | `src/persist.js` | the only persistence — session autosave to localStorage, offered back as "Resume" |
+| `src/companion.js` | probes `./companion/capabilities` once; null on Pages |
+| `src/build.js`, `src/buildNames.json` | build commit, channel and name (stamped by `vite.config.js`), shown as the bottom-right badge |
 | `test/` | `node:test`, no Jest/Vitest/jsdom — the engine and reducer are pure and need no DOM |
 | `docs/screens.mjs`, `docs/shoot.mjs` | re-render every surface and retake screenshots in one pass |
 

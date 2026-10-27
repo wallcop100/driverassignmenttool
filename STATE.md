@@ -7,28 +7,31 @@ Updated: 2026-10-27
 
 ## Now
 
-Planned, not built: self-host (Connected edition), companion bug reports, `dev` channel, n8n overlay
-sync. Plan in `SELFHOST_PLAN.md` (local only, git-excluded: it names the backend).
+The app side of self-hosting is on `dev` (pushed, not merged to `main`): companion probe, sent bug
+reports, build names and badge. The host side is `/data/projects/dat_bridge` (plan moved there),
+written but never built. The datajoin side is PR wallcop100/datajoin_mx#19.
 
 ## Next
 
-1. Pull: the local clone is behind `origin/main` by PRs #4–#8. Then commit the uncommitted
-   `pages.yml`/`ci.yml` on the fresh base.
-2. The dirty local `sysex-overlay-DJ101681.sql` (V1.11) is stale: origin and live DJ 101681 are
-   V1.14, revision 97. Discard it on Erik's word.
-3. Protect `main` on `CI / test` (not set, verified 404).
-4. Then plan phases 1–2 (public repo only).
+1. Merge `dev` → `main` once CI is green and the bridge is live, so Pages and Connected match.
+2. n8n overlay sync (plan §7): not built; needs the read/save gateway actions in datajoin first.
 
 ## Blocked / needs Erik
 
-- 🛑 Six decisions left in `SELFHOST_PLAN.md` §9. Hostnames and data tiers were decided
-  2026-10-27: `drivers.erikrees.co.uk` and `drivers-dev.wallcop.org`. A report sends the flagged
-  row's Element IDs, types and loadings, plus branch and set IDs.
+- 🛑 Set `dev` as the default branch and protect `main` on `CI / test` (GitHub settings).
+- 🛑 The stale V1.11 overlay edit is in `git stash` ("stale local overlay V1.11"); drop it on your word.
+- 🛑 Bridge go-live steps are in `dat_bridge/STATE.md`: token in Infisical, datajoin #17 then #19, tunnel/DNS/Access.
 
 ## Log
 
 ## 2026-10-27
 
+- Actioned the self-host plan, taking §9's recommendations: nginx plus a datajoin gateway door (not
+  a bridge service), a new private `dat_bridge`, its own `dat-autodeploy.timer`, Kaizen embed left on
+  Pages, and overlay sync from `main` only. `dev` branch created and pushed. A report is sent only
+  on a click, built from allowlists, with a preview of the payload. Builds carry PS&R-style names.
+  Screenshots taken against a mock companion (`docs/companion.md`); Send round-tripped ("Sent QFFDRW").
+  Not shot: the crash screen. 336 tests green.
 - Auto-deploy brought in line with the PS&R tool: renamed `deploy.yml` → `pages.yml`, which now
   runs `npm test` before the build (test gates the deploy) and skips doc-only pushes via
   `paths-ignore`. Added `ci.yml` running test + build on every PR and non-`main` push, so `main`
