@@ -764,6 +764,10 @@ test('the count is fV per output, as page 135910 teaches it', () => {
   assert.equal(z.lines[0].count, 5);
   assert.equal(z.lines[0].limit, 'fV');
   assert.equal(z.drivers, 5);
+  // the working the page shows is the engine's own, and reproduces the count
+  const w = z.lines[0].working;
+  assert.deepEqual([w.maxFvV, w.fvPer, w.perNodeFv, w.outputs, w.runs], [55, 12, 4, 2, 1]);
+  assert.equal(Math.ceil(z.lines[0].qty / Math.min(w.perNodeFv * w.outputs, w.perDriverW)), 5);
 
   // 5% margin takes a node to 52.25fV, still 4 fittings - the count holds
   assert.equal(engine.estimate(m, { margin: 0.05 })[0].lines[0].count, 5);
@@ -812,8 +816,34 @@ test('the estimate patch appends Elements rows carrying a Quantity', () => {
   assert.match(script, /"contextRef":"P50447"/);
   assert.match(script, /"quantity":5/);   // one row, not five
   assert.equal(script.split('"ref":"E5000X"').length - 1, 1);
+  assert.match(script, /"name":"CG1"/);   // named after its ControlGroup, not its type
   // and it never touches LinksMap, because at tender there is nothing to repoint
   assert.ok(!script.includes('LinksMap'));
+});
+
+test('one row per driver names each driver after the ControlGroups it carries', () => {
+  const two = DL40 + 'P50447,Study,DALI,CG2,PT-DL,4,1,CC,,0.35,48,12\n';
+  const est = engine.estimate(engine.buildEstimate(ASSESS_HEAD + two, EST_TYPES),
+    { margin: 0, restrictControlGroup: false });
+  const n = est[0].drivers;
+  const names = [...engine.generateEstimatePatch(est, { perDriver: true })
+    .matchAll(/"name":"([^"]*)","typeRef":"[^"]*","contextType":"[^"]*","contextRef":"[^"]*","quantity":1/g)]
+    .map((m) => m[1]);
+  assert.equal(names.length, n);
+  assert.equal(names[0], 'CG1');
+  assert.ok(names.at(-1).includes('CG2'));
+  // summed, the one row carries both
+  assert.match(engine.generateEstimatePatch(est), /"name":"CG1, CG2"/);
+});
+
+test('per-driver naming copes with fractional quantities', () => {
+  const strip = 'P50447,Study,DALI,CG1,PT-LS,2.5,1,CV,24,,0,25\n'
+    + 'P50447,Study,DALI,CG2,PT-LS,1.5,1,CV,24,,0,15\n';
+  const est = engine.estimate(engine.buildEstimate(ASSESS_HEAD + strip, EST_TYPES),
+    { margin: 0, restrictControlGroup: false });
+  const rows = engine.estimatePatchRows(est, { perDriver: true });
+  assert.equal(rows.length, est[0].drivers);
+  assert.ok(rows.every((r) => r.quantity === 1 && r.name));
 });
 
 test('an assessment without a type library is refused', () => {
@@ -1069,6 +1099,13 @@ test('compareEstimate counts per type and flags a difference', () => {
     { typeRef: 'T2', estimate: 1, hub: 0 },
     { typeRef: 'T3', estimate: 0, hub: 1 },
   ]);
+});
+
+test('a PositionType with no load adds no driver', () => {
+  const m = engine.buildEstimate(ASSESS_HEAD + DL40 + 'P50447,Study,DALI,CG1,PT-NONE,6,1,CC,,0.35,0,0\n', EST_TYPES);
+  const [z] = engine.estimate(m, { margin: 0 });
+  assert.equal(z.drivers, 5);
+  assert.ok(z.lines.every((l) => !l.positionTypes?.includes('PT-NONE')));
 });
 
 test('an estimate patch carries the double-check warning', () => {

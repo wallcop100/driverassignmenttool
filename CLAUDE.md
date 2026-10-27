@@ -6,6 +6,7 @@ host:     none
 path:     /data/projects/driverassignmenttool
 repo:     https://github.com/wallcop100/driverassignmenttool
 url:      https://wallcop100.github.io/driverassignmenttool/
+companion: dat
 ---
 
 # driverassignmenttool
@@ -130,6 +131,9 @@ node docs/hub-layout-shots.mjs
   (2026-10-27: the local file said V1.11 while live was V1.14, revision 97). Check `get_datajoin`'s
   `revisionref` before trusting the file. Its `sqlincludes` field carries per-include tokens. Never
   copy it into a file or into chat.
+- **`src/api.js` holds its own module-level `model`**, set only by the parse functions. Any path
+  that puts a model into state some other way, like a resume, must hand it over via `domain.adopt`
+  or the engine runs against null (2026-10-27).
 - **For real datasets the deciding constraints are ControlGroup and capacity.** CC/CV is a trivial
   eyeball, CV voltage is a no-op (all 24 V) and CC current is unpopulated — so surfacing those two
   loudly and quieting the rest is deliberate, not an oversight (2026-07-06).

@@ -247,7 +247,7 @@ const boxes = [
   ['ControlGroups', true], ['Fitting types', true], ['Rooms', false],
 ].map(([l, on]) => `<label class="est-c">${on ? '<input type="checkbox" checked>' : '<input type="checkbox">'}${l}</label>`).join('');
 
-const estHtml = `<!doctype html><html><head><meta charset="utf-8"><title>Driver estimate</title>
+const estHtml = `<!doctype html><html><head><meta charset="utf-8"><title>Secondary Power Assessment</title>
 <style>${fs.readFileSync(`${root}/node_modules/bootstrap/dist/css/bootstrap.min.css`, 'utf8')}</style>
 <style>${fs.readFileSync(`${root}/src/styles.css`, 'utf8')}</style>
 <style>body{padding:24px;background:#f6f8fb}.frame{background:#fff;border:1px solid #dbe3ee;border-radius:10px;overflow:hidden}
@@ -256,7 +256,7 @@ const estHtml = `<!doctype html><html><head><meta charset="utf-8"><title>Driver 
 <div class="mockhead">Estimate - Positions only, no cables and no drivers</div>
 <div class="frame"><div class="container-fluid py-3 drivers-page">
   <div class="dp-head">
-    <h5 class="mb-0">Driver estimate</h5>
+    <h5 class="mb-0">Secondary Power Assessment</h5>
     <span class="text-secondary small">${em.requirements.length} rows · ${em.zones.length} hubs · no links yet</span>
   </div>
   <div class="alert alert-warning py-2 small"><strong>Check every calculation.</strong> ${e.ESTIMATE_WARNING}</div>

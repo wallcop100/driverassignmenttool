@@ -32,6 +32,7 @@ export const DEFAULT_PREFS = {
   nodeSplitByLocation: false,
   preferSingleOutput: true,
   allowLocal: false,    // Local control type drivers: left out of sizing, flagged in a hub
+  patchPerDriver: false, // estimate patch: one row per driver, not one per type per hub
   snapMm: 5,            // resize grid in the space layout
 };
 
