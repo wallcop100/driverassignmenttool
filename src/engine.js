@@ -301,12 +301,17 @@ export function detectMode({ drivers = 0, links = 0, requirements = 0 } = {}) {
 // the per-unit values that make it divisible across drivers.
 const ASSESSMENT_ESSENTIAL = ['Link_SecondaryPowerRef', 'SumPower'];
 
-export function parseAssessment(text) {
+// Link_SecondaryPowerRef is the hub's Position Ref (P5014), while cables and
+// drivers key on its label - Pullzone, COALESCE(ExtRef,Ref) (3FA). `zoneAlias`
+// maps the one to the other, so a hub's requirements land on the same hub as its
+// cables rather than on a second hub named after its Ref.
+export function parseAssessment(text, zoneAlias = {}) {
   const { rows } = readCsv(text, ASSESSMENT_ESSENTIAL, 'Requirement Assessment CSV');
   const out = [];
   rows.forEach((row, i) => {
-    const zone = s(row.Link_SecondaryPowerRef);
-    if (!zone) return;                       // 100053 already drops these; belt and braces
+    const ref = s(row.Link_SecondaryPowerRef);
+    if (!ref) return;                        // 100053 already drops these; belt and braces
+    const zone = zoneAlias[ref] || ref;
     const qty = num(row.SumQuantity) ?? 1;
     if (qty <= 0) return;                    // a parent replaced by its own children
     const pt = s(row['CC/CV']);
@@ -380,7 +385,7 @@ const EMPTY_FORM = { drivers: [], baseline: {}, originalRows: [], fieldnames: DE
 // `assessmentText` is the third mode: Positions rolled up by DJ 100053, with no
 // links and no drivers anywhere. The model then carries requirements instead of
 // links, and nothing downstream that assigns cables applies to it.
-export function buildModel(formText, linksText, typesText, presets, assessmentText) {
+export function buildModel(formText, linksText, typesText, presets, assessmentText, zoneAlias) {
   const presetTypes = (presets || []).map(presetToType);
   if (!formText?.trim() && !typesText?.trim() && !presetTypes.length) {
     throw new Error('No Driver Assignment CSV and no driver type library - nothing to build drivers from.');
@@ -389,7 +394,7 @@ export function buildModel(formText, linksText, typesText, presets, assessmentTe
   const links = parseLinks(linksText);
   // A job can be part designed and part still at tender, so requirements sit
   // beside the cables rather than instead of them - mode is per hub.
-  const requirements = assessmentText?.trim() ? parseAssessment(assessmentText) : [];
+  const requirements = assessmentText?.trim() ? parseAssessment(assessmentText, zoneAlias) : [];
   const library = typesText ? parseTypes(typesText) : [];
   if (library.length) applyTypes(drivers, library);
   // Snapshot the design's own ratings BEFORE a preset rewrites the drivers.
@@ -432,8 +437,8 @@ export function buildModel(formText, linksText, typesText, presets, assessmentTe
 // The estimate model. No links, no drivers, no baseline to diff against - the
 // only shared ground with the other two modes is the inventory, which is where
 // the sizing gets its parts.
-export function buildEstimate(assessmentText, typesText, presets) {
-  const requirements = parseAssessment(assessmentText);
+export function buildEstimate(assessmentText, typesText, presets, zoneAlias) {
+  const requirements = parseAssessment(assessmentText, zoneAlias);
   const presetTypes = (presets || []).map(presetToType);
   const library = typesText?.trim() ? parseTypes(typesText) : [];
   if (!library.length && !presetTypes.length) {
@@ -450,6 +455,26 @@ export function buildEstimate(assessmentText, typesText, presets) {
     requirements,
     mode: 'estimate',
     modeReason: detectMode({ requirements: requirements.length }).reason,
+    inventory: [...inventory.values()].sort((a, b) => a.typeRef.localeCompare(b.typeRef)),
+  };
+}
+
+// A hub with nothing pointing at it yet - no drivers, no cables, no fittings. It
+// still gets a button, because laying out an empty hub is the first thing done
+// with one, so the model is the hub and the type library and nothing else.
+export function buildEmpty(zone, typesText, presets) {
+  const presetTypes = (presets || []).map(presetToType);
+  const inventory = new Map((typesText?.trim() ? parseTypes(typesText) : []).map((t) => [t.typeRef, t]));
+  for (const t of presetTypes) {
+    const prior = inventory.get(t.typeRef) ?? null;
+    inventory.set(t.typeRef, { ...t, designDB: prior, name: t.name || prior?.name || '' });
+  }
+  return {
+    zones: [zone],
+    drivers: [], links: [], baseline: {}, originalRows: [], fieldnames: DEFAULT_FIELDNAMES,
+    requirements: [],
+    mode: 'empty',
+    modeReason: 'nothing points at this hub yet - no drivers, cables or fittings',
     inventory: [...inventory.values()].sort((a, b) => a.typeRef.localeCompare(b.typeRef)),
   };
 }

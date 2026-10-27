@@ -78,11 +78,14 @@ export const drivers = makeDomain({
   // A hub the host sends with no cables - only a requirement assessment - is the
   // tender case, and lands on the estimate rather than a tray. A hub with cables
   // keeps its assessment too, so the two views can be compared.
-  overlay: { version: '1.12', where: 'DJ 101681', file: 'sysex-overlay-DJ101681.sql' },
+  overlay: { version: '1.13', where: 'DJ 101681', file: 'sysex-overlay-DJ101681.sql' },
 
   parseInit: (msg, types) => {
     api.setTbcText(msg.tbc);
+    const { hubRef, hubLabel } = msg.context ?? {};
+    api.setZoneAlias(hubRef && hubLabel && hubRef !== hubLabel ? { [hubRef]: hubLabel } : {});
     api.setDriverExtras({ compositions: msg.compositions, elements: msg.elements });
+    if (!msg.links?.trim() && !msg.assessment?.trim()) return api.parseEmpty(msg.focusZone, types);
     return msg.assessment && !msg.links?.trim()
       ? api.parseEstimate(msg.assessment, types)
       : api.parseText(msg.form, msg.links, types, msg.assessment);

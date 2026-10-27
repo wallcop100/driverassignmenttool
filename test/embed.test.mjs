@@ -32,6 +32,12 @@ for (const [name, msg, origin, allowed] of [
   });
 }
 
+test('accepts an empty hub - neither links nor assessment, but a named hub', () => {
+  const empty = { type: 'dat:init', version: VERSION, form: '', links: '', assessment: '', focusZone: '4FA' };
+  assert.deepEqual(validateInit(empty, HOST, HOST), { ok: true });
+  assert.equal(validateInit({ ...empty, focusZone: '' }, HOST, HOST).ok, false);
+});
+
 // A hub with no drivers yet has no Driver Assignment rows to send - links alone
 // is a legitimate payload (the tool sizes the drivers from the type library).
 test('accepts an init with no form CSV - the greenfield hub', () => {

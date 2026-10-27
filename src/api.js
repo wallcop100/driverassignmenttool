@@ -19,8 +19,12 @@ let model = null;
 // The raw CSVs are kept so the model can be rebuilt when a driver type preset is
 // added or changed, without asking for the files again (embedded, there is
 // nobody to ask). `applied` is what the current model was built with.
-let raw = { form: null, links: null, types: null, assessment: null };
+let raw = { form: null, links: null, types: null, assessment: null, empty: null };
 let applied = '[]';
+// Hub Ref -> hub label, from the host's context: the assessment names a hub by
+// its Position Ref, everything else by its label. Empty when standalone.
+let zoneAlias = {};
+export function setZoneAlias(alias) { zoneAlias = alias || {}; }
 
 // The one ingest path: everything that produces a model goes through here, so
 // the module-level `model` above is always set. Host-posted CSVs (embed mode)
@@ -28,7 +32,7 @@ let applied = '[]';
 export function parseText(formText, linksText, typesText, assessmentText) {
   raw = { form: formText, links: linksText, types: typesText, assessment: assessmentText };
   applied = '[]';
-  model = engine.buildModel(formText, linksText, typesText, null, assessmentText);
+  model = engine.buildModel(formText, linksText, typesText, null, assessmentText, zoneAlias);
   return model;
 }
 
@@ -40,8 +44,9 @@ export function rebuild(presets) {
   const key = JSON.stringify(list);
   if (key === applied) return null;
   // links + an assessment is one job at two stages, not an estimate-only model
-  if (raw.links) model = engine.buildModel(raw.form, raw.links, raw.types, list, raw.assessment);
-  else if (raw.assessment) model = engine.buildEstimate(raw.assessment, raw.types, list);
+  if (raw.links) model = engine.buildModel(raw.form, raw.links, raw.types, list, raw.assessment, zoneAlias);
+  else if (raw.assessment) model = engine.buildEstimate(raw.assessment, raw.types, list, zoneAlias);
+  else if (raw.empty) model = engine.buildEmpty(raw.empty, raw.types, list);
   else return null;
   applied = key;
   return model;
@@ -80,11 +85,20 @@ export async function parseAuto(files) {
   return parseText(found.form, found.links, found.types, found.assessment);
 }
 
+// An embedded hub with nothing in it yet: the host sends neither links nor an
+// assessment, only which hub it is.
+export function parseEmpty(zone, typesText) {
+  raw = { form: null, links: null, types: typesText, assessment: null, empty: zone };
+  applied = '[]';
+  model = engine.buildEmpty(zone, typesText);
+  return model;
+}
+
 // Third mode: Positions rolled up by DJ 100053, no links and no drivers.
 export function parseEstimate(assessmentText, typesText) {
   raw = { form: null, links: null, types: typesText, assessment: assessmentText };
   applied = '[]';
-  model = engine.buildEstimate(assessmentText, typesText);
+  model = engine.buildEstimate(assessmentText, typesText, null, zoneAlias);
   return model;
 }
 

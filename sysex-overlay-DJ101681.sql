@@ -1,7 +1,7 @@
 -- SysEx Overlay - Lighting Interactive Driver Assignment --
--- V1.12 -- (DJ 101681: saved as revision 86, 2026-10-27. V1.11 sends every Element in the hub;
---          V1.12 sends the assessment for every hub, not only cable-less ones, and states
---          @OverlayVersion so the tool can say when this overlay is behind it)
+-- V1.13 -- (DJ 101681: saved as revision 92, 2026-10-27. V1.11 sends every Element in the hub; V1.12 (revision 86) sends the
+--          assessment for every hub and states @OverlayVersion; V1.13 gives every hub of a
+--          @Container_TypeRef type a button, even one nothing points at yet)
 
 --SQL HEADER--
 DECLARE @Container_TypeRef AS varchar(max) = 'PSU.HUB';   -- comma separated list of PSU-HUB Types
@@ -17,7 +17,7 @@ DECLARE @ToolPath         AS varchar(200) = '/driverassignmenttool/api/';
 DECLARE @DataVersion      AS varchar(50)  = '';           -- blank = @SystemSetID. See notes.
 -- Sent in dat:init. The tool compares it with the version it was built against and
 -- tells the user to update this overlay when they differ - bump it on every save.
-DECLARE @OverlayVersion   AS varchar(20)  = '1.12';
+DECLARE @OverlayVersion   AS varchar(20)  = '1.13';
 
 -- SysEx Overlay - Lighting - Driver Assignment Tool. Puts a launcher on every
 -- PSU-HUB position. Design rationale and load-bearing gotchas (setup order,
@@ -224,7 +224,8 @@ GROUP BY COALESCE(NULLIF(h.ExtRef,''), h.Ref), cp.Link_SecondaryPowerRef, L.Name
    the two rather than assuming either.
 
    A hub is anywhere cables OR drivers OR fittings live, so the three sources are
-   UNIONed. Taking only the form's Pullzones hid exactly the hubs that need the
+   UNIONed - plus every Position of a hub type, even one nothing points at yet:
+   laying out an empty hub is the first thing done with it. Taking only the form's Pullzones hid exactly the hubs that need the
    tool most: a hub with cables and no drivers got no launcher, because it has no
    driver rows to be found in, and a tender hub with neither got none either. */
 IF OBJECT_ID('tempdb..#Hubs') IS NOT NULL DROP TABLE #Hubs;
@@ -238,7 +239,10 @@ FROM (SELECT DISTINCT Pullzone FROM #DriverAssignmentForm WHERE ISNULL(Pullzone,
       WHERE ISNULL(PullZone,'')<>''
         AND PullzoneTypeRef IN (SELECT TRIM(value) FROM STRING_SPLIT(@Container_TypeRef,','))
       UNION
-      SELECT DISTINCT HubLabel FROM #SPRequirements) f
+      SELECT DISTINCT HubLabel FROM #SPRequirements
+      UNION
+      SELECT DISTINCT COALESCE(NULLIF(ExtRef,''), Ref) FROM #Positions
+      WHERE TypeRef IN (SELECT TRIM(value) FROM STRING_SPLIT(@Container_TypeRef,','))) f
 OUTER APPLY (
     SELECT TOP 1 p.Ref
     FROM #Positions p
@@ -424,10 +428,8 @@ DECLARE @JS varchar(max) =
  -- reports a column error; catch it here, where the message can name the cause.
  -- Each block is only checked when it HAS content: the form is empty on a hub
  -- with no drivers, and links are empty on a tender hub, which is the case the
- -- assessment covers. One of links or assessment must be there, or the panel has
- -- nothing to open on. Nested ifs, not && - see the note further down.
-+'if(links===''''){if(assess===''''){'
-+'IWalertmessage(''Driver tool: no cables and no requirement data for ''+ref+''.'');return;}}'
+ -- assessment covers. All of them are empty on a hub nothing points at yet, and
+ -- the tool opens that as an empty hub. Nested ifs, not && - see the note below.
 +'if(links!==''''){if(links.indexOf(''\n'')===-1){'
 +'IWalertmessage(''Driver tool: links CSV for ''+ref+'' has no line breaks - check the overlay writer.'');return;}}'
 +'if(assess!==''''){if(assess.indexOf(''\n'')===-1){'
@@ -515,11 +517,14 @@ LEFT JOIN #ElemCsv ec ON ec.HubLabel = h.HubLabel;
 INSERT #SysEx_Overlay
 SELECT 'Position', h.HubRef, 'DriverAssignment.Scope',
        CASE WHEN EXISTS (SELECT * FROM #LinkAllocation a WHERE a.PullZone=h.HubLabel)
+              OR EXISTS (SELECT * FROM #DriverAssignmentForm d WHERE d.Pullzone=h.HubLabel)
             THEN CONVERT(varchar(10),(SELECT COUNT(DISTINCT ElementRef) FROM #DriverAssignmentForm d WHERE d.Pullzone=h.HubLabel))
                + ' drivers, '
                + CONVERT(varchar(10),(SELECT COUNT(*) FROM #LinkAllocation a WHERE a.PullZone=h.HubLabel)) + ' cables'
-            ELSE CONVERT(varchar(20),(SELECT CONVERT(decimal(10,1),SUM(SumQuantity)) FROM #SPRequirements r WHERE r.HubLabel=h.HubLabel))
+            WHEN EXISTS (SELECT * FROM #SPRequirements r WHERE r.HubLabel=h.HubLabel)
+            THEN CONVERT(varchar(20),(SELECT CONVERT(decimal(10,1),SUM(SumQuantity)) FROM #SPRequirements r WHERE r.HubLabel=h.HubLabel))
                + ' units, no cables yet'
+            ELSE 'empty - nothing points at this hub yet'
        END
 FROM #Hubs h;
 
