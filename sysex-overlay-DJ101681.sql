@@ -1,7 +1,7 @@
 -- SysEx Overlay - Lighting Interactive Driver Assignment --
--- V1.12 -- (DJ 101681: V1.10 live as revision 79; V1.11 sends every Element in the hub;
+-- V1.12 -- (DJ 101681: saved as revision 86, 2026-10-27. V1.11 sends every Element in the hub;
 --          V1.12 sends the assessment for every hub, not only cable-less ones, and states
---          @OverlayVersion so the tool can say when this overlay is behind it. NOT YET SAVED)
+--          @OverlayVersion so the tool can say when this overlay is behind it)
 
 --SQL HEADER--
 DECLARE @Container_TypeRef AS varchar(max) = 'PSU.HUB';   -- comma separated list of PSU-HUB Types
