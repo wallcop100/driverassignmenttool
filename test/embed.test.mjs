@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { VERSION, validateInit, validateTypes, topic, setPrefix, overlayNotice } from '../src/embed.js';
+import { VERSION, validateInit, validateTypes, topic, setPrefix, overlayNotice, toolIsBehind, freshUrl } from '../src/embed.js';
 
 const HOST = 'https://example.com';
 const good = { type: 'dat:init', version: VERSION, form: 'Pullzone,ElementRef\n', links: 'LinkRef\n' };
@@ -119,4 +119,15 @@ test('the overlay file states the version the tool expects', async () => {
   const m = /@OverlayVersion\s+AS varchar\(\d+\)\s*=\s*'([^']+)'/.exec(sql);
   assert.ok(m, 'overlay declares @OverlayVersion');
   if (drivers) assert.equal(m[1], drivers.overlay.version);
+});
+
+test('only a newer overlay offers a reload, and the reload keeps the query', () => {
+  const want = { version: '1.14' };
+  assert.equal(toolIsBehind('1.15', want), true);
+  assert.equal(toolIsBehind('1.14', want), false);
+  assert.equal(toolIsBehind('1.13', want), false);   // that one needs the overlay updated instead
+  assert.equal(toolIsBehind(undefined, want), false);
+  const u = new URL(freshUrl('https://x.io/driverassignmenttool/api/?parentOrigin=https%3A%2F%2Fk.co&t=1', 42));
+  assert.equal(u.searchParams.get('parentOrigin'), 'https://k.co');
+  assert.equal(u.searchParams.get('t'), '42');
 });
