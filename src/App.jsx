@@ -39,6 +39,7 @@ export default function App({ domain = driversDomain }) {
   // dat:init lands, so the init handler re-reads it under the right key.
   const [saved, setSaved] = useState(() => (embedded ? null : loadSession()));
   const [notice, setNotice] = useState(null);
+  const [behind, setBehind] = useState(false);   // offer a reload on the notice
   const [fatal, setFatal] = useState(null);
 
   // Standalone keeps the ask-first banner. Embedded resumes silently - the frame
@@ -90,6 +91,7 @@ export default function App({ domain = driversDomain }) {
           embed.overlayNotice(msg.overlay, domain.overlay),
         ].filter(Boolean);
         if (notes.length) setNotice(notes.join(' '));
+        setBehind(embed.toolIsBehind(msg.overlay, domain.overlay));
         setSessionKey(msg.context?.branchId, msg.context?.systemSetId, msg.context?.hubRef);
         const init = {
           model,
@@ -257,6 +259,13 @@ export default function App({ domain = driversDomain }) {
         <div className="alert alert-warning d-flex align-items-center gap-2 py-2 mb-0">
           <span className="material-icons">info</span>
           <div className="flex-grow-1 small">{notice}</div>
+          {behind && (
+            <button className="btn btn-sm btn-warning d-flex align-items-center gap-1"
+              title="Load the latest published tool. Your work is saved and comes back."
+              onClick={() => { saveSession(stateRef.current); window.location.replace(embed.freshUrl(window.location.href)); }}>
+              <span className="material-icons small-icon">refresh</span>Reload tool
+            </button>
+          )}
           <button className="btn-close" onClick={() => setNotice(null)} />
         </div>
       )}

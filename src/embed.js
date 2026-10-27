@@ -60,6 +60,23 @@ function cmp(a, b) {
   }
   return 0;
 }
+// The overlay is newer than this build: almost always a cached copy of the
+// tool, since the overlay can only be saved after the tool that reads it ships.
+export function toolIsBehind(sent, expected) {
+  if (!expected?.version || sent == null || String(sent).trim() === '') return false;
+  return cmp(sent, expected.version) > 0;
+}
+
+// Load this frame again under a new address, so no cache can answer with the
+// old build. parentOrigin and the rest of the query are kept; the host is still
+// listening and sends the hub again on dat:ready, and the session autosave
+// brings the work back.
+export function freshUrl(href, now = Date.now()) {
+  const u = new URL(href);
+  u.searchParams.set('t', String(now));
+  return u.toString();
+}
+
 export function overlayNotice(sent, expected) {
   if (!expected?.version) return null;
   const { version, where, file } = expected;
@@ -72,7 +89,7 @@ export function overlayNotice(sent, expected) {
       + 'until then some of what this page shows may be missing.';
   }
   return `The DataJoin overlay on ${where} is V${sent}, newer than the V${version} this tool was built for. `
-    + 'Reload; if it persists, the published tool is behind the overlay.';
+    + 'Your browser is probably holding an older copy of the tool - reload it; if that does not help, the published tool is behind the overlay.';
 }
 
 // The driver type library, sent once before dat:init. Same envelope rules.
