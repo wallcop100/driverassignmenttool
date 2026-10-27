@@ -62,6 +62,19 @@ export function setSessionKey(branchId, systemSetId, hubRef) {
   evictSupersededSets(scope.branchId, scope.systemSetId);
 }
 
+// The options a person sets - what to keep separate, spare capacity, labels.
+// They are how this person works, not facts about one hub, so they follow them
+// from hub to hub and set to set rather than resetting at every entry point.
+export function loadPrefs() {
+  try {
+    return JSON.parse(localStorage.getItem(`${PREFIX}.prefs`) ?? '{}') ?? {};
+  } catch { return {}; }
+}
+
+export function savePrefs(prefs) {
+  try { localStorage.setItem(`${PREFIX}.prefs`, JSON.stringify(prefs)); } catch { /* storage disabled */ }
+}
+
 // The type corrections made anywhere in this set. Keyed by typeRef, so the last
 // edit of a type wins - which is what you want when the same type is corrected
 // from two hubs.
