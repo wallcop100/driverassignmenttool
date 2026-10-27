@@ -1040,6 +1040,17 @@ test('an empty hub is a model of one hub with nothing in it', () => {
   assert.equal(engine.buildEmpty('4FA').inventory.length, 0);   // no library is not an error
 });
 
+test('one cable to two rooms is one link; a real clash under one ref still fails', () => {
+  const head = '"PullZone","LinkRef","LinkTypeRef","LinkSumPower(W)","ToLocationName","SecondaryPowerType"';
+  const row = (room, w = '12') => `"2FA","_GENERATIVE-X500641","LT1","${w}","${room}","CC"`;
+  const types = '"ElementTypeRef","ElementTypeName"\n"X","x"\n';
+  const m = engine.buildModel(null, [head, row('2F WC'), row('Primary Ensuite')].join('\n') + '\n', types);
+  assert.equal(m.links.length, 1);
+  assert.equal(m.links[0].location, '2F WC; Primary Ensuite');
+  assert.throws(() => engine.buildModel(null, [head, row('2F WC'), row('Primary Ensuite', '30')].join('\n') + '\n', types),
+    /duplicate LinkRef: _GENERATIVE-X500641/);
+});
+
 test('compareEstimate counts per type and flags a difference', () => {
   const plan = { lines: [{ typeRef: 'T1', count: 2 }, { typeRef: 'T2', count: 1 }] };
   const same = engine.compareEstimate(plan, [{ typeRef: 'T1' }, { typeRef: 'T1' }, { typeRef: 'T2' }]);

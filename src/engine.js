@@ -240,24 +240,39 @@ function parseForm(text) {
 
 // A hub with no cables yet is the circumstance the estimate mode exists for, so
 // a header-only links file parses to nothing rather than throwing.
+//
+// One cable feeding fittings in two rooms comes out of the link list as two rows
+// that differ only in ToLocationName (_GENERATIVE-X500641, set 109833). That is
+// one cable, so the rooms are joined onto it. Rows that differ in anything else
+// are two different things under one ref, and stay an error.
 function parseLinks(text) {
   const { rows } = readCsv(text, LINK_ESSENTIAL, 'Links Assignment CSV', true);
   const links = [];
-  const seen = new Set();
+  const seen = new Map();
+  const sameButRoom = (a, b) => Object.keys({ ...a, ...b })
+    .every((k) => k === 'ToLocationName' || s(a[k]) === s(b[k]));
   rows.forEach((row, i) => {
     const ref = s(row.LinkRef);
     if (!ref) throw new Error(`Links Assignment CSV: row ${i + 2} has no LinkRef`);
-    if (seen.has(ref)) throw new Error(`Links Assignment CSV: duplicate LinkRef: ${ref}`);
-    seen.add(ref);
+    if (seen.has(ref)) {
+      const first = seen.get(ref);
+      if (!sameButRoom(first.row, row)) throw new Error(`Links Assignment CSV: duplicate LinkRef: ${ref}`);
+      const room = s(row.ToLocationName);
+      const rooms = first.link.location ? String(first.link.location).split('; ') : [];
+      if (room && !rooms.includes(room)) first.link.location = [...rooms, room].join('; ');
+      return;
+    }
     const pt = s(row.SecondaryPowerType);
-    links.push({
+    const link = {
       ref, zone: row.PullZone, typeRef: row.LinkTypeRef,
       loadW: num(row['LinkSumPower(W)']), currentA: num(row.LinkCurrent),
       voltageV: num(row['LinkVoltage(V)']), fvV: num(row['LinkForwardVoltage(Vf)']),
       powerType: pt === 'CC' || pt === 'CV' ? pt : null,
       controlGroup: s(row.ControlGroupText), location: row.ToLocationName,
       positionType: s(row.PositionType), threadCount: s(row.ThreadCount), controlType: s(row.ControlType),
-    });
+    };
+    links.push(link);
+    seen.set(ref, { row, link });
   });
   return links;
 }
