@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import * as api from '../api.js';
-import { compareEstimate, ESTIMATE_WARNING, resolveSpec, zoneViews } from '../engine.js';
+import { compareEstimate, ESTIMATE_WARNING, isOwnLine, resolveSpec, zoneViews } from '../engine.js';
 import { effectiveDrivers } from '../state.js';
 import { openReport } from '../bugReports.js';
 import KebabMenu from './KebabMenu.jsx';
@@ -19,12 +19,15 @@ const LIMIT = {
   fV: { label: 'Voltage', blurb: 'Fittings on one output are in series, so their forward voltages add up. The output ran out of voltage before the driver ran out of watts, so the count is set by how many fit on each output.' },
   'node W': { label: 'Output watts', blurb: 'Each output has its own wattage cap, and that ran out before the voltage or the driver total did.' },
   'driver W': { label: 'Driver watts', blurb: "The driver's total wattage, less the spare margin, ran out first. Its outputs had voltage to spare." },
+  outputs: { label: 'Outputs', blurb: 'Groups that must stay on separate outputs ran out of outputs before the driver ran out of watts.' },
 };
+
+const PICK_LABEL = { single: 'Single output', fewest: 'Fewest drivers', spareOutputs: 'Spare outputs' };
 
 // [driver pref, output pref, label, singular, what ticking it means]
 const SEPARATE = [
-  ['restrictControlGroup', 'nodeControlGroup', 'ControlGroups', 'ControlGroup',
-    'A ControlGroup is dimmed and switched as one. Per driver: a driver carries one ControlGroup. Per output: each output carries one, so a 2-output driver can still serve two.'],
+  ['restrictControlGroup', null, 'ControlGroups', 'ControlGroup',
+    'A ControlGroup is dimmed and switched as one. Per driver: a driver carries one ControlGroup. Per output: always - an output is dimmed as one, so it can never carry two, though a 2-output driver can serve two groups.'],
   ['splitByType', 'nodeSplitByType', 'Fitting types', 'fitting type',
     'Per driver: fittings of different PositionTypes never share a driver. Per output: never share an output, though a driver may carry one type per output.'],
   ['splitByLocation', 'nodeSplitByLocation', 'Rooms', 'room',
@@ -99,19 +102,20 @@ export default function EstimatePage({ state, dispatch, zone }) {
     restrictControlGroup: prefs.restrictControlGroup,
     splitByType: prefs.splitByType,
     splitByLocation: prefs.splitByLocation,
-    nodeControlGroup: prefs.nodeControlGroup,
     nodeSplitByType: prefs.nodeSplitByType,
     nodeSplitByLocation: prefs.nodeSplitByLocation,
-    preferSingleOutput: prefs.preferSingleOutput,
+    pickBy: prefs.pickBy ?? (prefs.preferSingleOutput === false ? 'fewest' : 'single'),
     allowLocal: prefs.allowLocal,
     margin: prefs.margin,
+    forced: state.forcedTypes,
+    ownLine: state.ownLine,
   };
   useEffect(() => {
     let stale = false;
     api.estimate(opts, zone).then((z) => !stale && setZones(z)).catch((e) => setError(e.message));
     return () => { stale = true; };
   }, [model, zone, prefs.restrictControlGroup, prefs.splitByType, prefs.splitByLocation,
-      prefs.nodeControlGroup, prefs.nodeSplitByType, prefs.nodeSplitByLocation, prefs.allowLocal, prefs.preferSingleOutput, prefs.margin]);
+      prefs.nodeSplitByType, prefs.nodeSplitByLocation, prefs.allowLocal, prefs.pickBy, prefs.preferSingleOutput, prefs.margin, state.forcedTypes, state.ownLine]);
 
   const setPref = (p) => dispatch({ type: 'SET_PREFS', prefs: p });
   const marginPct = Math.round((prefs.margin ?? 0) * 100);
@@ -189,7 +193,11 @@ export default function EstimatePage({ state, dispatch, zone }) {
                 </span>
               </td>
               <td className="text-end">
-                <KebabMenu title="Row actions" items={[{
+                <KebabMenu title="Row actions" items={[...(r.positionType && !prefs.splitByType ? [{
+                  label: isOwnLine(r.positionType, state.ownLine)
+                    ? `Bundle ${r.positionType} again` : `Own line for every ${r.positionType}`,
+                  onClick: () => dispatch({ type: 'OWN_LINE', positionType: r.positionType }),
+                }] : []), {
                   label: 'Report an issue', icon: 'flag',
                   onClick: (e) => openReport(e.currentTarget.closest('tr')),
                 }]} />
@@ -200,6 +208,30 @@ export default function EstimatePage({ state, dispatch, zone }) {
       </tbody>
     </table>
   );
+
+  // Every driver type in the library, the ones that fit these fittings first.
+  // Anything may be forced: an emergency driver, or a case-by-case call.
+  const driverTypes = useMemo(() => (model.inventory ?? []).filter((t) => t.nodes?.length)
+    .map((t) => t.typeRef).sort(), [model]);
+  const ForceType = ({ k, l }) => {
+    const fits = l.fitTypes ?? [];
+    const auto = l.considered?.find((c) => c.auto)?.typeRef;
+    return (
+      <label className="est-force" onClick={(e) => e.stopPropagation()}>
+        Driver type
+        <select className="form-select form-select-sm" value={state.forcedTypes[k] ?? ''}
+          onChange={(e) => dispatch({ type: 'FORCE_TYPE', key: k, typeRef: e.target.value || null })}>
+          <option value="">Automatic{auto ? ` - ${auto}` : ''}</option>
+          <optgroup label="Fits these fittings">
+            {fits.map((t) => <option key={t} value={t}>{t}</option>)}
+          </optgroup>
+          <optgroup label="Does not match - will be flagged">
+            {driverTypes.filter((t) => !fits.includes(t)).map((t) => <option key={t} value={t}>{t}</option>)}
+          </optgroup>
+        </select>
+      </label>
+    );
+  };
 
   // The engine's own inputs, laid out as the sum a person would check by hand.
   const Working = ({ l, zone: z }) => {
@@ -213,7 +245,6 @@ export default function EstimatePage({ state, dispatch, zone }) {
         {note && <small>{note}</small>}
       </div>
     );
-    const bind = (k) => (l.limit === k ? ' bind' : '');
     const cap = l.count * w.maxPowerW * w.keep;
     const pct = Math.round((l.loadW / cap) * 100);
     const report = (e) => openReport(e.currentTarget.closest('.est-line'), {
@@ -221,28 +252,77 @@ export default function EstimatePage({ state, dispatch, zone }) {
       estimate: {
         zone: z, typeRef: l.typeRef, count: l.count, qty: l.qty, perDriver: l.perDriver, outputs: l.outputs,
         perNode: l.perNode, limit: l.limit, loadW: l.loadW, controlGroup: l.controlGroup,
-        positionTypes: l.positionTypes, rows: l.rows, working: w, opts,
+        positionTypes: l.positionTypes, rows: l.rows, working: w, forced: l.forced, mismatch: l.mismatch,
+        // the forced map's keys can carry room names
+        opts: { ...opts, forced: undefined },
       },
     });
+    // Left to right, with a fork wherever the engine chose: the options stack in
+    // one column, the one taken drawn solid and the rest faded.
+    const fork = (title, branches) => (branches.length === 1
+      ? step(branches[0].label, branches[0].body, branches[0].note, branches[0].cls ?? '')
+      : (
+        <div className="est-fork">
+          <span className="est-fork-l">{title}</span>
+          {branches.map((b) => (
+            <div key={b.key} className={b.taken ? '' : 'est-off'}>{step(b.label, b.body, b.note, b.taken ? b.cls ?? '' : '')}</div>
+          ))}
+        </div>
+      ));
+    const arr = <span className="est-arr">→</span>;
+    const byOutputs = w.runList ? Math.ceil(l.outputs / n) : null;
     return (
       <div className="est-working">
         {step('Fittings', `${amount(l.qty, l.rows)} · ${fmt(w.wPer)} W each${w.fvPer ? ` · ${fmt(w.fvPer)} V each` : ''}`)}
-        <span className="est-arr">→</span>
+        {arr}
+        {l.forcedIssue && <>{step('Forced type not used', l.forcedIssue, 'sized on the automatic pick instead', ' warn')}{arr}</>}
+        {l.considered?.length > 1 && <>
+          {fork(`Driver type, ${l.forced && !l.forcedIssue ? 'forced on this line' : `by ${PICK_LABEL[opts.pickBy]?.toLowerCase() ?? 'fit'}`}`,
+            l.considered.map((c) => ({
+              key: c.typeRef, taken: c.taken, cls: c.mismatch ? ' run warn' : ' run',
+              label: `${c.typeRef}${c.em ? ' (EM)' : ''}`,
+              body: c.count == null ? 'not sized'
+                : <>{c.count} × {c.outputs}-output · {c.spareOutputs} spare output{c.spareOutputs === 1 ? '' : 's'}</>,
+              note: c.mismatch ? `forced - does not match: ${c.mismatch}`
+                : c.taken && !c.auto ? `forced · ${c.spareW} W spare`
+                  : c.auto ? (c.taken ? `chosen · ${c.spareW} W spare` : `the automatic pick by ${PICK_LABEL[opts.pickBy]?.toLowerCase()}`)
+                    : `lost on ${c.lostOn}`,
+            })))}
+          {arr}
+        </>}
         {step(`Driver, less ${Math.round((1 - w.keep) * 100)}% spare`,
           `${fmt(w.maxPowerW * w.keep)} W · ${n} output${n === 1 ? '' : 's'}${w.maxFvV ? ` · ${fmt(w.maxFvV * w.keep)} V each` : ''}`,
           `${l.name} · rated ${w.maxPowerW} W${w.maxFvV ? `, ${w.maxFvV} V` : ''}`)}
-        <span className="est-arr">→</span>
-        {w.perNodeFv != null && step('Per output by voltage',
-          <>{fmt(w.maxFvV * w.keep)} V ÷ {fmt(w.fvPer)} V = <b>{w.perNodeFv}</b></>,
-          n > 1 ? `× ${n} outputs = ${w.perNodeFv * n}` : null, bind('fV'))}
-        {w.perNodeW != null && step('Per output by watts',
-          <>{fmt(w.maxLoadW * w.keep)} W ÷ {fmt(w.wPer)} W = <b>{w.perNodeW}</b></>, null, bind('node W'))}
-        {step('Per driver by watts', <>{fmt(w.maxPowerW * w.keep)} W ÷ {fmt(w.wPer)} W = <b>{w.perDriverW}</b></>, null, bind('driver W'))}
-        <span className="est-arr">→</span>
-        {w.runs > 1
-          ? step('Drivers', <>{l.outputs} outputs ÷ {n} = <b>{l.count}</b></>, `${w.runs} groups kept on separate outputs`, ' result')
-          : step('Drivers', <>{fmt(l.qty)} ÷ {l.perDriver}{l.qty % l.perDriver ? ' ↑' : ''} = <b>{l.count}</b></>,
-            l.perNode != null ? `min(${l.perNode * n}, ${w.perDriverW}) = ${l.perDriver} per driver` : `${l.perDriver} per driver`, ' result')}
+        {arr}
+        {w.runList ? <>
+          {fork('Each group on its own outputs', w.runList.map((r) => ({
+            key: r.label, taken: true, cls: ' run',
+            label: r.label || '-',
+            body: <>{fmt(r.qty)} ÷ {r.per}{r.qty % r.per ? ' ↑' : ''} = <b>{r.outputs}</b> output{r.outputs === 1 ? '' : 's'}</>,
+            note: `${r.per} per output at ${fmt(r.wPer)} W${r.fvPer ? `, ${fmt(r.fvPer)} V` : ''} each`,
+          })))}
+          {arr}
+          {fork('Enough drivers for both', [
+            { key: 'o', taken: byOutputs >= w.byWatts, cls: ' bind', label: 'By outputs',
+              body: <>{l.outputs} ÷ {n}{l.outputs % n ? ' ↑' : ''} = <b>{byOutputs}</b></> },
+            { key: 'w', taken: w.byWatts > byOutputs, cls: ' bind', label: 'By driver watts',
+              body: <>{fmt(w.totalW)} W ÷ {fmt(w.maxPowerW * w.keep)} W ↑ = <b>{w.byWatts}</b></> },
+          ])}
+        </> : fork('Per driver, the tightest limit', [
+          w.perNodeFv != null && { key: 'fV', taken: l.limit === 'fV', cls: ' bind', label: 'Per output by voltage',
+            body: <>{fmt(w.maxFvV * w.keep)} V ÷ {fmt(w.fvPer)} V = <b>{w.perNodeFv}</b></>,
+            note: n > 1 ? `× ${n} outputs = ${w.perNodeFv * n}` : null },
+          w.perNodeW != null && { key: 'nW', taken: l.limit === 'node W', cls: ' bind', label: 'Per output by watts',
+            body: <>{fmt(w.maxLoadW * w.keep)} W ÷ {fmt(w.wPer)} W = <b>{w.perNodeW}</b></>,
+            note: n > 1 ? `× ${n} outputs = ${w.perNodeW * n}` : null },
+          { key: 'dW', taken: l.limit === 'driver W', cls: ' bind', label: 'Per driver by watts',
+            body: <>{fmt(w.maxPowerW * w.keep)} W ÷ {fmt(w.wPer)} W = <b>{w.perDriverW}</b></> },
+        ].filter(Boolean))}
+        {arr}
+        {step('Drivers', w.runList
+          ? <><b>{l.count}</b> × {l.typeRef}</>
+          : <>{fmt(l.qty)} ÷ {l.perDriver}{l.qty % l.perDriver ? ' ↑' : ''} = <b>{l.count}</b></>,
+        w.runList ? `${w.runs} groups kept on separate outputs` : `${l.perDriver} per driver`, ' result')}
         <div className="est-usage">
           <div className="est-bar"><i style={{ width: `${Math.min(100, pct)}%` }} /></div>
           <span>{fmt(l.loadW)} W of {fmt(cap)} W usable · {pct}% loaded</span>
@@ -354,9 +434,11 @@ export default function EstimatePage({ state, dispatch, zone }) {
                     onChange={(e) => setPref({ [dk]: e.target.checked })} />
                 </td>
                 <td>
+                  {/* no output pref: always apart, never a choice */}
                   <input type="checkbox" aria-label={`${label} apart per output`}
-                    checked={!!prefs[dk] || !!prefs[nk]} disabled={!!prefs[dk]}
-                    title={prefs[dk] ? `Implied: a driver already carries one ${what}` : `Never put two ${what}s on one output`}
+                    checked={!nk || !!prefs[dk] || !!prefs[nk]} disabled={!nk || !!prefs[dk]}
+                    title={!nk ? `Always: an output can never carry two ${what}s`
+                      : prefs[dk] ? `Implied: a driver already carries one ${what}` : `Never put two ${what}s on one output`}
                     onChange={(e) => setPref({ [nk]: e.target.checked })} />
                 </td>
               </tr>
@@ -366,10 +448,12 @@ export default function EstimatePage({ state, dispatch, zone }) {
 
         <div className="est-c-label mt-3">Driver type restrictions</div>
         <label className="est-c">
-          <input type="checkbox" checked={!!prefs.preferSingleOutput}
-            onChange={(e) => setPref({ preferSingleOutput: e.target.checked })} />
-          Prefer single output
-          <Info text="Reach for a single-output driver rather than putting a pair onto one 2-output driver. Consolidating is a decision for the detail design, not the estimate." />
+          Pick by
+          <select className="form-select form-select-sm est-pick" value={opts.pickBy}
+            onChange={(e) => setPref({ pickBy: e.target.value })}>
+            {Object.entries(PICK_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          </select>
+          <Info text="Which driver type wins when several fit. Single output: the simplest part, leaving consolidation to the detail design. Fewest drivers: the most efficient. Spare outputs: room for fittings added late. Emergency stock always loses." />
         </label>
         <label className="est-c">
           <input type="checkbox" checked={!!prefs.allowLocal}
@@ -435,11 +519,17 @@ export default function EstimatePage({ state, dispatch, zone }) {
                     <Tooltip content={LIMIT[l.limit]?.blurb ?? `Limited by ${l.limit}`}>
                       <span className={`est-lim est-lim-${l.limit.replace(' ', '')}`}>{LIMIT[l.limit]?.label ?? l.limit} limited</span>
                     </Tooltip>
-                    <span className="dp-ref-use">{l.controlGroup || '-'}</span>
+                    {l.forced && (
+                      <Tooltip content={l.mismatch ? `Forced, and does not match: ${l.mismatch}` : l.forcedIssue ?? `Forced on this line instead of the automatic pick`}>
+                        <span className={`est-lim est-forced${l.mismatch || l.forcedIssue ? ' bad' : ''}`}>{l.mismatch || l.forcedIssue ? '⚠ forced' : 'forced'}</span>
+                      </Tooltip>
+                    )}
+                    <span className="dp-ref-use">{l.groupQty?.map(([g]) => g || '-').join(', ') || l.controlGroup || '-'}</span>
                     <span className="est-nrows">{l.rows.length} row{l.rows.length === 1 ? '' : 's'}</span>
                   </div>
                   {isOpen && (
                     <div className="est-body">
+                      <ForceType k={k} l={l} />
                       <RowTable refs={l.rows} />
                       <div className="est-howto" role="button" onClick={() => toggle(setWorking, k)}>
                         {working.has(k) ? '▾' : '▸'} How {l.count} was worked out
@@ -460,7 +550,7 @@ export default function EstimatePage({ state, dispatch, zone }) {
                     <span className="dp-ref-id">{amount(u.qty, u.rows)}</span>
                     <span className="dp-fault">{u.reason ?? 'No ElementType in the DesignDB can take these'}</span>
                   </div>
-                  {isOpen && <div className="est-body"><RowTable refs={u.rows ?? []} /></div>}
+                  {isOpen && <div className="est-body"><ForceType k={k} l={u} /><RowTable refs={u.rows ?? []} /></div>}
                 </div>
               );
             })}

@@ -141,6 +141,8 @@ export function saveSession(state) {
     prefs: state.prefs,
     presets: state.presets,
     layouts: state.layouts,
+    forcedTypes: state.forcedTypes,
+    ownLine: state.ownLine,
     view: state.view,
     savedAt: Date.now(),
   });

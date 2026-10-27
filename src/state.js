@@ -27,10 +27,9 @@ export const DEFAULT_PREFS = {
   margin: 0.05,
   splitByType: true,
   splitByLocation: false,
-  nodeControlGroup: false,   // the same three rules, kept apart per output
   nodeSplitByType: false,
   nodeSplitByLocation: false,
-  preferSingleOutput: true,
+  pickBy: 'single',           // how the estimate picks a driver type: single | fewest | spareOutputs
   allowLocal: false,    // Local control type drivers: left out of sizing, flagged in a hub
   patchPerDriver: false, // estimate patch: one row per driver, not one per type per hub
   snapMm: 5,            // resize grid in the space layout
@@ -57,6 +56,8 @@ export const initialState = {
   tbc: {},              // ref -> { sheet, isTBC, isPropertiesTBC } set here
   recipes: {},          // wrapper typeRef -> [part] arranged here
   jboxes: {},           // driver Element ref -> junction box count set here
+  forcedTypes: {},      // `${hub}|${estimate line key}` -> typeRef chosen by hand
+  ownLine: [],          // PositionTypeRefs toggled against the estimate's own-line default (engine isOwnLine)
   demo: false,          // demo dataset loaded → show the tutorial
   deletedDrivers: [],   // refs of DesignDB drivers to mark IsDeleted in the patch
   fixNodeSyntax: false, // sweep banned ':' nodes out of LinksMap in the patch
@@ -378,6 +379,8 @@ export function reducer(state, action) {
         tbc: { ...(action.saved.tbc ?? {}), ...(action.tbc ?? {}) },
         recipes: { ...(action.saved.recipes ?? {}), ...(action.recipes ?? {}) },
         jboxes: { ...(action.saved.jboxes ?? {}), ...(action.jboxes ?? {}) },
+        forcedTypes: action.saved.forcedTypes ?? {},
+        ownLine: action.saved.ownLine ?? [],
         layouts: action.saved.layouts ?? {},
         context: state.context, // host context outlives a resume
         // action.view pins where to land. Embedded that is the hub the host
@@ -436,6 +439,17 @@ export function reducer(state, action) {
     case 'SET_LAYOUTS':
       return { ...state, layouts: action.layouts };
 
+    case 'FORCE_TYPE': {
+      const forcedTypes = { ...state.forcedTypes };
+      if (action.typeRef) forcedTypes[action.key] = action.typeRef;
+      else delete forcedTypes[action.key];
+      return { ...state, forcedTypes };
+    }
+    case 'OWN_LINE': {
+      const ownLine = state.ownLine.filter((t) => t !== action.positionType);
+      if (ownLine.length === state.ownLine.length) ownLine.push(action.positionType);
+      return { ...state, ownLine };
+    }
     case 'SET_PREFS':
       return { ...state, prefs: { ...state.prefs, ...action.prefs } };
     case 'SET_FLAGS':
