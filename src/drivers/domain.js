@@ -94,6 +94,7 @@ export const drivers = makeDomain({
   validate: (model, assignments, added, opts) => api.validate(assignments, added, opts),
   eligibility: (model, zone, assignments, added) => api.eligibility(zone, assignments, added),
   rebuild: (presets) => api.rebuild(presets),
+  adopt: (model) => api.setModel(model),
 });
 
 export default drivers;

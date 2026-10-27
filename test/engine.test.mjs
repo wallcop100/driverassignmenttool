@@ -479,7 +479,7 @@ test('an added driver is appended to Elements, not only pointed at', () => {
   assert.match(script, /col_E_ContextType\)\.setValue\(el\.contextType\)/);
   assert.match(script, /"contextType":"Position"/, 'defaults to Position when the host is silent');
   assert.match(script, /CHECK ContextType: assumed Position/);
-  assert.match(script, /"contextRef":"HUB-G"/);
+  assert.match(script, /"contextRef":""/, 'never the label');
   // Quantity 1 is the schema default, so it is left blank rather than written
   assert.match(script, /if \(el.quantity !== 1\)/);
   assert.ok(!script.includes('EL_IsPropertiesTBC'));
@@ -764,6 +764,10 @@ test('the count is fV per output, as page 135910 teaches it', () => {
   assert.equal(z.lines[0].count, 5);
   assert.equal(z.lines[0].limit, 'fV');
   assert.equal(z.drivers, 5);
+  // the working the page shows is the engine's own, and reproduces the count
+  const w = z.lines[0].working;
+  assert.deepEqual([w.maxFvV, w.fvPer, w.perNodeFv, w.outputs, w.runs], [55, 12, 4, 2, 1]);
+  assert.equal(Math.ceil(z.lines[0].qty / Math.min(w.perNodeFv * w.outputs, w.perDriverW)), 5);
 
   // 5% margin takes a node to 52.25fV, still 4 fittings - the count holds
   assert.equal(engine.estimate(m, { margin: 0.05 })[0].lines[0].count, 5);
@@ -812,8 +816,34 @@ test('the estimate patch appends Elements rows carrying a Quantity', () => {
   assert.match(script, /"contextRef":"P50447"/);
   assert.match(script, /"quantity":5/);   // one row, not five
   assert.equal(script.split('"ref":"E5000X"').length - 1, 1);
+  assert.match(script, /"name":"CG1"/);   // named after its ControlGroup, not its type
   // and it never touches LinksMap, because at tender there is nothing to repoint
   assert.ok(!script.includes('LinksMap'));
+});
+
+test('one row per driver names each driver after the ControlGroups it carries', () => {
+  const two = DL40 + 'P50447,Study,DALI,CG2,PT-DL,4,1,CC,,0.35,48,12\n';
+  const est = engine.estimate(engine.buildEstimate(ASSESS_HEAD + two, EST_TYPES),
+    { margin: 0, restrictControlGroup: false });
+  const n = est[0].drivers;
+  const names = [...engine.generateEstimatePatch(est, { perDriver: true })
+    .matchAll(/"name":"([^"]*)","typeRef":"[^"]*","contextType":"[^"]*","contextRef":"[^"]*","quantity":1/g)]
+    .map((m) => m[1]);
+  assert.equal(names.length, n);
+  assert.equal(names[0], 'CG1');
+  assert.ok(names.at(-1).includes('CG2'));
+  // summed, the one row carries both
+  assert.match(engine.generateEstimatePatch(est), /"name":"CG1, CG2"/);
+});
+
+test('per-driver naming copes with fractional quantities', () => {
+  const strip = 'P50447,Study,DALI,CG1,PT-LS,2.5,1,CV,24,,0,25\n'
+    + 'P50447,Study,DALI,CG2,PT-LS,1.5,1,CV,24,,0,15\n';
+  const est = engine.estimate(engine.buildEstimate(ASSESS_HEAD + strip, EST_TYPES),
+    { margin: 0, restrictControlGroup: false });
+  const rows = engine.estimatePatchRows(est, { perDriver: true });
+  assert.equal(rows.length, est[0].drivers);
+  assert.ok(rows.every((r) => r.quantity === 1 && r.name));
 });
 
 test('an assessment without a type library is refused', () => {
@@ -1014,14 +1044,13 @@ test('each demo hub reports its own mode', () => {
 
 test('both views are offered by what the hub holds, not its mode', () => {
   const m = demoModel();
-  assert.deepEqual(engine.zoneViews(m, 'HUB-A'), { cables: true, assessment: false });
   assert.deepEqual(engine.zoneViews(m, 'HUB-J'), { cables: false, assessment: true });
   // a cabled hub keeps its assessment rows when the host sends them too
-  const reqs = [...m.requirements.map((r) => ({ ...r, zone: 'HUB-A' })), ...m.requirements];
-  const both = { ...m, requirements: reqs };
-  assert.deepEqual(engine.zoneViews(both, 'HUB-A'), { cables: true, assessment: true });
-  assert.equal(engine.zoneMode(both, 'HUB-A'), 'assign');
-  assert.ok(engine.estimate(both, {}, 'HUB-A')[0].drivers > 0);
+  assert.deepEqual(engine.zoneViews(m, 'HUB-A'), { cables: true, assessment: true });
+  assert.equal(engine.zoneMode(m, 'HUB-A'), 'assign');
+  assert.ok(engine.estimate(m, {}, 'HUB-A')[0].drivers > 0);
+  const bare = { ...m, requirements: m.requirements.filter((r) => r.zone !== 'HUB-A') };
+  assert.deepEqual(engine.zoneViews(bare, 'HUB-A'), { cables: true, assessment: false });
 });
 
 test('assessment rows land on the hub label, not its Position Ref', () => {
@@ -1071,6 +1100,13 @@ test('compareEstimate counts per type and flags a difference', () => {
   ]);
 });
 
+test('a PositionType with no load adds no driver', () => {
+  const m = engine.buildEstimate(ASSESS_HEAD + DL40 + 'P50447,Study,DALI,CG1,PT-NONE,6,1,CC,,0.35,0,0\n', EST_TYPES);
+  const [z] = engine.estimate(m, { margin: 0 });
+  assert.equal(z.drivers, 5);
+  assert.ok(z.lines.every((l) => !l.positionTypes?.includes('PT-NONE')));
+});
+
 test('an estimate patch carries the double-check warning', () => {
   const out = engine.generateEstimatePatch([{ zone: 'HUB-J', lines: [{ typeRef: 'T1', count: 1 }] }]);
   assert.ok(out.startsWith(`// ${engine.ESTIMATE_WARNING}`));
@@ -1094,10 +1130,22 @@ test('Elements.ContextRef takes the hub Position Ref, not its label', () => {
   assert.match(withCtx, /"contextRef":"P8110"/);
   assert.ok(!withCtx.includes('CHECK ContextRef'));
 
-  // Standalone, only the label was ever known - say so rather than pretend.
+  // Standalone, only the label was ever known - leave it blank and say so,
+  // because a label that is an ExtRef is not a key at all.
   const without = engine.generatePatchScript(m, a, added, []);
-  assert.match(without, /"contextRef":"CSB"/);
-  assert.match(without, /CHECK ContextRef: CSB is the hub label, not its Position Ref/);
+  assert.match(without, /"contextRef":""/);
+  assert.match(without, /CHECK ContextRef: left blank - the Position Ref of CSB is not known/);
+  // an assessment row for the hub carries its Position Ref, so that is used
+  const reqs = { ...m, requirements: [{ zone: 'CSB', hubRef: 'P8110' }] };
+  assert.match(engine.generatePatchScript(reqs, a, added, []), /"contextRef":"P8110"/);
+});
+
+test('the estimate patch takes the Position Ref, not the hub label', () => {
+  const m = engine.buildEstimate(ASSESS_HEAD + DL40, EST_TYPES, null, { P50447: 'CSB' });
+  const est = engine.estimate(m, { margin: 0 });
+  assert.equal(est[0].zone, 'CSB');
+  const rows = engine.estimatePatchRows(est);
+  assert.ok(rows.length && rows.every((r) => r.contextRef === 'P50447'));
 });
 
 
@@ -1380,12 +1428,85 @@ test('keeping groups apart per output lets one driver carry both, one on each ou
   const perDriver = engine.estimate(m, { margin: 0.05, preferSingleOutput: false })[0];
   assert.equal(perDriver.drivers, 2);                 // one group per driver
   const perOutput = engine.estimate(m, { margin: 0.05, preferSingleOutput: false,
-    restrictControlGroup: false, nodeControlGroup: true })[0];
+    restrictControlGroup: false })[0];
   assert.equal(perOutput.drivers, 1);                 // a group per output
   assert.equal(perOutput.lines[0].outputs, 2);
-  const loose = engine.estimate(m, { margin: 0.05, preferSingleOutput: false,
-    restrictControlGroup: false })[0];
-  assert.equal(loose.drivers, 1);
+  // the working shows each group's own outputs, and the watts term beside them
+  const w = perOutput.lines[0].working;
+  assert.deepEqual(w.runList.map((r) => [r.label, r.outputs]), [['CG1', 1], ['CG2', 1]]);
+  assert.equal(w.byWatts, 1);
+  assert.equal(perOutput.lines[0].limit, 'outputs');
+});
+
+test('pickBy ranks driver types by simplicity, fewest drivers or spare outputs', () => {
+  const types = ctDali('ElementTypeRef,MaxPower(W),CurrentRange,NodeMaxForwardVoltage(fV),Channels\n'
+    + 'ET-CCR-D-300-1CH-01,50,0.3,55,1\nET-CCR-D-300-2CH-01,50,0.3,55,2\n');
+  const m = engine.buildEstimate(ASSESS_HEAD + 'P1,Study,DALI,CG1,B02w,3,1,CC,,0.3,105,35.4\n', types);
+  const pick = (pickBy) => engine.estimate(m, { margin: 0.05, pickBy })[0].lines[0];
+  assert.equal(pick('single').typeRef, 'ET-CCR-D-300-1CH-01');      // 3 drivers, one output each
+  assert.equal(pick('fewest').typeRef, 'ET-CCR-D-300-2CH-01');      // 2 drivers
+  const spare = pick('spareOutputs');
+  assert.equal(spare.typeRef, 'ET-CCR-D-300-2CH-01');               // 4 outputs for 3: one spare
+  assert.equal(spare.considered[1].lostOn, 'fewer spare outputs');
+});
+
+test('a driver type forced on a line wins, and one that does not match is sized but flagged', () => {
+  const types = ctDali('ElementTypeRef,MaxPower(W),CurrentRange,NodeMaxForwardVoltage(fV),Channels\n'
+    + 'ET-CCR-D-300-1CH-01,50,0.3,55,1\nET-CCR-D-300-1CH-EM-01,50,0.3,55,1\nET-CCR-D-700-1CH-01,50,0.7,55,1\n'
+    + 'ET-CCR-D-300-1CH-02,1,0.3,1,1\n');
+  const m = engine.buildEstimate(ASSESS_HEAD + 'P1,Study,DALI,CG1,B02w,2,1,CC,,0.3,70,23.6\n', types);
+  const key = engine.estimate(m, { margin: 0.05 })[0].lines[0].key;
+  const line = (typeRef) => engine.estimate(m, { margin: 0.05, forced: { [`P1|${key}`]: typeRef } })[0].lines[0];
+
+  const em = line('ET-CCR-D-300-1CH-EM-01');                  // the emergency case
+  assert.equal(em.typeRef, 'ET-CCR-D-300-1CH-EM-01');
+  assert.equal(em.mismatch, null);
+  assert.deepEqual(em.considered.filter((c) => c.taken || c.auto).map((c) => [c.typeRef, c.taken, c.auto]),
+    [['ET-CCR-D-300-1CH-01', false, true], ['ET-CCR-D-300-1CH-EM-01', true, false]]);
+
+  const wrong = line('ET-CCR-D-700-1CH-01');                  // 700 mA on 300 mA fittings
+  assert.equal(wrong.typeRef, 'ET-CCR-D-700-1CH-01');
+  assert.match(wrong.mismatch, /current/);
+  assert.ok(wrong.working);
+
+  const tiny = line('ET-CCR-D-300-1CH-02');                   // cannot take one fitting
+  assert.equal(tiny.typeRef, 'ET-CCR-D-300-1CH-01');
+  assert.match(tiny.forcedIssue, /cannot take/);
+});
+
+test('a PositionType on its own line leaves the bundle, and can then be forced alone', () => {
+  const types = ctDali('ElementTypeRef,MaxPower(W),CurrentRange,NodeMaxForwardVoltage(fV),Channels\n'
+    + 'ET-CCR-D-300-1CH-01,50,0.3,55,1\nET-CCR-D-300-1CH-EM-01,50,0.3,55,1\n');
+  const m = engine.buildEstimate(ASSESS_HEAD + 'P1,Study,DALI,CG1,B02w,2,1,CC,,0.3,70,23.6\n'
+    + 'P1,Study,DALI,CG1,B02m,1,1,CC,,0.3,35,11.8\n'
+    + 'P1,Study,DALI,CG1,B02E,1,1,CC,,0.3,35,11.8\n', types);
+  const lines = (o) => engine.estimate(m, { margin: 0.05, splitByType: false, ...o })[0].lines;
+  assert.equal(lines({}).length, 2);                            // the E type is out by default
+  assert.equal(lines({ ownLine: ['B02E'] }).length, 1);         // and can be bundled again
+  assert.deepEqual(['B02wEm', 'B02wE', 'B02we', 'B02m'].map((t) => engine.isOwnLine(t)), [true, true, false, false]);
+  const split = lines({ ownLine: ['B02m'] });
+  assert.equal(split.length, 3);
+  const em = split.find((l) => l.key.includes('B02E'));
+  const forced = lines({ forced: { [`P1|${em.key}`]: 'ET-CCR-D-300-1CH-EM-01' } });
+  assert.deepEqual(forced.map((l) => l.typeRef).sort(), ['ET-CCR-D-300-1CH-01', 'ET-CCR-D-300-1CH-EM-01']);
+});
+
+test('an estimate line lists the driver types it compared and why each lost', () => {
+  const types = ctDali('ElementTypeRef,MaxPower(W),CurrentRange,NodeMaxForwardVoltage(fV),Channels\n'
+    + 'ET-CCR-D-300-1CH-01,50,0.3,55,1\nET-CCR-D-300-2CH-01,50,0.3,55,2\n');
+  const rows = ASSESS_HEAD + 'P1,Study,DALI,CG1,B02w,2,1,CC,,0.3,35,11.8\n';
+  const l = engine.estimate(engine.buildEstimate(rows, types), { margin: 0.05 })[0].lines[0];
+  assert.deepEqual(l.considered.map((c) => [c.typeRef, c.lostOn]),
+    [['ET-CCR-D-300-1CH-01', null], ['ET-CCR-D-300-2CH-01', 'more outputs']]);
+});
+
+test('ControlGroups never share an output, even on a single-output part', () => {
+  const types = ctDali('ElementTypeRef,MaxPower(W),CurrentRange,NodeMaxForwardVoltage(fV),Channels\n'
+    + 'ET-CCR-D-300-1CH-01,50,0.3,200,1\n');
+  const rows = ASSESS_HEAD + 'P1,Study,DALI,CG1,B02w,1,1,CC,,0.3,10,3\n'
+    + 'P1,Study,DALI,CG2,B02w,1,1,CC,,0.3,10,3\n';
+  const z = engine.estimate(engine.buildEstimate(rows, types), { margin: 0.05, restrictControlGroup: false })[0];
+  assert.equal(z.drivers, 2);                         // both would fit one output by fV and W
 });
 
 test('Local drivers are left out of sizing by default and flagged in a hub', () => {

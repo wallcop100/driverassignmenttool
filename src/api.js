@@ -25,6 +25,8 @@ let applied = '[]';
 // its Position Ref, everything else by its label. Empty when standalone.
 let zoneAlias = {};
 export function setZoneAlias(alias) { zoneAlias = alias || {}; }
+// A resumed session's model never went through parsing, so the app hands it over.
+export function setModel(m) { model = m; }
 
 // The one ingest path: everything that produces a model goes through here, so
 // the module-level `model` above is always set. Host-posted CSVs (embed mode)
@@ -106,8 +108,12 @@ export async function estimate(opts, zone) {
   return engine.estimate(model, opts, zone);
 }
 
-export async function generateEstimatePatch(opts, zone) {
-  return engine.generateEstimatePatch(engine.estimate(model, opts, zone));
+export async function estimatePatchRows(opts, zone, patchOpts) {
+  return engine.estimatePatchRows(engine.estimate(model, opts, zone), patchOpts);
+}
+
+export async function generateEstimatePatch(opts, zone, patchOpts) {
+  return engine.generateEstimatePatch(engine.estimate(model, opts, zone), patchOpts);
 }
 
 // The demo carries all three modes at once, because a real job does: most hubs

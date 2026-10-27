@@ -335,6 +335,7 @@ export function parseAssessment(text, zoneAlias = {}) {
     out.push({
       ref: `R${i + 1}`,                      // requirements are not patched; the ref is for bookkeeping
       zone,
+      hubRef: ref,                           // the Position Ref, which is what Elements.ContextRef takes
       qty,
       loadW,
       fvV,
@@ -1003,6 +1004,15 @@ const isEmergency = (ref) => /(^|[-_ ])EM([-_ ]|\d|$)/i.test(String(ref));
 // win every bucket (most watts, no fV ceiling, so always the fewest drivers).
 // It is still fine to *hold* cables (validation only warns); it is not fine to
 // recommend buying one.
+// Why a type sizingCandidates would turn away does not fit, in a reader's terms.
+function mismatchOf(t, links, allowLocal) {
+  if (!allowLocal && isLocal(t.controlType)) return 'a Local driver, left out of sizing';
+  if (links.some((l) => l.powerType !== t.powerType)) return `a ${t.powerType ?? '?'} driver for ${links[0].powerType} fittings`;
+  if (!links.every((l) => fingerprintCompatible(l, t))) return 'its current or voltage does not match the fittings';
+  if (!links.every((l) => controlTypeOk(l, t))) return 'its control type does not match the fittings';
+  return 'its ratings are incomplete';
+}
+
 function sizingCandidates(inventory, links, allowLocal = false) {
   return inventory.filter((t) => {
     // Local (switched, unaddressed) stock is off the table unless asked for
@@ -1108,23 +1118,47 @@ export function planDrivers(model, assignments, added, zone, opts = {}) {
 // is four fittings per output, so a 2-output driver caps at eight whatever its
 // wattage says. Which limit bound the count is reported, because that is the
 // number a person will argue with.
+// Ways to rank driver types that all fit: [key, why a loser lost on it].
+const RANK = {
+  em: [(c) => c.em, 'emergency stock'],
+  outputs: [(c) => c.t.nodes.length, 'more outputs'],
+  count: [(c) => c.count, 'more drivers'],
+  spareOutputs: [(c) => -c.spareOutputs, 'fewer spare outputs'],
+  waste: [(c) => c.waste, 'more spare watts'],
+};
+export const PICK_BY = {
+  single: [RANK.outputs, RANK.count, RANK.waste],        // simplest part, consolidate later
+  fewest: [RANK.count, RANK.waste],                      // most efficient
+  spareOutputs: [RANK.spareOutputs, RANK.count, RANK.waste], // room for late additions
+};
+
+// A PositionTypeRef suffixed E or Em (the emergency variant) gets a line of its
+// own unless toggled back into the bundle; any other type only when toggled out.
+export const isOwnLine = (pt, ownLine = []) => !!pt && /Em?$/.test(pt) !== ownLine.includes(pt);
+
 export function planFromRequirements(model, zone, opts = {}) {
   const {
     restrictControlGroup = true,
     splitByType = true,
     splitByLocation = false,
     preferSingleOutput = true,
+    // how to choose between driver types that all fit; preferSingleOutput is the
+    // older switch between the first two
+    pickBy = preferSingleOutput ? 'single' : 'fewest',
     margin = 0.05,
-    // Per OUTPUT: the same three rules, one level down. A driver may carry
-    // several groups, types or rooms so long as each sits on its own output. A
-    // rule already kept separate per driver is implied here.
+    forced = {},          // `${zone}|${line key}` -> typeRef chosen by hand
+    ownLine = [],         // PositionTypeRefs toggled against isOwnLine's default
+    // Per OUTPUT: the same rules, one level down. A driver may carry several
+    // types or rooms so long as each sits on its own output. A rule already kept
+    // separate per driver is implied here. ControlGroups are always apart per
+    // output: an output is dimmed as one, so it cannot carry two.
     allowLocal = false,
-    nodeControlGroup = false,
     nodeSplitByType = false,
     nodeSplitByLocation = false,
   } = opts;
   const keep = 1 - margin;
-  const rows = (model.requirements || []).filter((r) => r.zone === zone && !!r.powerType);
+  // A row with no load needs no driver, whatever its quantity.
+  const rows = (model.requirements || []).filter((r) => r.zone === zone && !!r.powerType && r.loadW > 0);
 
   // Each constraint is a coarser bucket, and a coarser bucket means more
   // drivers. That is the point: an estimate that packs everything as tightly as
@@ -1136,7 +1170,7 @@ export function planFromRequirements(model, zone, opts = {}) {
       fpKey(r),                                        // a CC fitting cannot share a CV driver
       r.controlType || null,                           // nor a DALI fitting a Local driver
       restrictControlGroup ? (r.controlGroup || '-') : null,
-      splitByType ? (r.positionType || '-') : null,
+      splitByType || isOwnLine(r.positionType, ownLine) ? (r.positionType || '-') : null,
       splitByLocation ? (r.location || '-') : null,
     ].filter((x) => x != null).join(' · ');
     if (!buckets.has(key)) buckets.set(key, []);
@@ -1157,14 +1191,15 @@ export function planFromRequirements(model, zone, opts = {}) {
     const subs = new Map();
     for (const r of group) {
       const k = [
-        !restrictControlGroup && nodeControlGroup ? (r.controlGroup || '-') : null,
+        !restrictControlGroup ? (r.controlGroup || '-') : null,
         !splitByType && nodeSplitByType ? (r.positionType || '-') : null,
         !splitByLocation && nodeSplitByLocation ? (r.location || '-') : null,
-      ].join('\u0001');
+      ].filter((x) => x != null).join(' · ');
       if (!subs.has(k)) subs.set(k, []);
       subs.get(k).push(r);
     }
-    const runs = [...subs.values()].map((rs) => ({
+    const runs = [...subs.entries()].map(([label, rs]) => ({
+      label,
       qty: rs.reduce((n, r) => n + r.qty, 0),
       wPer: Math.max(...rs.map((r) => r.wPer)),
       fvPer: Math.max(...rs.map((r) => r.fvPer ?? 0)),
@@ -1176,8 +1211,9 @@ export function planFromRequirements(model, zone, opts = {}) {
     // the two disagree: two 35fV fittings on a 55fV node need two outputs, so a
     // 2CH part holds them on one driver while a 1CH part of the same wattage
     // needs two. Ranking on watts picks the 1CH and doubles the estimate.
-    let best = null;
-    for (const t of sizingCandidates(model.inventory, units, allowLocal)) {
+    // Sizes the line on one type; null when it cannot take a fitting per output.
+    const size = (t) => {
+      if (t.maxPowerW == null || !t.nodes?.length) return null;
       const node = t.nodes[0] ?? {};
       const fit = (run) => {
         const perNodeFv = run.fvPer > 0 && node.maxFvV != null
@@ -1192,24 +1228,24 @@ export function planFromRequirements(model, zone, opts = {}) {
       let perDriver;
       let count;
       let outputs;
+      let runList = null;
+      let byWatts = null;
       if (runs.length === 1) {
         perDriver = Math.min(perNode * t.nodes.length, perDriverW);
-        if (!(perDriver > 0)) continue;
+        if (!(perDriver > 0)) return null;
         count = Math.ceil(qty / perDriver);
         outputs = Math.ceil(qty / Math.min(perNode, perDriverW));
       } else {
         // each run needs whole outputs of its own; the driver count follows
-        outputs = 0;
-        let usable = true;
-        for (const run of runs) {
+        runList = runs.map((run) => {
           const x = fit(run);
           const per = Math.min(x.perNode, x.perDriverW);
-          if (!(per > 0)) { usable = false; break; }
-          outputs += Math.ceil(run.qty / per);
-        }
-        if (!usable) continue;
-        count = Math.max(Math.ceil(outputs / t.nodes.length),
-          Math.ceil(totalW / (t.maxPowerW * keep)));
+          return { label: run.label, qty: run.qty, wPer: run.wPer, fvPer: run.fvPer || null, per, outputs: per > 0 ? Math.ceil(run.qty / per) : 0 };
+        });
+        if (!runList.every((r) => r.per > 0)) return null;
+        outputs = runList.reduce((n, r) => n + r.outputs, 0);
+        byWatts = Math.ceil(totalW / (t.maxPowerW * keep));
+        count = Math.max(Math.ceil(outputs / t.nodes.length), byWatts);
         perDriver = Math.ceil(qty / count);
       }
 
@@ -1221,8 +1257,21 @@ export function planFromRequirements(model, zone, opts = {}) {
         perNode: Number.isFinite(perNode) ? perNode : null,
         em: isEmergency(t.typeRef) ? 1 : 0,
         waste: count * t.maxPowerW * keep - totalW,
+        spareOutputs: count * t.nodes.length - outputs,
+        // the inputs behind count, so the page can show its working rather than redo it
+        working: {
+          keep, maxPowerW: t.maxPowerW, outputs: t.nodes.length,
+          maxFvV: node.maxFvV ?? null, maxLoadW: node.maxLoadW ?? null,
+          wPer, fvPer: Math.max(...runs.map((r) => r.fvPer)) || null, runs: runs.length,
+          perNodeFv: Number.isFinite(perNodeFv) ? perNodeFv : null,
+          perNodeW: Number.isFinite(perNodeW) ? perNodeW : null,
+          perDriverW,
+          totalW, runList, byWatts,
+        },
         // the limit that actually bound it, in the reader's terms
-        limit: perNode * t.nodes.length <= perDriverW
+        limit: byWatts != null && byWatts > Math.ceil(outputs / t.nodes.length) ? 'driver W'
+          : runList ? 'outputs'
+          : perNode * t.nodes.length <= perDriverW
           ? (perNodeFv <= perNodeW ? 'fV' : 'node W')
           : 'driver W',
       };
@@ -1234,10 +1283,33 @@ export function planFromRequirements(model, zone, opts = {}) {
       // Emergency stock is the wrong part, not a less-preferred one, so it
       // outranks the single-output preference: never reach for an EM driver
       // just because it has one output.
-      const better = preferSingleOutput
-        ? (a, b) => (a.em - b.em) || (a.t.nodes.length - b.t.nodes.length) || betterFit(a, b)
-        : betterFit;
-      if (!best || better(cand, best) < 0) best = cand;
+      return cand;
+    };
+    const cands = sizingCandidates(model.inventory, units, allowLocal).map(size).filter(Boolean);
+    // Emergency stock is always last. Then each mode's rules in turn, and the
+    // first rule that tells two apart is also why the loser lost.
+    const rules = [RANK.em, ...PICK_BY[pickBy] ?? PICK_BY.single];
+    const better = (a, b) => rules.reduce((d, [f]) => d || f(a) - f(b), 0);
+    cands.sort(better);
+    const auto = cands[0];
+    const lostOn = (c) => rules.find(([f]) => f(c) !== f(auto))?.[1] ?? 'tie, listed later';
+
+    // A type forced on this line wins whatever the ranking says - it is how an
+    // emergency driver, or a case-by-case call, gets in. One that does not match
+    // the fittings is still sized and drawn, but flagged; one that cannot be
+    // sized at all leaves the automatic pick in place, also flagged.
+    const want = forced[`${zone}|${key}`] ?? null;
+    let best = auto;
+    let forcedIssue = null;
+    if (want && want !== auto?.t.typeRef) {
+      const t = model.inventory.find((x) => x.typeRef === want);
+      const c = cands.find((x) => x.t.typeRef === want) ?? (t && size(t));
+      if (c) {
+        if (!cands.includes(c)) c.mismatch = mismatchOf(t, units, allowLocal);
+        best = c;
+      } else {
+        forcedIssue = t ? `${want} cannot take one of these fittings per output` : `${want} is not in the type library`;
+      }
     }
 
     if (!best) {
@@ -1256,8 +1328,19 @@ export function planFromRequirements(model, zone, opts = {}) {
       outputs: best.outputs,
       perNode: best.perNode,
       limit: best.limit,
+      working: best.working,
+      considered: [...(cands.includes(best) ? [] : [best]), ...cands.slice(0, 6)].map((c) => ({
+        typeRef: c.t.typeRef, name: c.t.name || '',
+        count: c.count, outputs: c.t.nodes.length, spareW: Math.round(c.waste), spareOutputs: c.spareOutputs, em: !!c.em,
+        taken: c === best, auto: c === auto, mismatch: c.mismatch ?? null,
+        lostOn: c === auto || !cands.includes(c) ? null : lostOn(c) })),
+      fitTypes: cands.map((c) => c.t.typeRef),
+      forced: want, forcedIssue, mismatch: best.mismatch ?? null,
       loadW: totalW,
       controlGroup: group[0].controlGroup,
+      // fittings per ControlGroup, in order, so a patch can name each driver
+      groupQty: [...group.reduce((m, r) => m.set(r.controlGroup || '', (m.get(r.controlGroup || '') ?? 0) + r.qty),
+        new Map())].sort(([a], [b]) => a.localeCompare(b)),
       // what the driver is actually for, and which assessment rows it answers
       positionTypes: [...new Set(group.map((r) => r.positionType).filter(Boolean))],
       locations: [...new Set(group.map((r) => r.location).filter(Boolean))],
@@ -1266,7 +1349,8 @@ export function planFromRequirements(model, zone, opts = {}) {
   }
 
   const drivers = lines.reduce((n, l) => n + l.count, 0);
-  return { zone, lines, unmatched, drivers, loadW: lines.reduce((w, l) => w + l.loadW, 0) };
+  return { zone, hubRef: rows[0]?.hubRef ?? null, lines, unmatched, drivers,
+    loadW: lines.reduce((w, l) => w + l.loadW, 0) };
 }
 
 // Every hub in the assessment, sized - or just the one asked for.
@@ -1439,21 +1523,25 @@ function addedElements(sessions) {
     // a driver broken out of a quantity row is appended by the space layout's
     // patch, with its placement; writing it here too would add it twice
     for (const d of (sn.addedDrivers ?? []).filter((x) => !x.split)) {
-      const known = hubRef && (!hubLabel || hubLabel === d.zone || hubRef === d.zone);
+      // Never the label: it is COALESCE(ExtRef, Ref), so on a hub with an ExtRef it
+      // is not a key. Failing the host's Ref, an assessment row for the hub has it.
+      const known = hubRef && (!hubLabel || hubLabel === d.zone || hubRef === d.zone)
+        ? hubRef
+        : sn.model?.requirements?.find((r) => r.zone === d.zone)?.hubRef ?? null;
       // A hub is usually a Position - DJ 101681 takes it from
       // Link_SecondaryPowerRef, which is the PSU-HUB Position - but it does not
       // have to be one. Until the host sends the kind this falls back rather
       // than knows, and says so instead of writing a silent guess.
       const hubType = sn.context?.hubContextType ?? null;
       const notes = [];
-      if (!known) notes.push(`CHECK ContextRef: ${d.zone} is the hub label, not its Position Ref`);
+      if (!known) notes.push(`CHECK ContextRef: left blank - the Position Ref of ${d.zone} is not known`);
       if (!hubType) notes.push('CHECK ContextType: assumed Position - the host did not say whether this hub is a Position or an Element');
       out.push({
         ref: PLACEHOLDER_REF,
         name: byType.get(d.typeRef)?.name || '',
         typeRef: d.typeRef,
         contextType: hubType ?? 'Position',
-        contextRef: known ? hubRef : d.zone,
+        contextRef: known ?? '',
         quantity: 1,
         note: notes.join(' · '),
       });
@@ -1534,18 +1622,49 @@ export function generatePatchScriptMulti(sessions) {
 // One row per hub + type carrying a Quantity, which is why six identical drivers
 // are one row and not six. No LinksMap section: at tender stage there are no
 // links to repoint.
-export function generateEstimatePatch(estimates) {
+// Names a driver after the ControlGroups it carries. One row per driver deals
+// the line's fittings out in ControlGroup order, so a driver spanning two groups
+// says so; one row per type per hub names the row after every group in it.
+const cgName = (pairs) => pairs.map(([g]) => g).filter(Boolean).join(', ');
+// Quantities can be fractional (metres of strip), so each driver takes an equal
+// slice of the running total and is named after every group that slice overlaps.
+function driverNames(l) {
+  const pairs = l.groupQty ?? [];
+  const total = pairs.reduce((n, [, q]) => n + q, 0);
+  return Array.from({ length: l.count }, (_, d) => {
+    const lo = (d * total) / l.count;
+    const hi = ((d + 1) * total) / l.count;
+    let at = 0;
+    const mine = pairs.filter(([, q]) => { const s = at; at += q; return s < hi && at > lo; });
+    return cgName(mine.length ? mine : pairs);
+  });
+}
+
+// The Elements rows an estimate patch appends - also what the patch dialog previews.
+export function estimatePatchRows(estimates, { perDriver = false } = {}) {
   // Same as the assignment path: the hub is usually a Position but does not have
   // to be one, and at estimate stage there is no host context at all to ask.
-  const adds = (estimates || []).flatMap((z) => z.lines.map((l) => ({
-    ref: PLACEHOLDER_REF,
-    name: l.name || '',
-    typeRef: l.typeRef,
-    contextType: z.hubContextType ?? 'Position',
-    contextRef: z.zone,
-    quantity: l.count,
-    note: z.hubContextType ? '' : 'CHECK ContextType: assumed Position',
-  })));
+  return (estimates || []).flatMap((z) => z.lines.flatMap((l) => {
+    const row = (name, quantity) => ({
+      ref: PLACEHOLDER_REF,
+      name,
+      typeRef: l.typeRef,
+      contextType: z.hubContextType ?? 'Position',
+      contextRef: z.hubRef ?? '',
+      quantity,
+      note: [
+        z.hubRef ? '' : `CHECK ContextRef: the Position Ref of ${z.zone} is not known`,
+        z.hubContextType ? '' : 'CHECK ContextType: assumed Position',
+      ].filter(Boolean).join(' · '),
+    });
+    return perDriver
+      ? driverNames(l).map((n) => row(n, 1))
+      : [row(cgName(l.groupQty ?? []), l.count)];
+  }));
+}
+
+export function generateEstimatePatch(estimates, patchOpts) {
+  const adds = estimatePatchRows(estimates, patchOpts);
   const warn = `// ${ESTIMATE_WARNING}\n`;
   if (!adds.length) return warn + script('');
   return warn + script(`${header(ELEMENT_SHEET, 'E', ELEM_COLS)}\n${addSection(adds)}`);

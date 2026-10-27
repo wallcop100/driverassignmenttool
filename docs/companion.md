@@ -23,6 +23,8 @@ in the note shows the exact JSON before the person sends it.
   An assessment row sends its PositionType, ControlGroup and loadings, but not its location.
 - **The patch**, from the Report flag in Review changes: the cables moved (ref, from, to) and the
   types, drivers added and drivers deleted, as refs only.
+- **The estimate line**, from "Calculation looks wrong" in an estimate's working: the type, count,
+  quantity, limit, ControlGroup, row refs, the engine's working figures and the options. No locations.
 - **Context.** Branch and set IDs, the hub, the mode and the overlay version.
 - **The build.** Version, channel, build name and commit.
 - **Where it happened.** Screen, hub and counts; the area and dialog names; up to ten refs; the

@@ -1,4 +1,4 @@
-import { useEffect, useReducer, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useReducer, useRef, useState } from 'react';
 import * as api from './api.js';
 import { DomainProvider } from './core/domain.js';
 import driversDomain from './drivers/domain.js';
@@ -139,6 +139,10 @@ export default function App({ domain = driversDomain }) {
     return off;
   }, []);
 
+  // The engine calls work on the model the state holds, including a resumed one.
+  // A layout effect, so it lands before any page's own effects call the engine.
+  useLayoutEffect(() => { if (model) domain.adopt?.(model); }, [model]);
+
   // Only once a hub is loaded: before that the prefs are the defaults, and
   // saving them would wipe the ones last set.
   useEffect(() => {
@@ -187,7 +191,7 @@ export default function App({ domain = driversDomain }) {
   useEffect(() => {
     saveSession(state);
     if (embedded && model) embed.send({ type: embed.topic('dirty'), changeCount: changeCount(state) });
-  }, [model, assignments, addedDrivers, state.prefs, state.presets, state.typeSizes, state.tbc, state.recipes, state.jboxes, state.layouts, state.view]);
+  }, [model, assignments, addedDrivers, state.prefs, state.presets, state.typeSizes, state.tbc, state.recipes, state.jboxes, state.forcedTypes, state.ownLine, state.layouts, state.view]);
 
   useEffect(() => {
     const onKey = (e) => {

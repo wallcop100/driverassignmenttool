@@ -7,25 +7,49 @@ Updated: 2026-10-27
 
 ## Now
 
-The app side of self-hosting is on `dev` (pushed, not merged to `main`): companion probe, sent bug
-reports, build names and badge. The host side is `/data/projects/dat_bridge` (plan moved there),
-written but never built. The datajoin side is PR wallcop100/datajoin_mx#19.
+The app side of self-hosting is shipped (`main` 54deb0c, #9, 2026-10-27): companion probe, sent bug
+reports, build names and badge. `dat-autodeploy.timer` keeps Connected on Pages' build. The host side, `/data/projects/dat_bridge`, is live on
+`drivers.erikrees.co.uk` and `drivers-dev.wallcop.org`. Reports land in datajoin (#19 live
+2026-10-27).
 
 ## Next
 
-1. Merge `dev` → `main` once CI is green and the bridge is live, so Pages and Connected match.
-2. n8n overlay sync (plan §7): not built; needs the read/save gateway actions in datajoin first.
+1. n8n overlay sync (plan §7): not built; needs the read/save gateway actions in datajoin first.
 
 ## Blocked / needs Erik
 
-- 🛑 Set `dev` as the default branch and protect `main` on `CI / test` (GitHub settings).
-- 🛑 The stale V1.11 overlay edit is in `git stash` ("stale local overlay V1.11"); drop it on your word.
-- 🛑 Bridge go-live steps are in `dat_bridge/STATE.md`: token in Infisical, datajoin #17 then #19, tunnel/DNS/Access.
+Nothing.
 
 ## Log
 
 ## 2026-10-27
 
+- Own line per PositionType (merged to `dev` in #12). A PositionTypeRef suffixed `E` or `Em`, case-sensitive (the emergency variant, e.g. `B02wE`), is taken out of a bundled estimate line onto its own line by default. Any type can be toggled in or out from the row's ⋮ menu (`OWN_LINE`, `state.ownLine`, saved with the session; engine `isOwnLine`). This only matters while "Fitting types" is not kept separate per driver. 347 tests green, build clean; not clicked through.
+- Force a driver type per estimate line (merged to `dev` in #12). There is a "Driver type" select on each line. `FORCE_TYPE` stores the choice in `state.forcedTypes`, keyed by zone and line key, and it is saved with the session. The engine sizes the forced type even when it does not match the fittings, and flags it as `mismatch` (a red step and a "⚠ forced" chip). If the type cannot be sized, it keeps the automatic pick and reports `forcedIssue`. The working still shows the automatic pick as an untaken branch. 346 tests green, build clean, clicked through on HUB-A.
+- Estimate working with several ControlGroups (merged to `dev` in #12). ControlGroups now always sit on separate outputs. An output is dimmed as one, so the per-output box is locked on and `prefs.nodeControlGroup` is gone. The working shows one step per group or per fitting type: "qty ÷ per = N outputs". After those comes "Drivers = max(outputs ÷ n, W ÷ usable W)", and a new `outputs` limit chip. Each line also lists the driver types it compared and why each lost (`considered`, using the same order as the ranking). Clicked through on demo HUB-A. 344 tests green, build clean. Erik turned down the vertical trace and kept the left-to-right row. Wherever the engine chose, the row now shows a fork: the options stacked in one column, the taken one solid and the others dashed. The forks are driver type, the tightest per-driver limit, each group, and enough drivers for both outputs and watts. "Prefer single output" became "Pick by": Single output, Fewest drivers or Spare outputs (`prefs.pickBy`, `PICK_BY` in the engine). Emergency stock always loses, and the reason a type lost comes from the same rules. 345 tests green.
+- ContextRef bug (merged to `dev` in #11). The estimate patch wrote the hub label as `Elements.ContextRef`,
+  and the assignment patch fell back to it. Both now take the Position Ref: the host's
+  `hubRef`, or the assessment's `Link_SecondaryPowerRef`. When neither is known, ContextRef is left
+  blank with a CHECK note. 342 tests green.
+- Demo data for the assessment (merged to `dev` in #11): every cabled demo hub now carries assessment rows
+  rolled up from its own cables (CC counted per cable; CV strip as metres at 24 W/m, as HUB-J
+  does). So Cables vs Assessment and "Estimate and hub disagree" can be seen on any hub. HUB-J
+  gained a no-load row that must add no driver.
+- Fixed the three filed reports (merged to `dev` in #10, 329f0c9). RSM4NL: on resume `api.js` had no model,
+  so App now hands it over (`domain.adopt`). ZQTY7D: rows with no load are left out of the estimate.
+  CGNAM8: the Elements patch names rows after their ControlGroups, with a choice of one row per
+  driver (Quantity 1) or one per type per hub. That choice lives in a "Copy Elements patch" dialog
+  with a preview of the rows, and is remembered across sessions (`prefs.patchPerDriver`). Resume and
+  the dialog were clicked through with no error. The crash screen now leads with "Send the report"
+  whenever a companion answers; a forced crash posted `kind: crash` to a mocked companion. 341 tests green, build clean. Filing is unconfirmed, because Kaizen was disconnected.
+- Estimate list redone (merged to `dev` in #10): one foldable line per type, a limit chip with a
+  popup, rows with load and drive chips, and the working folded away. The engine returns `working` per
+  line, and "Calculation looks wrong" sends it as `estimate`. Header redone as Erik's pick G: "Secondary
+  Power Assessment", the result card left, and an assumptions panel right ("Keep separate" grid and
+  "Driver type restrictions", each with an info popup).
+- datajoin #19 live; a test report arrived (6ABJU2, resolved).
+- Bridge live (see `dat_bridge/STATE.md`); Erik dropped the stale V1.11 overlay stash.
+- GitHub: `dev` is the default branch; `main` is protected on the `test` check (admins exempt).
 - "Report an issue" without report mode: a ⋮ on each assessment row (sends the row's loadings,
   not its location), the same item on every driver card, and a Report flag in Review changes that
   sends what the patch would change as refs and node keys (`patch`). Clicked through against the

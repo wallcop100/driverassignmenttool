@@ -104,4 +104,6 @@ test('a flagged assessment row carries its loadings but not its location', () =>
 test('a patch report sends what the patch would change', () => {
   const patch = { moved: [{ ref: 'L-1', from: 'E-100|OUT1', to: 'E-100|OUT2' }], deleted: [], fixNodeSyntax: false };
   assert.deepEqual(remoteReport({ ...local, patch }, {}).patch, patch);
+  const estimate = { typeRef: 'ET-1', count: 2, working: { perDriverW: 4 } };
+  assert.deepEqual(remoteReport({ ...local, estimate }, {}).estimate, estimate);
 });
