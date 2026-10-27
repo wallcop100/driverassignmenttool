@@ -43,6 +43,35 @@ export function validateInit(msg, origin, allowedOrigin) {
   return { ok: true };
 }
 
+// The overlay that sends dat:init lives in DataJoin, saved by hand, and this
+// tool deploys on every push - so the two drift. The overlay states its version
+// in the init message; a build states the version it was written against.
+// Pure: returns the sentence to show, or null when they agree (or the tool has
+// no overlay to check). An overlay old enough to send no version at all is
+// older than the first one that did.
+const parts = (v) => String(v).split('.').map((n) => Number(n) || 0);
+function cmp(a, b) {
+  const x = parts(a); const y = parts(b);
+  for (let i = 0; i < Math.max(x.length, y.length); i += 1) {
+    if ((x[i] ?? 0) !== (y[i] ?? 0)) return (x[i] ?? 0) < (y[i] ?? 0) ? -1 : 1;
+  }
+  return 0;
+}
+export function overlayNotice(sent, expected) {
+  if (!expected?.version) return null;
+  const { version, where, file } = expected;
+  const has = sent != null && String(sent).trim() !== '';
+  const order = has ? cmp(sent, version) : -1;
+  if (order === 0) return null;
+  if (order < 0) {
+    return `The DataJoin overlay on ${where} is ${has ? `V${sent}` : `older than V${version}`}, and this tool `
+      + `expects V${version}. Update the overlay from ${file} in the driverassignmenttool repo - `
+      + 'until then some of what this page shows may be missing.';
+  }
+  return `The DataJoin overlay on ${where} is V${sent}, newer than the V${version} this tool was built for. `
+    + 'Reload; if it persists, the published tool is behind the overlay.';
+}
+
 // The driver type library, sent once before dat:init. Same envelope rules.
 export function validateTypes(msg, origin, allowedOrigin) {
   const env = validateEnvelope(msg, origin, allowedOrigin, topic('types'));

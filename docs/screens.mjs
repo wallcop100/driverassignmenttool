@@ -259,6 +259,7 @@ const estHtml = `<!doctype html><html><head><meta charset="utf-8"><title>Driver 
     <h5 class="mb-0">Driver estimate</h5>
     <span class="text-secondary small">${em.requirements.length} rows · ${em.zones.length} hubs · no links yet</span>
   </div>
+  <div class="alert alert-warning py-2 small"><strong>Check every calculation.</strong> ${e.ESTIMATE_WARNING}</div>
   <div class="est-constraints"><span class="est-c-label">Keep separate</span>${boxes}
     <span class="est-c-label ms-3">Choosing a part</span>
     <label class="est-c"><input type="checkbox" checked>Prefer single output</label>

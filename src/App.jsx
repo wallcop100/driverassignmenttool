@@ -81,7 +81,11 @@ export default function App({ domain = driversDomain }) {
         // No match is a legitimate state - a hub with no drivers yet is exactly
         // what this tool exists to fix. Land on the list with a notice instead.
         const matched = focus && model.zones.includes(focus);
-        if (focus && !matched) setNotice(`${focus} isn't in the data the host sent - showing everything it did send.`);
+        const notes = [
+          focus && !matched ? `${focus} isn't in the data the host sent - showing everything it did send.` : null,
+          embed.overlayNotice(msg.overlay, domain.overlay),
+        ].filter(Boolean);
+        if (notes.length) setNotice(notes.join(' '));
         setSessionKey(msg.context?.branchId, msg.context?.systemSetId, msg.context?.hubRef);
         const init = {
           model,
@@ -120,7 +124,7 @@ export default function App({ domain = driversDomain }) {
       const init = { ...fresh.current,
         model: p.assessment && !p.links?.trim()
           ? api.parseEstimate(p.assessment, typesText)
-          : api.parseText(p.form, p.links, typesText) };
+          : api.parseText(p.form, p.links, typesText, p.assessment) };
       fresh.current = init;
       dispatch({ type: 'INIT', ...init });
     });

@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import * as api from '../api.js';
-import { resolveSpec } from '../engine.js';
+import { compareEstimate, ESTIMATE_WARNING, resolveSpec, zoneViews } from '../engine.js';
+import { effectiveDrivers } from '../state.js';
+import ViewToggle from './ViewToggle.jsx';
 
 // Tender estimate - Positions rolled up by DJ 100053, no links and no drivers.
 // There is nothing to assign here, so there is no tray and no bins: the question
@@ -55,6 +57,16 @@ export default function EstimatePage({ state, dispatch, zone }) {
     return { drivers, unmatched, byType: [...byType.entries()].sort() };
   }, [zones]);
 
+  // Beside the hub's actual drivers, per type - only for one hub that has any.
+  // An estimate-only hub has nothing to compare, and saying "0 in the hub" for
+  // every type would read as a fault.
+  const views = zone ? zoneViews(model, zone) : null;
+  const compare = useMemo(() => {
+    if (!zone || !views?.cables) return null;
+    const hub = effectiveDrivers(model, state.addedDrivers, state.deletedDrivers).filter((d) => d.zone === zone);
+    return compareEstimate(zones.find((z) => z.zone === zone), hub);
+  }, [model, zone, zones, state.addedDrivers, state.deletedDrivers, views?.cables]);
+
   // scoped to one hub when routed from the landing page, whole job otherwise
   const rows = zone ? model.requirements.filter((r) => r.zone === zone) : model.requirements;
   const posTypes = new Set(rows.map((r) => r.positionType).filter(Boolean));
@@ -105,6 +117,8 @@ export default function EstimatePage({ state, dispatch, zone }) {
     for (const z of zones) {
       for (const l of z.lines) rows.push([z.zone, l.typeRef, l.count, l.qty, fmt(l.loadW), l.limit]);
     }
+    // last, so the header stays the first row for anything that reads this back
+    rows.push([], ['NOTE', ESTIMATE_WARNING]);
     const csv = rows.map((r) => r.map((v) => `"${String(v ?? '')}"`).join(',')).join('\r\n');
     const stamp = new Date().toISOString().slice(0, 10).replaceAll('-', '');
     await api.saveCsv(`${csv}\r\n`, `DriverEstimate-${stamp}.csv`);
@@ -114,6 +128,7 @@ export default function EstimatePage({ state, dispatch, zone }) {
     <div className="container-fluid py-3 drivers-page">
       <div className="dp-head">
         <h5 className="mb-0">Driver estimate</h5>
+        {zone && <ViewToggle model={model} zone={zone} current="estimate" dispatch={dispatch} />}
         {/* An early design has hubs and Elements but no cables: the space layout is
             still where they are arranged, so the quiet way in is here too. */}
         {zone && (
@@ -124,7 +139,8 @@ export default function EstimatePage({ state, dispatch, zone }) {
         )}
         <span className="text-secondary small">
           {rows.length} row{rows.length === 1 ? '' : 's'} · {posTypes.size} PositionType{posTypes.size === 1 ? '' : 's'}
-          {' · '}{zone ?? `${zones.length} hub${zones.length === 1 ? '' : 's'}`} · no links yet
+          {' · '}{zone ?? `${zones.length} hub${zones.length === 1 ? '' : 's'}`}
+          {views?.cables ? '' : ' · no links yet'}
         </span>
         {totals.unmatched > 0 && (
           <span className="dp-need" title="No type in the library can take these, so no driver is counted for them">
@@ -132,6 +148,36 @@ export default function EstimatePage({ state, dispatch, zone }) {
           </span>
         )}
       </div>
+
+      {/* Always shown, never dismissable: the count is a starting point. */}
+      <div className="alert alert-warning d-flex align-items-start gap-2 py-2 small" role="note">
+        <span className="material-icons small-icon">warning</span>
+        <div><strong>Check every calculation.</strong> {ESTIMATE_WARNING}</div>
+      </div>
+
+      {zone && !rows.length && (
+        <div className="alert alert-secondary py-2 small">
+          No assessment rows for {zone}. The host sends them from the hub's Positions (DJ 100053) - if
+          this hub has Positions, the DataJoin overlay may be out of date.
+        </div>
+      )}
+
+      {compare && rows.length > 0 && (
+        <div className={`alert ${compare.mismatch ? 'alert-danger' : 'alert-success'} py-2 small`}>
+          <strong>{compare.mismatch ? 'Estimate and hub disagree' : 'Estimate matches the hub'}</strong>
+          {' - '}estimate {compare.rows.reduce((n, r) => n + r.estimate, 0)} driver(s),
+          hub has {compare.rows.reduce((n, r) => n + r.hub, 0)}.
+          {compare.mismatch && (
+            <ul className="mb-0 mt-1">
+              {compare.rows.filter((r) => r.estimate !== r.hub).map((r) => (
+                <li key={r.typeRef}>
+                  <code>{r.typeRef}</code>: estimate {r.estimate}, hub {r.hub}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
 
       {/* Each of these makes the estimate looser, and the count higher. Turning
           them all off gives the tightest possible answer, which is rarely the

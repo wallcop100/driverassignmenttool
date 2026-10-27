@@ -1012,6 +1012,36 @@ test('each demo hub reports its own mode', () => {
   assert.equal(engine.zoneMode(m, 'HUB-NOPE'), null);
 });
 
+test('both views are offered by what the hub holds, not its mode', () => {
+  const m = demoModel();
+  assert.deepEqual(engine.zoneViews(m, 'HUB-A'), { cables: true, assessment: false });
+  assert.deepEqual(engine.zoneViews(m, 'HUB-J'), { cables: false, assessment: true });
+  // a cabled hub keeps its assessment rows when the host sends them too
+  const reqs = [...m.requirements.map((r) => ({ ...r, zone: 'HUB-A' })), ...m.requirements];
+  const both = { ...m, requirements: reqs };
+  assert.deepEqual(engine.zoneViews(both, 'HUB-A'), { cables: true, assessment: true });
+  assert.equal(engine.zoneMode(both, 'HUB-A'), 'assign');
+  assert.ok(engine.estimate(both, {}, 'HUB-A')[0].drivers > 0);
+});
+
+test('compareEstimate counts per type and flags a difference', () => {
+  const plan = { lines: [{ typeRef: 'T1', count: 2 }, { typeRef: 'T2', count: 1 }] };
+  const same = engine.compareEstimate(plan, [{ typeRef: 'T1' }, { typeRef: 'T1' }, { typeRef: 'T2' }]);
+  assert.equal(same.mismatch, false);
+  const off = engine.compareEstimate(plan, [{ typeRef: 'T1' }, { typeRef: 'T3' }]);
+  assert.equal(off.mismatch, true);
+  assert.deepEqual(off.rows, [
+    { typeRef: 'T1', estimate: 2, hub: 1 },
+    { typeRef: 'T2', estimate: 1, hub: 0 },
+    { typeRef: 'T3', estimate: 0, hub: 1 },
+  ]);
+});
+
+test('an estimate patch carries the double-check warning', () => {
+  const out = engine.generateEstimatePatch([{ zone: 'HUB-J', lines: [{ typeRef: 'T1', count: 1 }] }]);
+  assert.ok(out.startsWith(`// ${engine.ESTIMATE_WARNING}`));
+});
+
 test('the estimate scopes to one hub', () => {
   const m = demoModel();
   const one = engine.estimate(m, {}, 'HUB-J');

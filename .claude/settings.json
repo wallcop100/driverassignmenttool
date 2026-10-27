@@ -14,10 +14,10 @@
       "Bash(git add*)",
       "Bash(git commit*)",
       "Bash(git checkout -b*)",
-      "Bash(git restore*)"
+      "Bash(git restore*)",
+      "Bash(git push -u origin claude/*)"
     ],
     "deny": [
-      "Bash(git push*)",
       "Bash(git reset --hard*)",
       "Bash(sudo*)",
       "Bash(docker*)",

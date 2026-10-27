@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { VERSION, validateInit, validateTypes, topic, setPrefix } from '../src/embed.js';
+import { VERSION, validateInit, validateTypes, topic, setPrefix, overlayNotice } from '../src/embed.js';
 
 const HOST = 'https://example.com';
 const good = { type: 'dat:init', version: VERSION, form: 'Pullzone,ElementRef\n', links: 'LinkRef\n' };
@@ -94,4 +94,23 @@ test('the message prefix is per tool, so two embeds cannot swallow each other', 
   assert.equal(validateInit(init('dat:init'), HOST, HOST).ok, false,
     'the LCP build ignores a driver init entirely');
   setPrefix('dat');
+});
+
+test('overlay version: agreement is silent, drift says which way', () => {
+  const want = { version: '1.12', where: 'DJ 101681', file: 'sysex-overlay-DJ101681.sql' };
+  assert.equal(overlayNotice('1.12', want), null);
+  assert.equal(overlayNotice('1.12', null), null);           // a tool with no overlay to check
+  assert.match(overlayNotice(undefined, want), /older than V1\.12.*Update the overlay from sysex-overlay-DJ101681\.sql/);
+  assert.match(overlayNotice('1.11', want), /is V1\.11.*expects V1\.12/);
+  assert.match(overlayNotice('1.9', want), /is V1\.9/);     // numeric, not string, comparison
+  assert.match(overlayNotice('1.13', want), /newer than the V1\.12/);
+});
+
+test('the overlay file states the version the tool expects', async () => {
+  const fs = await import('node:fs');
+  const { drivers } = await import('../src/drivers/domain.js').catch(() => ({}));
+  const sql = fs.readFileSync(new URL('../sysex-overlay-DJ101681.sql', import.meta.url), 'utf-8');
+  const m = /@OverlayVersion\s+AS varchar\(\d+\)\s*=\s*'([^']+)'/.exec(sql);
+  assert.ok(m, 'overlay declares @OverlayVersion');
+  if (drivers) assert.equal(m[1], drivers.overlay.version);
 });

@@ -77,7 +77,7 @@ export async function parseAuto(files) {
   if (!found.form && !found.types) {
     throw new Error('Links only: add the Driver Assignment CSV, or the driver type library to size new drivers from.');
   }
-  return parseText(found.form, found.links, found.types);
+  return parseText(found.form, found.links, found.types, found.assessment);
 }
 
 // Third mode: Positions rolled up by DJ 100053, no links and no drivers.

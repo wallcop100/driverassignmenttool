@@ -76,13 +76,16 @@ export const drivers = makeDomain({
   slotsOf: (type) => type?.nodes?.map((n) => n.name) ?? [],
 
   // A hub the host sends with no cables - only a requirement assessment - is the
-  // tender case, and lands on the estimate rather than a tray.
+  // tender case, and lands on the estimate rather than a tray. A hub with cables
+  // keeps its assessment too, so the two views can be compared.
+  overlay: { version: '1.12', where: 'DJ 101681', file: 'sysex-overlay-DJ101681.sql' },
+
   parseInit: (msg, types) => {
     api.setTbcText(msg.tbc);
     api.setDriverExtras({ compositions: msg.compositions, elements: msg.elements });
     return msg.assessment && !msg.links?.trim()
       ? api.parseEstimate(msg.assessment, types)
-      : api.parseText(msg.form, msg.links, types);
+      : api.parseText(msg.form, msg.links, types, msg.assessment);
   },
 
   validate: (model, assignments, added, opts) => api.validate(assignments, added, opts),
