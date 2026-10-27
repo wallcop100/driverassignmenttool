@@ -344,6 +344,9 @@ export function parseAssessment(text, zoneAlias = {}) {
       controlGroup: s(row.ControlGrouptext),
       location: s(row.LocationName),
       positionType: s(row.PositionTypeRef),
+      // The PositionType's UoM: 'm' for linear, blank for a counted fitting. Only
+      // sent from overlay V1.14; without it a quantity is a plain count.
+      uom: s(row.UoM) || null,
       controlType: s(row.ControlTypeRef),
       addressCount: num(row.ControlAddressCount),
       // per fitting - what actually has to fit on a node

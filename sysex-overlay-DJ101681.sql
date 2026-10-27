@@ -1,5 +1,6 @@
 -- SysEx Overlay - Lighting Interactive Driver Assignment --
--- V1.13 -- (DJ 101681: saved as revision 92, 2026-10-27. V1.11 sends every Element in the hub; V1.12 (revision 86) sends the
+-- V1.14 -- (DJ 101681: saved as revision 97, 2026-10-27; V1.13 was revision 92. V1.14 adds the PositionType's UoM to the
+--          assessment, so a quantity reads as a count or as metres. V1.11 sends every Element in the hub; V1.12 (revision 86) sends the
 --          assessment for every hub and states @OverlayVersion; V1.13 gives every hub of a
 --          @Container_TypeRef type a button, even one nothing points at yet)
 
@@ -17,7 +18,7 @@ DECLARE @ToolPath         AS varchar(200) = '/driverassignmenttool/api/';
 DECLARE @DataVersion      AS varchar(50)  = '';           -- blank = @SystemSetID. See notes.
 -- Sent in dat:init. The tool compares it with the version it was built against and
 -- tells the user to update this overlay when they differ - bump it on every save.
-DECLARE @OverlayVersion   AS varchar(20)  = '1.13';
+DECLARE @OverlayVersion   AS varchar(20)  = '1.14';
 
 -- SysEx Overlay - Lighting - Driver Assignment Tool. Puts a launcher on every
 -- PSU-HUB position. Design rationale and load-bearing gotchas (setup order,
@@ -200,6 +201,7 @@ SELECT
        COALESCE(P.ControlGroupText, P2.ControlGroupText, P3.ControlGroupText) AS ControlGrouptext,
        cp.PositionTypeRef,
        cp.SecondaryPowerType                       AS [CC/CV],
+       MAX(pt.UoM)                                 AS UoM,  -- 'm' for linear, NULL for a count
        SUM(cp.Quantity)                            AS SumQuantity,
        NULLIF(MAX(cp.PositionVoltage),0)           AS CV_Voltage,
        NULLIF(MAX(cp.PositionCurrent),0)           AS CC_Current,
@@ -213,6 +215,7 @@ LEFT JOIN #Positions P  ON P.Ref  = cp.PositionRef
 LEFT JOIN #Positions P2 ON P2.Ref = P.ContextRef
 LEFT JOIN #Positions P3 ON P3.Ref = P2.ContextRef
 LEFT JOIN #Locations L  ON L.Ref  = cp.LocationRef
+LEFT JOIN #PositionTypes pt ON pt.Ref = cp.PositionTypeRef
 WHERE cp.Quantity > 0 AND cp.SecondaryPowerType IN ('CC','CV')
 GROUP BY COALESCE(NULLIF(h.ExtRef,''), h.Ref), cp.Link_SecondaryPowerRef, L.Name,
          cp.ControlTypeRef, COALESCE(P.ControlGroupText, P2.ControlGroupText, P3.ControlGroupText),
@@ -312,7 +315,7 @@ GROUP BY l.PullZone;
 IF OBJECT_ID('tempdb..#DataCsv') IS NOT NULL DROP TABLE #DataCsv;
 SELECT r.HubLabel,
   '"Link_SecondaryPowerRef","LocationName","ControlTypeRef","ControlGrouptext","PositionTypeRef",'
-+ '"SumQuantity","CC/CV","CV_Voltage","CC_Current","SumVf","SumPower"'
++ '"SumQuantity","CC/CV","CV_Voltage","CC_Current","SumVf","SumPower","UoM"'
 + @NL + STRING_AGG(CONVERT(varchar(max),
     '"'+REPLACE(ISNULL(CONVERT(varchar(max),r.HubRef),''),'"','""')+'",'
   + '"'+REPLACE(ISNULL(CONVERT(varchar(max),r.LocationName),''),'"','""')+'",'
@@ -324,7 +327,8 @@ SELECT r.HubLabel,
   + '"'+REPLACE(ISNULL(CONVERT(varchar(max),r.CV_Voltage),''),'"','""')+'",'
   + '"'+REPLACE(ISNULL(CONVERT(varchar(max),r.CC_Current),''),'"','""')+'",'
   + '"'+REPLACE(ISNULL(CONVERT(varchar(max),r.SumVf),''),'"','""')+'",'
-  + '"'+REPLACE(ISNULL(CONVERT(varchar(max),r.SumPower),''),'"','""')+'"'
+  + '"'+REPLACE(ISNULL(CONVERT(varchar(max),r.SumPower),''),'"','""')+'",'
+  + '"'+REPLACE(ISNULL(CONVERT(varchar(max),r.UoM),''),'"','""')+'"'
   ), @NL) WITHIN GROUP (ORDER BY r.ControlGrouptext, r.PositionTypeRef) AS Csv
 INTO #DataCsv
 FROM #SPRequirements r

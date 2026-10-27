@@ -64,8 +64,32 @@ export default function EstimatePage({ state, dispatch, zone }) {
   const compare = useMemo(() => {
     if (!zone || !views?.cables) return null;
     const hub = effectiveDrivers(model, state.addedDrivers, state.deletedDrivers).filter((d) => d.zone === zone);
+    // nothing to compare against yet - silence, not a match or a fault
+    if (!hub.length) return null;
     return compareEstimate(zones.find((z) => z.zone === zone), hub);
   }, [model, zone, zones, state.addedDrivers, state.deletedDrivers, views?.cables]);
+
+  // A quantity is a count unless its PositionType states a UoM - 'm' for linear.
+  // A line can sum rows of several types, so it only takes a unit they all share.
+  const reqByRef = useMemo(() => new Map((model.requirements || []).map((r) => [r.ref, r])), [model]);
+  const amount = (qty, refs) => {
+    const units = new Set((refs ?? []).map((ref) => reqByRef.get(ref)?.uom ?? null));
+    if (units.size > 1) return `${fmt(qty)} (mixed units)`;
+    const [unit] = units;
+    return unit ? `${fmt(qty)} ${unit}` : `qty ${fmt(qty)}`;
+  };
+  const unmatchedLabel = () => {
+    const byUnit = new Map();
+    for (const z of zones) {
+      for (const u of z.unmatched) {
+        for (const ref of u.rows ?? []) {
+          const r = reqByRef.get(ref);
+          if (r) byUnit.set(r.uom ?? '', (byUnit.get(r.uom ?? '') ?? 0) + r.qty);
+        }
+      }
+    }
+    return [...byUnit].map(([unit, q]) => (unit ? `${fmt(q)} ${unit}` : `qty ${fmt(q)}`)).join(' + ');
+  };
 
   // scoped to one hub when routed from the landing page, whole job otherwise
   const rows = zone ? model.requirements.filter((r) => r.zone === zone) : model.requirements;
@@ -144,7 +168,7 @@ export default function EstimatePage({ state, dispatch, zone }) {
         </span>
         {totals.unmatched > 0 && (
           <span className="dp-need" title="No type in the library can take these, so no driver is counted for them">
-            {fmt(totals.unmatched)} UoM unmatched
+            {unmatchedLabel()} unmatched
           </span>
         )}
       </div>
@@ -162,20 +186,19 @@ export default function EstimatePage({ state, dispatch, zone }) {
         </div>
       )}
 
-      {compare && rows.length > 0 && (
-        <div className={`alert ${compare.mismatch ? 'alert-danger' : 'alert-success'} py-2 small`}>
-          <strong>{compare.mismatch ? 'Estimate and hub disagree' : 'Estimate matches the hub'}</strong>
+      {/* only ever a flag: agreement is the expected case and says nothing */}
+      {compare?.mismatch && rows.length > 0 && (
+        <div className="alert alert-danger py-2 small">
+          <strong>Estimate and hub disagree</strong>
           {' - '}estimate {compare.rows.reduce((n, r) => n + r.estimate, 0)} driver(s),
           hub has {compare.rows.reduce((n, r) => n + r.hub, 0)}.
-          {compare.mismatch && (
-            <ul className="mb-0 mt-1">
-              {compare.rows.filter((r) => r.estimate !== r.hub).map((r) => (
-                <li key={r.typeRef}>
-                  <code>{r.typeRef}</code>: estimate {r.estimate}, hub {r.hub}
-                </li>
-              ))}
-            </ul>
-          )}
+          <ul className="mb-0 mt-1">
+            {compare.rows.filter((r) => r.estimate !== r.hub).map((r) => (
+              <li key={r.typeRef}>
+                <code>{r.typeRef}</code>: estimate {r.estimate}, hub {r.hub}
+              </li>
+            ))}
+          </ul>
         </div>
       )}
 
@@ -261,7 +284,7 @@ export default function EstimatePage({ state, dispatch, zone }) {
               <div key={l.key} className="dp-ref">
                 <span className="dp-ref-id">{l.count} × {l.typeRef}</span>
                 <span className="dp-ref-spec">
-                  {l.positionTypes?.join(', ') || '-'} · {fmt(l.qty)} UoM · {l.perDriver} per driver
+                  {l.positionTypes?.join(', ') || '-'} · {amount(l.qty, l.rows)} · {l.perDriver} per driver
                   {l.perNode != null && ` · ${l.perNode} per output`}
                 </span>
                 <span className="dp-ref-use" title={`Limited by ${WHY[l.limit] ?? l.limit}`}>
@@ -272,7 +295,7 @@ export default function EstimatePage({ state, dispatch, zone }) {
             ))}
             {z.unmatched.map((u) => (
               <div key={u.key} className="dp-ref is-off">
-                <span className="dp-ref-id">{fmt(u.qty)} UoM</span>
+                <span className="dp-ref-id">{amount(u.qty, u.rows)}</span>
                 <span className="dp-fault">
                   {u.reason ?? 'no type in the library can take these'} - {u.key}
                 </span>
@@ -291,7 +314,7 @@ export default function EstimatePage({ state, dispatch, zone }) {
               <tr>
                 <Th k="zone">Hub</Th><Th k="location">Location</Th><Th k="positionType">PositionType</Th>
                 <Th k="controlGroup">ControlGroup</Th>
-                <Th k="qty" className="text-end" title="SumQuantity - in the PositionType's UoM: metres for tape, pieces for fittings. DJ 100053 strips the unit off P.Dim, so the number does not say which">
+                <Th k="qty" className="text-end" title="SumQuantity - a count of fittings, or metres where the PositionType's UoM is m">
                   Quantity
                 </Th>
                 <Th k="wPer" className="text-end" title="PowerPerUoM - watts per metre for tape, per piece for a fitting">PowerPerUoM</Th>
@@ -310,7 +333,7 @@ export default function EstimatePage({ state, dispatch, zone }) {
                     <td>{r.location}</td>
                     <td>{r.positionType}{part && ` · ${part.name}`}</td>
                     <td>{r.controlGroup}</td>
-                    <td className="text-end">{r.qty}</td>
+                    <td className="text-end">{r.uom ? `${fmt(r.qty)} ${r.uom}` : fmt(r.qty)}</td>
                     <td className="text-end">{fmt(r.wPer)}</td>
                     <td className="text-end">{fmt(r.fvPer) ?? '-'}</td>
                     <td>{r.powerType ?? '-'}</td>

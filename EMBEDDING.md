@@ -122,7 +122,7 @@ without reloading the frame) - it fully replaces the model.
 | `version` | `1` | yes | Mismatch → the frame renders an explicit error, not a guess |
 | `form` | string | no | Raw **Driver Assignment** CSV text. Absent or empty for a hub with no drivers yet |
 | `links` | string | see note | Raw **Links Assignment** CSV text |
-| `assessment` | string | see note | Raw **requirement assessment** CSV text, for every hub with Positions (overlay V1.12+) |
+| `assessment` | string | see note | Raw **requirement assessment** CSV text, for every hub with Positions (overlay V1.12+). From V1.14 it carries a `UoM` column - `m` for linear, blank for a count |
 | `overlay` | string | no | The overlay's own version, e.g. `'1.12'`. The tool compares it with the version it was built against and shows a notice naming the overlay file to update when they differ; absent counts as older |
 | `focusZone` | string | no | Must match the `Pullzone` column exactly |
 | `context` | object | no | See below |
