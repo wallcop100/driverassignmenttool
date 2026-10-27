@@ -320,3 +320,14 @@ test('ADD_DRIVER adds the quantity asked for, one by default', async () => {
   assert.equal(s3.addedDrivers.length, 3);
   assert.equal(new Set(s3.addedDrivers.map((d) => d.ref)).size, 3);
 });
+
+test('RESTORE keeps the saved work but takes the host\'s fresh assessment rows', () => {
+  const stale = { ...model, requirements: [{ zone: 'P5015', qty: 1 }] };
+  const fresh = { ...model, zones: ['3FB'], requirements: [{ zone: '3FB', qty: 9 }] };
+  const r = reducer(initialState, { type: 'RESTORE', saved: { model: stale, assignments: {} }, fresh });
+  assert.deepEqual(r.model.requirements, fresh.requirements);
+  assert.ok(r.model.zones.includes('3FB'));
+  assert.equal(r.model.links, stale.links);       // the work's own model is kept
+  // no fresh model (standalone Resume) - the saved one, untouched
+  assert.equal(reducer(initialState, { type: 'RESTORE', saved: { model: stale, assignments: {} } }).model, stale);
+});

@@ -350,10 +350,20 @@ export function reducer(state, action) {
       return { ...state, ...nextS, redo: state.redo.slice(0, -1), undo: [...state.undo, snap], ...CLEAR_MODES };
     }
 
-    case 'RESTORE': // full session restore from localStorage (#3)
+    case 'RESTORE': { // full session restore from localStorage (#3)
+      // The saved model is the one the work was done against, so it stays. But
+      // the assessment rows are read-only data from the host, never edited here:
+      // the host's fresh copy always wins, or a session saved before a hub had
+      // them (or under an older reading of them) hides them for good.
+      const fresh = action.fresh;
+      const model = fresh ? {
+        ...action.saved.model,
+        requirements: fresh.requirements ?? [],
+        zones: [...new Set([...(action.saved.model.zones ?? []), ...(fresh.zones ?? [])])].sort(),
+      } : action.saved.model;
       return {
         ...initialState,
-        model: action.saved.model,
+        model,
         assignments: action.saved.assignments,
         addedDrivers: action.saved.addedDrivers ?? [],
         deletedDrivers: action.saved.deletedDrivers ?? [],
@@ -373,6 +383,7 @@ export function reducer(state, action) {
         // user has no way back.
         view: action.view ?? action.saved.view ?? { page: 'landing' },
       };
+    }
 
     // Presets are catalogue-level, like prefs: they change what CAN be built, not
     // what has been. Keeping them out of the undo stack means Ctrl+Z stays about
