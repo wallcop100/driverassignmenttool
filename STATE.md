@@ -1,25 +1,52 @@
 # driverassignmenttool — state
 
-Updated: 2026-10-21
+Updated: 2026-10-27
 
 <!-- Now / Next / Blocked are rewritten in place and never grow. Finish something, delete the
      line. Only Log appends. Format: /srv/projects/FORMAT.md -->
 
 ## Now
 
-`sysex-overlay-DJ101681.sql` is modified and uncommitted — the working overlay for the embedded
-host. Decide whether it is finished and commit it, or note here what is still wrong with it.
+The app side of self-hosting is on `dev` (pushed, not merged to `main`): companion probe, sent bug
+reports, build names and badge. The host side is `/data/projects/dat_bridge` (plan moved there),
+written but never built. The datajoin side is PR wallcop100/datajoin_mx#19.
 
 ## Next
 
-1. Commit or revert the overlay above; the tree has been dirty since 2026-09-16.
-2. Nothing else queued. The hub-layout work landed and the screenshots were retaken.
+1. Merge `dev` → `main` once CI is green and the bridge is live, so Pages and Connected match.
+2. n8n overlay sync (plan §7): not built; needs the read/save gateway actions in datajoin first.
 
 ## Blocked / needs Erik
 
-Nothing.
+- 🛑 Set `dev` as the default branch and protect `main` on `CI / test` (GitHub settings).
+- 🛑 The stale V1.11 overlay edit is in `git stash` ("stale local overlay V1.11"); drop it on your word.
+- 🛑 Bridge go-live steps are in `dat_bridge/STATE.md`: token in Infisical, datajoin #17 then #19, tunnel/DNS/Access.
 
 ## Log
+
+## 2026-10-27
+
+- "Report an issue" without report mode: a ⋮ on each assessment row (sends the row's loadings,
+  not its location), the same item on every driver card, and a Report flag in Review changes that
+  sends what the patch would change as refs and node keys (`patch`). Clicked through against the
+  mock companion; one sent. 338 tests green. Seen, not fixed: a left-column driver's ⋮ menu opens
+  under the tray.
+- Actioned the self-host plan, taking §9's recommendations: nginx plus a datajoin gateway door (not
+  a bridge service), a new private `dat_bridge`, its own `dat-autodeploy.timer`, Kaizen embed left on
+  Pages, and overlay sync from `main` only. `dev` branch created and pushed. A report is sent only
+  on a click, built from allowlists, with a preview of the payload. Builds carry PS&R-style names.
+  Screenshots taken against a mock companion (`docs/companion.md`); Send round-tripped ("Sent QFFDRW").
+  Not shot: the crash screen. 336 tests green.
+- Auto-deploy brought in line with the PS&R tool: renamed `deploy.yml` → `pages.yml`, which now
+  runs `npm test` before the build (test gates the deploy) and skips doc-only pushes via
+  `paths-ignore`. Added `ci.yml` running test + build on every PR and non-`main` push, so `main`
+  can be branch-protected on that check and a red suite is caught before merge, not by a failed
+  deploy after it. 314 tests green locally. The embed env var and `main` as the branch are kept.
+- Researched and planned self-hosting with a companion, a dev channel and n8n overlay sync
+  (`SELFHOST_PLAN.md`). Findings:
+  - The companion can't live at `./api/`, which is the embed entry. Use `./companion/`.
+  - The gateway 404s `cf-ray` traffic, so browser reports need their own door and token.
+  - Overlay drift is real: local V1.11 against live V1.14.
 
 ## 2026-10-21
 

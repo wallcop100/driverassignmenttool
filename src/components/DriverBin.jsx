@@ -3,6 +3,7 @@ import { cgColor, driverLoad, driverStatus, isPending, keyOf, outRef, severityOf
 import Block from './Block.jsx';
 import FlagDialog from './FlagDialog.jsx';
 import KebabMenu from './KebabMenu.jsx';
+import { openReport } from '../bugReports.js';
 import Tooltip from './Tooltip.jsx';
 import Origin from './Origin.jsx';
 import { useDomain } from '../core/domain.js';
@@ -150,7 +151,7 @@ export default function DriverBin({ driver, state, dispatch, links, accent, flag
   const driverRefs = driver.nodes.flatMap((n) => state.assignments[keyOf(driver.ref, n.name)]?.refs ?? []);
 
   return (
-    <div data-driver={driver.ref}
+    <div data-driver={driver.ref} data-code={driver.ref}
       className={['driver-bin', `status-${status}`, driver.undetermined && 'is-undetermined',
       fail && 'is-fail', !fail && mismatch && 'is-mismatch'].filter(Boolean).join(' ')}
       style={{ width, '--zone-accent': accent }}>
@@ -199,6 +200,10 @@ export default function DriverBin({ driver, state, dispatch, links, accent, flag
                 + 'They go back to the tray. Continue?')) return;
               dispatch({ type: 'REMOVE_DRIVER', ref: driver.ref });
             },
+          },
+          {
+            label: 'Report an issue', icon: 'flag',
+            onClick: (e) => openReport(e.currentTarget.closest('.driver-bin')),
           },
         ]} />
       </div>

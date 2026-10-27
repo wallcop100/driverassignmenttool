@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import * as api from '../api.js';
 import { compareEstimate, ESTIMATE_WARNING, resolveSpec, zoneViews } from '../engine.js';
 import { effectiveDrivers } from '../state.js';
+import { openReport } from '../bugReports.js';
+import KebabMenu from './KebabMenu.jsx';
 import ViewToggle from './ViewToggle.jsx';
 
 // Tender estimate - Positions rolled up by DJ 100053, no links and no drivers.
@@ -322,13 +324,14 @@ export default function EstimatePage({ state, dispatch, zone }) {
                 <Th k="powerType">CC/CV</Th>
                 <Th k="currentA" className="text-end" title="CurrentPerUoM - the current this fitting is driven at">CC_Current</Th>
                 <Th k="driver" title="The driver this row was sized onto">Driver</Th>
+                <th />
               </tr>
             </thead>
             <tbody>
               {sortedRows.map((r) => {
                 const part = resolveSpec(r.positionType);
                 return (
-                  <tr key={r.ref}>
+                  <tr key={r.ref} data-code={r.ref}>
                     <td>{r.zone}</td>
                     <td>{r.location}</td>
                     <td>{r.positionType}{part && ` · ${part.name}`}</td>
@@ -339,6 +342,12 @@ export default function EstimatePage({ state, dispatch, zone }) {
                     <td>{r.powerType ?? '-'}</td>
                     <td className="text-end">{r.currentA != null ? `${r.currentA}A` : '-'}</td>
                     <td>{servedBy.get(r.ref) ?? <span className="dp-fault">no driver</span>}</td>
+                    <td className="text-end">
+                      <KebabMenu title="Row actions" items={[{
+                        label: 'Report an issue', icon: 'flag',
+                        onClick: (e) => openReport(e.currentTarget.closest('tr')),
+                      }]} />
+                    </td>
                   </tr>
                 );
               })}

@@ -3,6 +3,12 @@ name: Deploy to GitHub Pages
 on:
   push:
     branches: [main]
+    # Don't spend a build + deploy on a push that cannot change the built site.
+    # Everything NOT listed here still triggers — including test/, which gates the deploy.
+    paths-ignore:
+      - '**/*.md'
+      - '.vscode/**'
+      - '.gitignore'
   workflow_dispatch:
 
 permissions:
@@ -10,9 +16,10 @@ permissions:
   pages: write
   id-token: write
 
+# One deployment at a time; don't cancel a run that is already publishing.
 concurrency:
   group: pages
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   build:
@@ -24,12 +31,19 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
-      - run: npm run build
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
         env:
           # Origins allowed to embed /api/ (comma-separated, no trailing slash).
           # Set the repo variable ALLOWED_PARENT_ORIGINS to the real host origin.
           # Unset => embed mode is off and the standalone page is unaffected.
           VITE_ALLOWED_PARENT_ORIGINS: ${{ vars.ALLOWED_PARENT_ORIGINS }}
+
+      - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist
