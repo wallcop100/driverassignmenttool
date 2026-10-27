@@ -29,7 +29,8 @@ It works out which of its three modes it is in from the data, not from which fil
 | Host | none — static, no server, no backend, no database |
 | Path | `/data/projects/driverassignmenttool` |
 | Published | https://wallcop100.github.io/driverassignmenttool/ (verified 200, 2026-09-17) |
-| Deploy | push to `main` → `.github/workflows/deploy.yml` → `npm ci && npm run build` → Pages |
+| Deploy | push to `main` → `.github/workflows/pages.yml` → `npm ci && npm test && npm run build` → Pages |
+| CI | `.github/workflows/ci.yml` — test + build on every PR and non-`main` push; protect `main` on this check |
 | Embedded in | DJ 101681, via `sysex-overlay-DJ101681.sql` — see `EMBEDDING.md` |
 
 ```bash
@@ -118,6 +119,10 @@ node docs/hub-layout-shots.mjs
   which part it is — that is why the catalogue exists at all.
 - **`MISMATCH` vs `FAIL` vs `WARN` is this tool's invention**, layered on the SQL's binary
   FAIL/WARN. Both `FAIL` and `MISMATCH` count as actionable everywhere in the UI.
+- **The overlay file drifts from live DJ 101681** because agents save in Kaizen and hand-copy back
+  (2026-10-27: the local file said V1.11 while live was V1.14, revision 97). Check `get_datajoin`'s
+  `revisionref` before trusting the file. Its `sqlincludes` field carries per-include tokens. Never
+  copy it into a file or into chat.
 - **For real datasets the deciding constraints are ControlGroup and capacity.** CC/CV is a trivial
   eyeball, CV voltage is a no-op (all 24 V) and CC current is unpopulated — so surfacing those two
   loudly and quieting the rest is deliberate, not an oversight (2026-07-06).

@@ -59,6 +59,16 @@ export default class ErrorBoundary extends Component {
     ].filter(Boolean).join('\n');
   }
 
+  async sendReport(id) {
+    this.setState({ sent: 'sending' });
+    const ok = await this.props.send({
+      id: id.replace(/^DAT-/, ''), at: this.state.at, kind: 'crash', note: this.report(),
+      version: typeof __APP_VERSION__ === 'undefined' ? 'dev' : __APP_VERSION__,
+      app: { screen: this.props.where ?? 'unknown' },
+    });
+    this.setState({ sent: ok ? 'ok' : 'failed' });
+  }
+
   render() {
     const { error } = this.state;
     if (!error) return this.props.children;
@@ -85,8 +95,16 @@ export default class ErrorBoundary extends Component {
               <span className="material-icons small-icon align-middle">content_copy</span>
               {this.state.copied ? ' Copied' : ' Copy the report'}
             </button>
+            {this.props.send && (
+              // only when someone clicks: there is no automatic crash telemetry
+              <button className="btn btn-sm btn-outline-primary" disabled={!!this.state.sent}
+                onClick={() => this.sendReport(id)}>
+                <span className="material-icons small-icon align-middle">send</span>
+                {{ sending: ' Sending', ok: ' Sent', failed: ' Not sent - copy it instead' }[this.state.sent] ?? ' Send the report'}
+              </button>
+            )}
             <button className="btn btn-sm btn-outline-secondary"
-              onClick={() => this.setState({ error: null, info: null, copied: false })}>
+              onClick={() => this.setState({ error: null, info: null, copied: false, sent: null })}>
               Back to the tool
             </button>
             <button className="btn btn-sm btn-link" onClick={() => window.location.reload()}>Reload</button>

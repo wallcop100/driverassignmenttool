@@ -1,25 +1,44 @@
 # driverassignmenttool — state
 
-Updated: 2026-10-21
+Updated: 2026-10-27
 
 <!-- Now / Next / Blocked are rewritten in place and never grow. Finish something, delete the
      line. Only Log appends. Format: /srv/projects/FORMAT.md -->
 
 ## Now
 
-`sysex-overlay-DJ101681.sql` is modified and uncommitted — the working overlay for the embedded
-host. Decide whether it is finished and commit it, or note here what is still wrong with it.
+Planned, not built: self-host (Connected edition), companion bug reports, `dev` channel, n8n overlay
+sync. Plan in `SELFHOST_PLAN.md` (local only, git-excluded: it names the backend).
 
 ## Next
 
-1. Commit or revert the overlay above; the tree has been dirty since 2026-09-16.
-2. Nothing else queued. The hub-layout work landed and the screenshots were retaken.
+1. Pull: the local clone is behind `origin/main` by PRs #4–#8. Then commit the uncommitted
+   `pages.yml`/`ci.yml` on the fresh base.
+2. The dirty local `sysex-overlay-DJ101681.sql` (V1.11) is stale: origin and live DJ 101681 are
+   V1.14, revision 97. Discard it on Erik's word.
+3. Protect `main` on `CI / test` (not set, verified 404).
+4. Then plan phases 1–2 (public repo only).
 
 ## Blocked / needs Erik
 
-Nothing.
+- 🛑 Six decisions left in `SELFHOST_PLAN.md` §9. Hostnames and data tiers were decided
+  2026-10-27: `drivers.erikrees.co.uk` and `drivers-dev.wallcop.org`. A report sends the flagged
+  row's Element IDs, types and loadings, plus branch and set IDs.
 
 ## Log
+
+## 2026-10-27
+
+- Auto-deploy brought in line with the PS&R tool: renamed `deploy.yml` → `pages.yml`, which now
+  runs `npm test` before the build (test gates the deploy) and skips doc-only pushes via
+  `paths-ignore`. Added `ci.yml` running test + build on every PR and non-`main` push, so `main`
+  can be branch-protected on that check and a red suite is caught before merge, not by a failed
+  deploy after it. 314 tests green locally. The embed env var and `main` as the branch are kept.
+- Researched and planned self-hosting with a companion, a dev channel and n8n overlay sync
+  (`SELFHOST_PLAN.md`). Findings:
+  - The companion can't live at `./api/`, which is the embed entry. Use `./companion/`.
+  - The gateway 404s `cf-ray` traffic, so browser reports need their own door and token.
+  - Overlay drift is real: local V1.11 against live V1.14.
 
 ## 2026-10-21
 

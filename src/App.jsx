@@ -7,6 +7,9 @@ import PanelLayout from './lcp/PanelLayout.jsx';
 import TypesPage from './components/TypesPage.jsx';
 import ErrorBoundary from './components/ErrorBoundary.jsx';
 import BugReporter from './components/BugReporter.jsx';
+import { APP_CHANNEL, BUILD_NAME } from './build.js';
+import { remoteReport } from './bugReports.js';
+import { useCompanion } from './companion.js';
 import EstimatePage from './components/EstimatePage.jsx';
 import ImportScreen from './components/ImportScreen.jsx';
 import Landing from './components/Landing.jsx';
@@ -41,6 +44,7 @@ export default function App({ domain = driversDomain }) {
   const [notice, setNotice] = useState(null);
   const [behind, setBehind] = useState(false);   // offer a reload on the notice
   const [fatal, setFatal] = useState(null);
+  const companion = useCompanion();
 
   // Standalone keeps the ask-first banner. Embedded resumes silently - the frame
   // is flaky by nature, so coming back to your own work is the expected outcome,
@@ -251,6 +255,12 @@ export default function App({ domain = driversDomain }) {
   } else {
     screen = <Landing state={state} dispatch={dispatch} />;
   }
+  // What a SENT report may look up its row in (bugReports.js remoteReport picks from it).
+  const reportData = () => ({
+    model, assignments, addedDrivers, flags: state.flags, context: state.context,
+    mode: embedded ? `embed:${domain.id}` : 'standalone', overlay: payload.current?.overlay,
+  });
+
   return (
     <DomainProvider value={domain}>
     <LabelContext.Provider value={state.prefs.label}>
@@ -272,11 +282,17 @@ export default function App({ domain = driversDomain }) {
       {/* the screen as the person sees it: a lab keeps the view on 'landing',
           which would send whoever reads the report to the wrong place */}
       <ErrorBoundary context={state.context}
-        where={lab && state.view.page === 'landing' ? `lab:${lab}` : state.view.page}>
+        where={lab && state.view.page === 'landing' ? `lab:${lab}` : state.view.page}
+        send={companion?.report && ((r) => companion.report(remoteReport(r, reportData())))}>
         {screen}
       </ErrorBoundary>
       </div>
-      <BugReporter screen={state.view.page}
+      {/* The build this is, bottom-right on every page so a screenshot names it. Dev is red,
+          so a dev screenshot can't pass for prod. Same scheme as PS&R. */}
+      <span className={`build-badge${APP_CHANNEL === 'dev' ? ' is-dev' : ''}`} data-testid="build-badge">
+        {APP_CHANNEL === 'dev' ? 'DEV · ' : ''}{BUILD_NAME}
+      </span>
+      <BugReporter screen={state.view.page} getData={reportData}
         getApp={() => ({
           zone: state.view.zone,
           counts: model ? { drivers: model.drivers.length, links: model.links.length,
