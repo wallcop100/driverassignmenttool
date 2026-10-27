@@ -280,7 +280,7 @@ const estHtml = `<!doctype html><html><head><meta charset="utf-8"><title>Driver 
         <span class="dp-ref-use">${l.limit} limited</span>
         <span class="dp-ref-use">${esc(l.controlGroup || '-')}</span></div>`).join('')}
       ${z.unmatched.map((u) => `<div class="dp-ref is-off"><span class="dp-ref-id">${f1(u.qty)} UoM</span>
-        <span class="dp-fault">${esc(u.reason ?? 'no type in the library can take these')} - ${esc(u.key)}</span></div>`).join('')}
+        <span class="dp-fault">${esc(u.reason ?? 'No ElementType in the DesignDB can take these')} - ${esc(u.key)}</span></div>`).join('')}
     </div>`).join('')}</div>
 </div></div>
 </body></html>`;

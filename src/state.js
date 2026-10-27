@@ -108,6 +108,7 @@ export function reducer(state, action) {
         ...initialState,
         model: action.model,
         assignments: cloneAssignments(action.model.baseline),
+        prefs: { ...DEFAULT_PREFS, ...(action.prefs ?? {}) },
         demo: !!action.demo,
         context: action.context ?? null,
         // Type corrections belong to the set, not the hub - the ones made in
@@ -368,7 +369,8 @@ export function reducer(state, action) {
         addedDrivers: action.saved.addedDrivers ?? [],
         deletedDrivers: action.saved.deletedDrivers ?? [],
         fixNodeSyntax: !!action.saved.fixNodeSyntax,
-        prefs: { ...DEFAULT_PREFS, ...(action.saved.prefs ?? {}) },
+        // the options last set anywhere win over the ones this hub was saved with
+        prefs: { ...DEFAULT_PREFS, ...(action.saved.prefs ?? {}), ...(action.prefs ?? {}) },
         // the hub's own saved presets, plus any made in another hub since
         presets: { ...(action.saved.presets ?? {}), ...(action.presets ?? {}) },
         typeSizes: { ...(action.saved.typeSizes ?? {}), ...(action.typeSizes ?? {}) },

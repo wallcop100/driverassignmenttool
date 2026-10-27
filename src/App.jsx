@@ -14,7 +14,7 @@ import Tutorial from './components/Tutorial.jsx';
 import ZonePage from './components/ZonePage.jsx';
 import * as embed from './embed.js';
 import { LabelContext } from './labelContext.js';
-import { clearSession, loadSession, loadTypeExtras, loadTypes, saveSession, setSessionKey } from './persist.js';
+import { clearSession, loadPrefs, loadSession, loadTypeExtras, loadTypes, savePrefs, saveSession, setSessionKey } from './persist.js';
 import { changeCount, diffRows, initialState, intersectionSuggestions, reducer } from './state.js';
 
 const embedded = embed.isEmbedded();
@@ -27,8 +27,13 @@ const lab = window.__DAT_LAB__ ?? new URLSearchParams(window.location.search).ge
 // `domain` is the tool's own subject - which words, which capacities, which
 // rules. It defaults to the driver pack so the standalone entry needs no change;
 // the LCP entry passes its own.
+const withPrefs = (state, action) => reducer(state,
+  (action.type === 'INIT' || action.type === 'RESTORE') && !action.prefs ? { ...action, prefs: loadPrefs() } : action);
+
 export default function App({ domain = driversDomain }) {
-  const [state, dispatch] = useReducer(reducer, initialState);
+  // Every way a hub is entered - host init, resume, a dropped file, the demo -
+  // starts from the options last set, wherever they were set.
+  const [state, dispatch] = useReducer(withPrefs, initialState);
   const { model, assignments, addedDrivers, selectedLinks } = state;
   // standalone reads the session at mount; embedded the key isn't known until
   // dat:init lands, so the init handler re-reads it under the right key.
@@ -127,6 +132,12 @@ export default function App({ domain = driversDomain }) {
     embed.sendReady();
     return off;
   }, []);
+
+  // Only once a hub is loaded: before that the prefs are the defaults, and
+  // saving them would wipe the ones last set.
+  useEffect(() => {
+    if (model) savePrefs(state.prefs);
+  }, [model, state.prefs]);
 
   // A preset changes what the catalogue says a type is, so the model is rebuilt
   // from the CSVs api.js kept. Assignments and added drivers are untouched - 

@@ -331,3 +331,15 @@ test('RESTORE keeps the saved work but takes the host\'s fresh assessment rows',
   // no fresh model (standalone Resume) - the saved one, untouched
   assert.equal(reducer(initialState, { type: 'RESTORE', saved: { model: stale, assignments: {} } }).model, stale);
 });
+
+test('INIT and RESTORE start from the options last set, not the defaults', () => {
+  const last = { restrictControlGroup: false, margin: 0.2 };
+  const i = reducer(initialState, { type: 'INIT', model, prefs: last });
+  assert.equal(i.prefs.restrictControlGroup, false);
+  assert.equal(i.prefs.margin, 0.2);
+  assert.equal(i.prefs.splitByType, st.DEFAULT_PREFS.splitByType);   // unset ones stay default
+  const saved = { model, assignments: {}, prefs: { restrictControlGroup: true, margin: 0.1 } };
+  const r = reducer(initialState, { type: 'RESTORE', saved, prefs: last });
+  assert.equal(r.prefs.margin, 0.2);
+  assert.equal(reducer(initialState, { type: 'INIT', model }).prefs.margin, st.DEFAULT_PREFS.margin);
+});

@@ -1051,6 +1051,13 @@ test('one cable to two rooms is one link; a real clash under one ref still fails
     /duplicate LinkRef: _GENERATIVE-X500641/);
 });
 
+test('an assessment row carries its UoM when the overlay sends one', () => {
+  const head = '"Link_SecondaryPowerRef","SumQuantity","CC/CV","SumPower"';
+  assert.equal(engine.parseAssessment(`${head},"UoM"\n"P1","3.5","CV","20","m"\n`)[0].uom, 'm');
+  assert.equal(engine.parseAssessment(`${head},"UoM"\n"P1","2","CC","20",""\n`)[0].uom, null);
+  assert.equal(engine.parseAssessment(`${head}\n"P1","2","CC","20"\n`)[0].uom, null);   // pre-V1.14
+});
+
 test('compareEstimate counts per type and flags a difference', () => {
   const plan = { lines: [{ typeRef: 'T1', count: 2 }, { typeRef: 'T2', count: 1 }] };
   const same = engine.compareEstimate(plan, [{ typeRef: 'T1' }, { typeRef: 'T1' }, { typeRef: 'T2' }]);
