@@ -1124,7 +1124,8 @@ export function planFromRequirements(model, zone, opts = {}) {
     nodeSplitByLocation = false,
   } = opts;
   const keep = 1 - margin;
-  const rows = (model.requirements || []).filter((r) => r.zone === zone && !!r.powerType);
+  // A row with no load needs no driver, whatever its quantity.
+  const rows = (model.requirements || []).filter((r) => r.zone === zone && !!r.powerType && r.loadW > 0);
 
   // Each constraint is a coarser bucket, and a coarser bucket means more
   // drivers. That is the point: an estimate that packs everything as tightly as
@@ -1221,6 +1222,15 @@ export function planFromRequirements(model, zone, opts = {}) {
         perNode: Number.isFinite(perNode) ? perNode : null,
         em: isEmergency(t.typeRef) ? 1 : 0,
         waste: count * t.maxPowerW * keep - totalW,
+        // the inputs behind count, so the page can show its working rather than redo it
+        working: {
+          keep, maxPowerW: t.maxPowerW, outputs: t.nodes.length,
+          maxFvV: node.maxFvV ?? null, maxLoadW: node.maxLoadW ?? null,
+          wPer, fvPer: Math.max(...runs.map((r) => r.fvPer)) || null, runs: runs.length,
+          perNodeFv: Number.isFinite(perNodeFv) ? perNodeFv : null,
+          perNodeW: Number.isFinite(perNodeW) ? perNodeW : null,
+          perDriverW,
+        },
         // the limit that actually bound it, in the reader's terms
         limit: perNode * t.nodes.length <= perDriverW
           ? (perNodeFv <= perNodeW ? 'fV' : 'node W')
@@ -1256,8 +1266,12 @@ export function planFromRequirements(model, zone, opts = {}) {
       outputs: best.outputs,
       perNode: best.perNode,
       limit: best.limit,
+      working: best.working,
       loadW: totalW,
       controlGroup: group[0].controlGroup,
+      // fittings per ControlGroup, in order, so a patch can name each driver
+      groupQty: [...group.reduce((m, r) => m.set(r.controlGroup || '', (m.get(r.controlGroup || '') ?? 0) + r.qty),
+        new Map())].sort(([a], [b]) => a.localeCompare(b)),
       // what the driver is actually for, and which assessment rows it answers
       positionTypes: [...new Set(group.map((r) => r.positionType).filter(Boolean))],
       locations: [...new Set(group.map((r) => r.location).filter(Boolean))],
@@ -1534,18 +1548,46 @@ export function generatePatchScriptMulti(sessions) {
 // One row per hub + type carrying a Quantity, which is why six identical drivers
 // are one row and not six. No LinksMap section: at tender stage there are no
 // links to repoint.
-export function generateEstimatePatch(estimates) {
+// Names a driver after the ControlGroups it carries. One row per driver deals
+// the line's fittings out in ControlGroup order, so a driver spanning two groups
+// says so; one row per type per hub names the row after every group in it.
+const cgName = (pairs) => pairs.map(([g]) => g).filter(Boolean).join(', ');
+// Quantities can be fractional (metres of strip), so each driver takes an equal
+// slice of the running total and is named after every group that slice overlaps.
+function driverNames(l) {
+  const pairs = l.groupQty ?? [];
+  const total = pairs.reduce((n, [, q]) => n + q, 0);
+  return Array.from({ length: l.count }, (_, d) => {
+    const lo = (d * total) / l.count;
+    const hi = ((d + 1) * total) / l.count;
+    let at = 0;
+    const mine = pairs.filter(([, q]) => { const s = at; at += q; return s < hi && at > lo; });
+    return cgName(mine.length ? mine : pairs);
+  });
+}
+
+// The Elements rows an estimate patch appends - also what the patch dialog previews.
+export function estimatePatchRows(estimates, { perDriver = false } = {}) {
   // Same as the assignment path: the hub is usually a Position but does not have
   // to be one, and at estimate stage there is no host context at all to ask.
-  const adds = (estimates || []).flatMap((z) => z.lines.map((l) => ({
-    ref: PLACEHOLDER_REF,
-    name: l.name || '',
-    typeRef: l.typeRef,
-    contextType: z.hubContextType ?? 'Position',
-    contextRef: z.zone,
-    quantity: l.count,
-    note: z.hubContextType ? '' : 'CHECK ContextType: assumed Position',
-  })));
+  return (estimates || []).flatMap((z) => z.lines.flatMap((l) => {
+    const row = (name, quantity) => ({
+      ref: PLACEHOLDER_REF,
+      name,
+      typeRef: l.typeRef,
+      contextType: z.hubContextType ?? 'Position',
+      contextRef: z.zone,
+      quantity,
+      note: z.hubContextType ? '' : 'CHECK ContextType: assumed Position',
+    });
+    return perDriver
+      ? driverNames(l).map((n) => row(n, 1))
+      : [row(cgName(l.groupQty ?? []), l.count)];
+  }));
+}
+
+export function generateEstimatePatch(estimates, patchOpts) {
+  const adds = estimatePatchRows(estimates, patchOpts);
   const warn = `// ${ESTIMATE_WARNING}\n`;
   if (!adds.length) return warn + script('');
   return warn + script(`${header(ELEMENT_SHEET, 'E', ELEM_COLS)}\n${addSection(adds)}`);

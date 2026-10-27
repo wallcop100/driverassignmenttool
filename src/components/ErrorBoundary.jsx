@@ -79,7 +79,9 @@ export default class ErrorBoundary extends Component {
           <span className="material-icons app-error-icon">error_outline</span>
           <h5 className="mb-1">Something in the tool broke</h5>
           <p className="text-secondary small mb-3">
-            Your work is still saved. Send this id back and it can be traced to the exact fault.
+            Your work is still saved. {this.props.send
+              ? 'Send the report and it can be traced to the exact fault.'
+              : 'Send this id back and it can be traced to the exact fault.'}
           </p>
           <div className="app-error-id" title="Quote this when you report it">{id}</div>
           <dl className="app-error-facts">
@@ -87,7 +89,15 @@ export default class ErrorBoundary extends Component {
             <dt>What</dt><dd>{error?.message ?? String(error)}</dd>
           </dl>
           <div className="app-error-acts">
-            <button className="btn btn-sm btn-primary"
+            {this.props.send && (
+              // only when someone clicks: there is no automatic crash telemetry
+              <button className="btn btn-sm btn-primary" disabled={!!this.state.sent}
+                onClick={() => this.sendReport(id)}>
+                <span className="material-icons small-icon align-middle">send</span>
+                {{ sending: ' Sending', ok: ' Sent - thank you', failed: ' Not sent - copy it instead' }[this.state.sent] ?? ' Send the report'}
+              </button>
+            )}
+            <button className={`btn btn-sm ${this.props.send ? 'btn-outline-primary' : 'btn-primary'}`}
               onClick={() => navigator.clipboard?.writeText(this.report()).then(
                 () => this.setState({ copied: true }),
                 () => this.setState({ copied: false }),
@@ -95,14 +105,6 @@ export default class ErrorBoundary extends Component {
               <span className="material-icons small-icon align-middle">content_copy</span>
               {this.state.copied ? ' Copied' : ' Copy the report'}
             </button>
-            {this.props.send && (
-              // only when someone clicks: there is no automatic crash telemetry
-              <button className="btn btn-sm btn-outline-primary" disabled={!!this.state.sent}
-                onClick={() => this.sendReport(id)}>
-                <span className="material-icons small-icon align-middle">send</span>
-                {{ sending: ' Sending', ok: ' Sent', failed: ' Not sent - copy it instead' }[this.state.sent] ?? ' Send the report'}
-              </button>
-            )}
             <button className="btn btn-sm btn-outline-secondary"
               onClick={() => this.setState({ error: null, info: null, copied: false, sent: null })}>
               Back to the tool

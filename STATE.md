@@ -7,25 +7,38 @@ Updated: 2026-10-27
 
 ## Now
 
-The app side of self-hosting is on `dev` (pushed, not merged to `main`): companion probe, sent bug
-reports, build names and badge. The host side is `/data/projects/dat_bridge` (plan moved there),
-written but never built. The datajoin side is PR wallcop100/datajoin_mx#19.
+The app side of self-hosting is shipped (`main` 54deb0c, #9, 2026-10-27): companion probe, sent bug
+reports, build names and badge. `dat-autodeploy.timer` keeps Connected on Pages' build. The host side, `/data/projects/dat_bridge`, is live on
+`drivers.erikrees.co.uk` and `drivers-dev.wallcop.org`. Reports land in datajoin (#19 live
+2026-10-27).
 
 ## Next
 
-1. Merge `dev` → `main` once CI is green and the bridge is live, so Pages and Connected match.
-2. n8n overlay sync (plan §7): not built; needs the read/save gateway actions in datajoin first.
+1. n8n overlay sync (plan §7): not built; needs the read/save gateway actions in datajoin first.
 
 ## Blocked / needs Erik
 
-- 🛑 Set `dev` as the default branch and protect `main` on `CI / test` (GitHub settings).
-- 🛑 The stale V1.11 overlay edit is in `git stash` ("stale local overlay V1.11"); drop it on your word.
-- 🛑 Bridge go-live steps are in `dat_bridge/STATE.md`: token in Infisical, datajoin #17 then #19, tunnel/DNS/Access.
+Nothing.
 
 ## Log
 
 ## 2026-10-27
 
+- Fixed the three filed reports (uncommitted on `dev`). RSM4NL: on resume `api.js` had no model,
+  so App now hands it over (`domain.adopt`). ZQTY7D: rows with no load are left out of the estimate.
+  CGNAM8: the Elements patch names rows after their ControlGroups, with a choice of one row per
+  driver (Quantity 1) or one per type per hub. That choice lives in a "Copy Elements patch" dialog
+  with a preview of the rows, and is remembered across sessions (`prefs.patchPerDriver`). Resume and
+  the dialog were clicked through with no error. The crash screen now leads with "Send the report"
+  whenever a companion answers; a forced crash posted `kind: crash` to a mocked companion. 341 tests green, build clean. Filing is unconfirmed, because Kaizen was disconnected.
+- Estimate list redone (uncommitted on `dev`): one foldable line per type, a limit chip with a
+  popup, rows with load and drive chips, and the working folded away. The engine returns `working` per
+  line, and "Calculation looks wrong" sends it as `estimate`. Header redone as Erik's pick G: "Secondary
+  Power Assessment", the result card left, and an assumptions panel right ("Keep separate" grid and
+  "Driver type restrictions", each with an info popup).
+- datajoin #19 live; a test report arrived (6ABJU2, resolved).
+- Bridge live (see `dat_bridge/STATE.md`); Erik dropped the stale V1.11 overlay stash.
+- GitHub: `dev` is the default branch; `main` is protected on the `test` check (admins exempt).
 - "Report an issue" without report mode: a ⋮ on each assessment row (sends the row's loadings,
   not its location), the same item on every driver card, and a Report flag in Review changes that
   sends what the patch would change as refs and node keys (`patch`). Clicked through against the

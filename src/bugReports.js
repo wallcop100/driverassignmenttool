@@ -148,6 +148,7 @@ export function remoteReport(r, data = {}) {
     ...(r.viewport ? { viewport: r.viewport } : {}),
     ...(row ? { row } : {}),
     ...(r.patch ? { patch: r.patch } : {}),
+    ...(r.estimate ? { estimate: r.estimate } : {}),
   };
 }
 
