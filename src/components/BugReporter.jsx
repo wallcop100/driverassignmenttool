@@ -48,11 +48,23 @@ export default function BugReporter({ screen, getApp, getData }) {
     return () => { document.removeEventListener('contextmenu', ctx); document.removeEventListener('keydown', key); };
   }, [on, reports]);
 
+  // "Report an issue" menu items open the note on their element, report mode or not
+  useEffect(() => {
+    const open = (e) => {
+      const { target, extra } = e.detail;
+      const b = target.getBoundingClientRect();
+      setText('');
+      setNote({ x: b.left + 24, y: b.bottom + 4, target, extra, id: newId(new Set(reports.map((x) => x.id))) });
+    };
+    window.addEventListener('bug:open', open);
+    return () => window.removeEventListener('bug:open', open);
+  }, [reports]);
+
   const toggle = () => { const v = !on; setOn(v); saveMode(v); setNote(null); };
   const commit = (list) => { setReports(list); saveReports(list); };
   const flash = (t) => { setToast(t); setTimeout(() => setToast(''), 2500); };
-  const draft = (kind) => buildReport({ note: text.trim(), kind, target: note.target, withWhere: where,
-    app: { screen: screenRef.current, ...(getApp ? getApp() : {}) }, id: note.id });
+  const draft = (kind) => ({ ...buildReport({ note: text.trim(), kind, target: note.target, withWhere: where,
+    app: { screen: screenRef.current, ...(getApp ? getApp() : {}) }, id: note.id }), ...note.extra });
   const save = async (kind) => {
     if (!text.trim()) return;
     const r = draft(kind);
@@ -73,10 +85,12 @@ export default function BugReporter({ screen, getApp, getData }) {
 
   const modal = document.querySelector('.modal.show');
   const w = 300;
+  const top = note && Math.max(8, Math.min(note.y, window.innerHeight - 220));
   const box = note && (
+    // scrolls rather than run off the bottom once the preview is open
     <div data-bug-reporter className="bug-note"
       style={{ left: Math.max(8, Math.min(note.x, window.innerWidth - w - 8)),
-        top: Math.max(8, Math.min(note.y, window.innerHeight - 220)), width: w }}>
+        top, width: w, maxHeight: window.innerHeight - top - 8, overflowY: 'auto' }}>
       <textarea autoFocus rows={4} className="form-control form-control-sm" placeholder="What's wrong?"
         value={text} onChange={(e) => setText(e.target.value)} />
       <label className="small d-block mt-1">

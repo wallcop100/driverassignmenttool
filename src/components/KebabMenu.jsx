@@ -21,7 +21,7 @@ export default function KebabMenu({ items, title = 'More' }) {
         <div className="kebab-menu">
           {items.map((it, i) => (
             <button key={i} className={`kebab-item ${it.danger ? 'danger' : ''}`} disabled={it.disabled}
-              onClick={() => { setOpen(false); it.onClick(); }}>
+              onClick={(e) => { setOpen(false); it.onClick(e); }}>
               {it.icon && <span className="material-icons small-icon">{it.icon}</span>}{it.label}
             </button>
           ))}

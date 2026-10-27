@@ -20,6 +20,9 @@ in the note shows the exact JSON before the person sends it.
 - **The row the report is about.** This is looked up in the model by ref, never read from the screen.
   It holds the Element IDs, type, loadings, and the proposed placement beside the baseline. For a
   driver, that also covers its nodes and the cables on them.
+  An assessment row sends its PositionType, ControlGroup and loadings, but not its location.
+- **The patch**, from the Report flag in Review changes: the cables moved (ref, from, to) and the
+  types, drivers added and drivers deleted, as refs only.
 - **Context.** Branch and set IDs, the hub, the mode and the overlay version.
 - **The build.** Version, channel, build name and commit.
 - **Where it happened.** Screen, hub and counts; the area and dialog names; up to ten refs; the

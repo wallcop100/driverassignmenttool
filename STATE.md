@@ -26,6 +26,11 @@ written but never built. The datajoin side is PR wallcop100/datajoin_mx#19.
 
 ## 2026-10-27
 
+- "Report an issue" without report mode: a ⋮ on each assessment row (sends the row's loadings,
+  not its location), the same item on every driver card, and a Report flag in Review changes that
+  sends what the patch would change as refs and node keys (`patch`). Clicked through against the
+  mock companion; one sent. 338 tests green. Seen, not fixed: a left-column driver's ⋮ menu opens
+  under the tray.
 - Actioned the self-host plan, taking §9's recommendations: nginx plus a datajoin gateway door (not
   a bridge service), a new private `dat_bridge`, its own `dat-autodeploy.timer`, Kaizen embed left on
   Pages, and overlay sync from `main` only. `dev` branch created and pushed. A report is sent only

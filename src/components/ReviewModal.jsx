@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import * as api from '../api.js';
+import { openReport } from '../bugReports.js';
 import { isEmbedded } from '../embed.js';
 import { listSessions } from '../persist.js';
 import { PLACEHOLDER_REF } from '../engine.js';
@@ -76,15 +77,31 @@ export default function ReviewModal({ state, dispatch, onClose }) {
     }
   };
 
+  // what the patch would change, as refs and node keys only - the report's `patch`
+  const reportPatch = (e) => openReport(e.currentTarget.closest('.modal-header'), {
+    patch: {
+      moved: rows.map((r) => ({ ref: r.ref, from: r.from ?? null, to: r.to ?? null, ...(r.isNew ? { isNew: true } : {}) })),
+      types: provisional.map((t) => ({ typeRef: t.typeRef, origin: t.origin, invented: !!t.invented })),
+      added: added.map((d) => ({ ref: d.ref, typeRef: d.typeRef, zone: d.zone })),
+      deleted: deleted.map((d) => d.ref),
+      fixNodeSyntax: !!state.fixNodeSyntax,
+    },
+  });
+
   return (
-    <div className="modal d-block modal-backdrop-custom" onClick={onClose}>
+    // `show`, so a bug note portals inside the modal rather than under it
+    <div className="modal show d-block modal-backdrop-custom" onClick={onClose}>
       <div className="modal-dialog modal-lg modal-dialog-scrollable" onClick={(e) => e.stopPropagation()}>
         <div className="modal-content">
           <div className="modal-header">
             <h5 className="modal-title">
               Review changes ({rows.length + provisional.length + added.length + deleted.length})
             </h5>
-            <button className="btn-close" onClick={onClose} />
+            <button className="btn btn-sm btn-link text-secondary ms-auto" title="Report an issue with the patch"
+              onClick={reportPatch}>
+              <span className="material-icons small-icon align-middle">flag</span> Report
+            </button>
+            <button className="btn-close ms-2" onClick={onClose} />
           </div>
           <div className="modal-body">
             {/* Two kinds of change, two sections: ElementTypes rows and LinksMap

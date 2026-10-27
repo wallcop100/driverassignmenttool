@@ -94,3 +94,14 @@ test('a big hub still sends a small report', () => {
   assert.equal(r.row.links.length, 24);
   assert.ok(JSON.stringify(r).length < 16_000);
 });
+
+test('a flagged assessment row carries its loadings but not its location', () => {
+  const m = { requirements: [{ ref: 'R3', zone: 'Z1', location: 'Bedroom 3', positionType: 'PT-9', qty: 4, wPer: 6 }] };
+  const row = flaggedRow(['R3'], { model: m });
+  assert.deepEqual(row, { kind: 'requirement', ref: 'R3', zone: 'Z1', positionType: 'PT-9', qty: 4, wPer: 6 });
+});
+
+test('a patch report sends what the patch would change', () => {
+  const patch = { moved: [{ ref: 'L-1', from: 'E-100|OUT1', to: 'E-100|OUT2' }], deleted: [], fixNodeSyntax: false };
+  assert.deepEqual(remoteReport({ ...local, patch }, {}).patch, patch);
+});
