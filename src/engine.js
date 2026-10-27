@@ -335,6 +335,7 @@ export function parseAssessment(text, zoneAlias = {}) {
     out.push({
       ref: `R${i + 1}`,                      // requirements are not patched; the ref is for bookkeeping
       zone,
+      hubRef: ref,                           // the Position Ref, which is what Elements.ContextRef takes
       qty,
       loadW,
       fvV,
@@ -1280,7 +1281,8 @@ export function planFromRequirements(model, zone, opts = {}) {
   }
 
   const drivers = lines.reduce((n, l) => n + l.count, 0);
-  return { zone, lines, unmatched, drivers, loadW: lines.reduce((w, l) => w + l.loadW, 0) };
+  return { zone, hubRef: rows[0]?.hubRef ?? null, lines, unmatched, drivers,
+    loadW: lines.reduce((w, l) => w + l.loadW, 0) };
 }
 
 // Every hub in the assessment, sized - or just the one asked for.
@@ -1453,21 +1455,25 @@ function addedElements(sessions) {
     // a driver broken out of a quantity row is appended by the space layout's
     // patch, with its placement; writing it here too would add it twice
     for (const d of (sn.addedDrivers ?? []).filter((x) => !x.split)) {
-      const known = hubRef && (!hubLabel || hubLabel === d.zone || hubRef === d.zone);
+      // Never the label: it is COALESCE(ExtRef, Ref), so on a hub with an ExtRef it
+      // is not a key. Failing the host's Ref, an assessment row for the hub has it.
+      const known = hubRef && (!hubLabel || hubLabel === d.zone || hubRef === d.zone)
+        ? hubRef
+        : sn.model?.requirements?.find((r) => r.zone === d.zone)?.hubRef ?? null;
       // A hub is usually a Position - DJ 101681 takes it from
       // Link_SecondaryPowerRef, which is the PSU-HUB Position - but it does not
       // have to be one. Until the host sends the kind this falls back rather
       // than knows, and says so instead of writing a silent guess.
       const hubType = sn.context?.hubContextType ?? null;
       const notes = [];
-      if (!known) notes.push(`CHECK ContextRef: ${d.zone} is the hub label, not its Position Ref`);
+      if (!known) notes.push(`CHECK ContextRef: left blank - the Position Ref of ${d.zone} is not known`);
       if (!hubType) notes.push('CHECK ContextType: assumed Position - the host did not say whether this hub is a Position or an Element');
       out.push({
         ref: PLACEHOLDER_REF,
         name: byType.get(d.typeRef)?.name || '',
         typeRef: d.typeRef,
         contextType: hubType ?? 'Position',
-        contextRef: known ? hubRef : d.zone,
+        contextRef: known ?? '',
         quantity: 1,
         note: notes.join(' · '),
       });
@@ -1576,9 +1582,12 @@ export function estimatePatchRows(estimates, { perDriver = false } = {}) {
       name,
       typeRef: l.typeRef,
       contextType: z.hubContextType ?? 'Position',
-      contextRef: z.zone,
+      contextRef: z.hubRef ?? '',
       quantity,
-      note: z.hubContextType ? '' : 'CHECK ContextType: assumed Position',
+      note: [
+        z.hubRef ? '' : `CHECK ContextRef: the Position Ref of ${z.zone} is not known`,
+        z.hubContextType ? '' : 'CHECK ContextType: assumed Position',
+      ].filter(Boolean).join(' · '),
     });
     return perDriver
       ? driverNames(l).map((n) => row(n, 1))
