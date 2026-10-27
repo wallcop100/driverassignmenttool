@@ -1242,7 +1242,7 @@ export function planFromRequirements(model, zone, opts = {}) {
 
     if (!best) {
       unmatched.push({ key, qty, rows: group.map((r) => r.ref),
-        reason: 'no type in the library can take these' });
+        reason: 'No ElementType in the DesignDB can take these' });
       continue;
     }
 

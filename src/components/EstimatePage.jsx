@@ -167,7 +167,7 @@ export default function EstimatePage({ state, dispatch, zone }) {
           {views?.cables ? '' : ' · no links yet'}
         </span>
         {totals.unmatched > 0 && (
-          <span className="dp-need" title="No type in the library can take these, so no driver is counted for them">
+          <span className="dp-need" title="No ElementType in the DesignDB can take these, so no driver is counted for them">
             {unmatchedLabel()} unmatched
           </span>
         )}
@@ -297,7 +297,7 @@ export default function EstimatePage({ state, dispatch, zone }) {
               <div key={u.key} className="dp-ref is-off">
                 <span className="dp-ref-id">{amount(u.qty, u.rows)}</span>
                 <span className="dp-fault">
-                  {u.reason ?? 'no type in the library can take these'} - {u.key}
+                  {u.reason ?? 'No ElementType in the DesignDB can take these'} - {u.key}
                 </span>
               </div>
             ))}
