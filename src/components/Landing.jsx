@@ -32,7 +32,8 @@ export default function Landing({ state, dispatch }) {
       const units = mode === 'estimate'
         ? (model.requirements || []).filter((r) => r.zone === zone).reduce((n, r) => n + r.qty, 0)
         : 0;
-      return { zone, ...s, unassigned, orphans, mode, units };
+      const assessed = mode !== 'estimate' && (model.requirements || []).some((r) => r.zone === zone);
+      return { zone, ...s, unassigned, orphans, mode, units, assessed };
     }).sort(SORTS[sort]);
   }, [model, assignments, addedDrivers, flags, sort, state.deletedDrivers]);
 
@@ -96,6 +97,19 @@ export default function Landing({ state, dispatch }) {
             <span className="text-secondary small flex-shrink-0" style={{ width: 130 }}>
               {label}
             </span>
+            {z.assessed && (
+              <Tooltip content="This hub also has assessment rows - open the estimate to compare">
+                <span className="badge badge-tray flex-shrink-0" role="button" tabIndex={0}
+                  onClick={(e) => { e.stopPropagation(); dispatch({ type: 'SET_VIEW', view: { page: 'estimate', zone: z.zone } }); }}
+                  onKeyDown={(e) => {
+                    if (e.key !== 'Enter' && e.key !== ' ') return;
+                    e.preventDefault(); e.stopPropagation();
+                    dispatch({ type: 'SET_VIEW', view: { page: 'estimate', zone: z.zone } });
+                  }}>
+                  assessment
+                </span>
+              </Tooltip>
+            )}
             {z.unassigned > 0 && (
               <Tooltip content="Cables not yet assigned to any driver node">
                 <span className="badge badge-tray flex-shrink-0">{z.unassigned} tray</span>

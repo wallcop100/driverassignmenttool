@@ -1,5 +1,7 @@
 -- SysEx Overlay - Lighting Interactive Driver Assignment --
--- V1.11 -- (DJ 101681: V1.10 live as revision 79; V1.11 sends every Element in the hub, NOT YET SAVED)
+-- V1.12 -- (DJ 101681: V1.10 live as revision 79; V1.11 sends every Element in the hub;
+--          V1.12 sends the assessment for every hub, not only cable-less ones, and states
+--          @OverlayVersion so the tool can say when this overlay is behind it. NOT YET SAVED)
 
 --SQL HEADER--
 DECLARE @Container_TypeRef AS varchar(max) = 'PSU.HUB';   -- comma separated list of PSU-HUB Types
@@ -13,6 +15,9 @@ DECLARE @EntityTypeFilter AS varchar(max) = NULL;
 DECLARE @ToolOrigin       AS varchar(200) = 'https://wallcop100.github.io';
 DECLARE @ToolPath         AS varchar(200) = '/driverassignmenttool/api/';
 DECLARE @DataVersion      AS varchar(50)  = '';           -- blank = @SystemSetID. See notes.
+-- Sent in dat:init. The tool compares it with the version it was built against and
+-- tells the user to update this overlay when they differ - bump it on every save.
+DECLARE @OverlayVersion   AS varchar(20)  = '1.12';
 
 -- SysEx Overlay - Lighting - Driver Assignment Tool. Puts a launcher on every
 -- PSU-HUB position. Design rationale and load-bearing gotchas (setup order,
@@ -295,10 +300,11 @@ WHERE l.PullzoneTypeRef IN (SELECT TRIM(value) FROM STRING_SPLIT(@Container_Type
   AND ISNULL(l.PullZone,'')<>''
 GROUP BY l.PullZone;
 
-/* ---- 2b. the assessment CSV, for a hub with no cables -------------------------------
-   Only for a hub with no cables. A hub that has links gets links, as before -
-   the SQL decides which circumstance a hub is in, and the tool's own detectMode
-   reaches the same answer from the payload, so the two halves agree. */
+/* ---- 2b. the assessment CSV, for every hub with Positions --------------------------
+   Sent whether or not the hub has cables. The tool shows the cables and the
+   estimate from Positions as two interchangeable views of the same hub, and
+   putting them side by side is how a mismatch is spotted. Which view it opens on
+   is still decided from the payload: cables if there are any, the estimate if not. */
 IF OBJECT_ID('tempdb..#DataCsv') IS NOT NULL DROP TABLE #DataCsv;
 SELECT r.HubLabel,
   '"Link_SecondaryPowerRef","LocationName","ControlTypeRef","ControlGrouptext","PositionTypeRef",'
@@ -318,7 +324,6 @@ SELECT r.HubLabel,
   ), @NL) WITHIN GROUP (ORDER BY r.ControlGrouptext, r.PositionTypeRef) AS Csv
 INTO #DataCsv
 FROM #SPRequirements r
-WHERE NOT EXISTS (SELECT * FROM #LinkCsv lc WHERE lc.HubLabel = r.HubLabel)
 GROUP BY r.HubLabel;
 
 /* ---- 2c. TBC flags on the hub's Elements ----------------------------------------------
@@ -461,7 +466,7 @@ DECLARE @JS varchar(max) =
 +'if(m.type===''dat:ready''){ready=true;clearTimeout(watchdog);st.textContent='''';'
 +'var tlib=document.getElementById(''datt_''+ref);'
 +'if(tlib){fr.contentWindow.postMessage({type:''dat:types'',version:1,types:tlib.textContent},TOOL_ORIGIN);}'
-+'fr.contentWindow.postMessage({type:''dat:init'',version:1,'
++'fr.contentWindow.postMessage({type:''dat:init'',version:1,overlay:''' + @OverlayVersion + ''','
 +'form:form,links:links,assessment:assess,tbc:tbc,compositions:comps,elements:elems,focusZone:hub,'
 +'context:{branchId:''' + @Branch + ''',systemSetId:ver,hubRef:ref,hubLabel:hub}},TOOL_ORIGIN);}'
 +'if(m.type===''dat:dirty''){dirty=m.changeCount;st.textContent=dirty?dirty+'' unsaved'':'''';}'

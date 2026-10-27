@@ -867,6 +867,38 @@ export function zoneMode(model, zone) {
   return null;
 }
 
+// The two views of a hub - its cables on driver nodes, and the estimate from its
+// Positions - are interchangeable whatever the hub holds, because putting one
+// beside the other is how a mismatch gets noticed. This says which of them have
+// anything to show, so a view with nothing can say why rather than look broken.
+export function zoneViews(model, zone) {
+  const has = (list) => (list || []).some((x) => x.zone === zone);
+  return {
+    cables: has(model.links) || has(model.drivers),
+    assessment: has(model.requirements),
+  };
+}
+
+// The estimate's count beside what the hub actually has, per driver type. Hub
+// drivers are the Driver Assignment rows plus any added in this session, less
+// any marked for deletion. Only the differing types are worth a person's eye,
+// but every type is returned so the screen can show the agreement too.
+export function compareEstimate(plan, drivers) {
+  const rows = new Map();
+  const row = (t) => rows.get(t) ?? rows.set(t, { typeRef: t, estimate: 0, hub: 0 }).get(t);
+  for (const l of plan?.lines ?? []) row(l.typeRef).estimate += l.count;
+  for (const d of drivers || []) row(d.typeRef).hub += 1;
+  const list = [...rows.values()].sort((a, b) => a.typeRef.localeCompare(b.typeRef));
+  return { rows: list, mismatch: list.some((r) => r.estimate !== r.hub) };
+}
+
+// Shown on the assessment view and written into anything it exports. The
+// estimate sizes from roll-ups and a transcribed catalogue - it is a starting
+// count, not a design, and nothing downstream checks it.
+export const ESTIMATE_WARNING = 'Estimate only - driver counts are calculated from the DJ 100053 Position '
+  + 'roll-ups and the static catalogue. Double-check every figure against the spec sheets and the '
+  + 'actual cable runs before relying on it.';
+
 // The ref IS the spec in this library (ET-CCR-D-350-2CH-01 = CC, 350mA, 2CH), so
 // the next free one is composed from the ratings being entered rather than a
 // counter. A sibling's stem wins when there is one: naming is per-project and
@@ -1471,8 +1503,9 @@ export function generateEstimatePatch(estimates) {
     quantity: l.count,
     note: z.hubContextType ? '' : 'CHECK ContextType: assumed Position',
   })));
-  if (!adds.length) return script('');
-  return script(`${header(ELEMENT_SHEET, 'E', ELEM_COLS)}\n${addSection(adds)}`);
+  const warn = `// ${ESTIMATE_WARNING}\n`;
+  if (!adds.length) return warn + script('');
+  return warn + script(`${header(ELEMENT_SHEET, 'E', ELEM_COLS)}\n${addSection(adds)}`);
 }
 
 export function generatePatchScript(model, assignments, addedDrivers, presets, context) {

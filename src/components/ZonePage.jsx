@@ -10,6 +10,7 @@ import LabelConfig from './LabelConfig.jsx';
 import ReviewModal from './ReviewModal.jsx';
 import Search from './Search.jsx';
 import SetupNotice from './SetupNotice.jsx';
+import ViewToggle from './ViewToggle.jsx';
 import { useDomain } from '../core/domain.js';
 import Tooltip from './Tooltip.jsx';
 import Tray from './Tray.jsx';
@@ -123,6 +124,7 @@ export default function ZonePage({ state, dispatch, zone, onResetToCurrentSet })
         )}
         <span className="zone-dot" style={{ background: accent }} />
         <h5 className="mb-0">{zone}</h5>
+        <ViewToggle model={model} zone={zone} current="zone" dispatch={dispatch} />
         {/* completion, tray and drivers-needed used to live only on Landing - 
             which an embedded, single-hub user never sees. Same numbers, same copy. */}
         <Tooltip content="Cables assigned to a driver node">

@@ -19,6 +19,12 @@ but no cables is refused with a message naming the file that would fix it.
 | **Size** | cables, no drivers | work out the drivers, then place the cables | as above, plus the drivers |
 | **Estimate** | neither - Positions only | count the drivers from the fittings | Elements rows, CSV |
 
+The mode is only where a hub opens. Every hub has a **Cables | Assessment**
+toggle, so a designed hub can be checked against the estimate from its own
+Positions - the estimate page lists, per driver type, where the two disagree.
+The estimate is a starting count, not a design: the page and everything it
+exports say to double-check every figure.
+
 **Estimate** is the tender case. There are no cables to assign, so the input is
 a requirement assessment: fittings rolled up per secondary-power destination
 (the job DJ 100053 does, computed in the overlay from `{{>CalculatedPositions}}`).
@@ -98,8 +104,10 @@ sudo apt-get install -y libxkbcommon0     # Debian/Ubuntu, incl. Raspberry Pi
 
 ### Estimate
 
-A hub with Positions and no cables. The count is per hub, each line says which
-limit bound it, and the constraints along the top make the answer looser.
+A hub with Positions and no cables - or any hub, through the Assessment toggle.
+The count is per hub, each line says which limit bound it, and the constraints
+along the top make the answer looser. On a hub that also has drivers, a line
+above the constraints says whether the estimate agrees with them, type by type.
 
 ![Driver estimate](img/estimate.png)
 

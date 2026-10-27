@@ -122,7 +122,8 @@ without reloading the frame) - it fully replaces the model.
 | `version` | `1` | yes | Mismatch → the frame renders an explicit error, not a guess |
 | `form` | string | no | Raw **Driver Assignment** CSV text. Absent or empty for a hub with no drivers yet |
 | `links` | string | see note | Raw **Links Assignment** CSV text |
-| `assessment` | string | see note | Raw **requirement assessment** CSV text, for a hub with no cables |
+| `assessment` | string | see note | Raw **requirement assessment** CSV text, for every hub with Positions (overlay V1.12+) |
+| `overlay` | string | no | The overlay's own version, e.g. `'1.12'`. The tool compares it with the version it was built against and shows a notice naming the overlay file to update when they differ; absent counts as older |
 | `focusZone` | string | no | Must match the `Pullzone` column exactly |
 | `context` | object | no | See below |
 
@@ -135,6 +136,13 @@ arrives (`detectMode()`), so the two halves agree:
 | `links` + `form` | assign | designed: cables and drivers both exist |
 | `links`, no `form` | size | cabled, but nothing to plug them into yet |
 | `assessment`, no `links` | estimate | at tender: Positions only, nothing to assign |
+
+The mode only picks the view a hub **opens on**. When a hub sends both `links`
+and `assessment`, the zone page and the estimate page are two interchangeable
+views of it - a Cables | Assessment toggle sits by the hub name on both, and the
+estimate page compares its count per driver type with the drivers the hub
+actually has. Overlays before V1.12 sent the assessment only for hubs with no
+cables, so a cabled hub on an older overlay has an empty Assessment view.
 
 A `dat:init` carrying neither is dropped as `missing links CSV`. A links CSV with
 a header and no data rows is **not** an error - it means the hub has no cables,

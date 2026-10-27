@@ -82,6 +82,10 @@ export const NEUTRAL = {
   validate: async () => ({ flags: [] }),
   eligibility: async () => null,
 
+  // The DataJoin overlay this build was written against: { version, where, file }.
+  // `null` means the tool has nothing to check the host's version against.
+  overlay: null,
+
   // Rebuild the model after a type edit. Only a tool that keeps its source text
   // can do this; the rest say "nothing changed".
   rebuild: () => null,
