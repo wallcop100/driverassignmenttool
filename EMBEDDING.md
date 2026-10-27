@@ -144,7 +144,7 @@ estimate page compares its count per driver type with the drivers the hub
 actually has. Overlays before V1.12 sent the assessment only for hubs with no
 cables, so a cabled hub on an older overlay has an empty Assessment view.
 
-A `dat:init` carrying neither is dropped as `missing links CSV`. A links CSV with
+A `dat:init` carrying neither, but naming its hub in `focusZone`, is an **empty hub**: nothing points at it yet, and it opens with no cables and no assessment so it can still be laid out (overlay V1.13+). Carrying neither and no `focusZone`, it is dropped as `missing links CSV`. A links CSV with
 a header and no data rows is **not** an error - it means the hub has no cables,
 which is the estimate's case, so send the assessment alongside it or instead.
 

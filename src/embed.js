@@ -38,7 +38,10 @@ export function validateInit(msg, origin, allowedOrigin) {
   }
   const hasLinks = typeof msg.links === 'string' && msg.links.trim();
   const hasAssessment = typeof msg.assessment === 'string' && msg.assessment.trim();
-  if (!hasLinks && !hasAssessment) return { ok: false, reason: 'missing links CSV' };
+  // Neither is an empty hub - nothing points at it yet - which is fine as long as
+  // the host says which hub it is.
+  const hasHub = typeof msg.focusZone === 'string' && msg.focusZone.trim();
+  if (!hasLinks && !hasAssessment && !hasHub) return { ok: false, reason: 'missing links CSV' };
   if (msg.links != null && typeof msg.links !== 'string') return { ok: false, reason: 'malformed links CSV' };
   return { ok: true };
 }

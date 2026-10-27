@@ -1032,6 +1032,14 @@ test('assessment rows land on the hub label, not its Position Ref', () => {
   assert.deepEqual(m.zones, ['3FA']);
 });
 
+test('an empty hub is a model of one hub with nothing in it', () => {
+  const m = engine.buildEmpty('4FA', '"ElementTypeRef","ElementTypeName"\n"X","x"\n');
+  assert.deepEqual(m.zones, ['4FA']);
+  assert.equal(m.mode, 'empty');
+  assert.deepEqual(engine.zoneViews(m, '4FA'), { cables: false, assessment: false });
+  assert.equal(engine.buildEmpty('4FA').inventory.length, 0);   // no library is not an error
+});
+
 test('compareEstimate counts per type and flags a difference', () => {
   const plan = { lines: [{ typeRef: 'T1', count: 2 }, { typeRef: 'T2', count: 1 }] };
   const same = engine.compareEstimate(plan, [{ typeRef: 'T1' }, { typeRef: 'T1' }, { typeRef: 'T2' }]);

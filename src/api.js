@@ -19,7 +19,7 @@ let model = null;
 // The raw CSVs are kept so the model can be rebuilt when a driver type preset is
 // added or changed, without asking for the files again (embedded, there is
 // nobody to ask). `applied` is what the current model was built with.
-let raw = { form: null, links: null, types: null, assessment: null };
+let raw = { form: null, links: null, types: null, assessment: null, empty: null };
 let applied = '[]';
 // Hub Ref -> hub label, from the host's context: the assessment names a hub by
 // its Position Ref, everything else by its label. Empty when standalone.
@@ -46,6 +46,7 @@ export function rebuild(presets) {
   // links + an assessment is one job at two stages, not an estimate-only model
   if (raw.links) model = engine.buildModel(raw.form, raw.links, raw.types, list, raw.assessment, zoneAlias);
   else if (raw.assessment) model = engine.buildEstimate(raw.assessment, raw.types, list, zoneAlias);
+  else if (raw.empty) model = engine.buildEmpty(raw.empty, raw.types, list);
   else return null;
   applied = key;
   return model;
@@ -82,6 +83,15 @@ export async function parseAuto(files) {
     throw new Error('Links only: add the Driver Assignment CSV, or the driver type library to size new drivers from.');
   }
   return parseText(found.form, found.links, found.types, found.assessment);
+}
+
+// An embedded hub with nothing in it yet: the host sends neither links nor an
+// assessment, only which hub it is.
+export function parseEmpty(zone, typesText) {
+  raw = { form: null, links: null, types: typesText, assessment: null, empty: zone };
+  applied = '[]';
+  model = engine.buildEmpty(zone, typesText);
+  return model;
 }
 
 // Third mode: Positions rolled up by DJ 100053, no links and no drivers.

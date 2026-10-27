@@ -459,6 +459,26 @@ export function buildEstimate(assessmentText, typesText, presets, zoneAlias) {
   };
 }
 
+// A hub with nothing pointing at it yet - no drivers, no cables, no fittings. It
+// still gets a button, because laying out an empty hub is the first thing done
+// with one, so the model is the hub and the type library and nothing else.
+export function buildEmpty(zone, typesText, presets) {
+  const presetTypes = (presets || []).map(presetToType);
+  const inventory = new Map((typesText?.trim() ? parseTypes(typesText) : []).map((t) => [t.typeRef, t]));
+  for (const t of presetTypes) {
+    const prior = inventory.get(t.typeRef) ?? null;
+    inventory.set(t.typeRef, { ...t, designDB: prior, name: t.name || prior?.name || '' });
+  }
+  return {
+    zones: [zone],
+    drivers: [], links: [], baseline: {}, originalRows: [], fieldnames: DEFAULT_FIELDNAMES,
+    requirements: [],
+    mode: 'empty',
+    modeReason: 'nothing points at this hub yet - no drivers, cables or fittings',
+    inventory: [...inventory.values()].sort((a, b) => a.typeRef.localeCompare(b.typeRef)),
+  };
+}
+
 // ':' is spoken for elsewhere in Parameters syntax, so it is banned inside a
 // node name (page 140180). A node written OP.1:2 means the same thing as OP.1-2
 // - one node carrying two physical outputs - so correcting it is a rename and

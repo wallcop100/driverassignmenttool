@@ -63,7 +63,7 @@ export default function App({ domain = driversDomain }) {
   const stateRef = useRef(state);
   stateRef.current = state;
   const types = useRef(null);              // driver type library, from dat:types
-  const payload = useRef(null);            // last {form, links}, for a types rebuild
+  const payload = useRef(null);            // last dat:init, for a types rebuild
 
   // Embed mode: the host posts both CSVs in over postMessage. Announce readiness
   // only after mount - iframe.onload fires well before React is listening.
@@ -72,8 +72,7 @@ export default function App({ domain = driversDomain }) {
     const off = embed.onInit((msg, error) => {
       if (error) { if (hasModel.current) setNotice(error); else setFatal(error); return; }
       try {
-        payload.current = { form: msg.form, links: msg.links, assessment: msg.assessment,
-          modules: msg.modules };
+        payload.current = msg;
         // What the payload MEANS is the domain's business - the two tools are
         // sent different things by different overlays.
         const model = domain.parseInit(msg, types.current);
@@ -120,11 +119,8 @@ export default function App({ domain = driversDomain }) {
         setNotice('Driver type definitions arrived after your changes - reopen this hub to apply them.');
         return;
       }
-      const p = payload.current;
-      const init = { ...fresh.current,
-        model: p.assessment && !p.links?.trim()
-          ? api.parseEstimate(p.assessment, typesText)
-          : api.parseText(p.form, p.links, typesText, p.assessment) };
+      // the same reading of the payload as the first time, with the library now
+      const init = { ...fresh.current, model: domain.parseInit(payload.current, typesText) };
       fresh.current = init;
       dispatch({ type: 'INIT', ...init });
     });
