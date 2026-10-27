@@ -82,6 +82,8 @@ export const drivers = makeDomain({
 
   parseInit: (msg, types) => {
     api.setTbcText(msg.tbc);
+    const { hubRef, hubLabel } = msg.context ?? {};
+    api.setZoneAlias(hubRef && hubLabel && hubRef !== hubLabel ? { [hubRef]: hubLabel } : {});
     api.setDriverExtras({ compositions: msg.compositions, elements: msg.elements });
     return msg.assessment && !msg.links?.trim()
       ? api.parseEstimate(msg.assessment, types)

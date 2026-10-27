@@ -1024,6 +1024,14 @@ test('both views are offered by what the hub holds, not its mode', () => {
   assert.ok(engine.estimate(both, {}, 'HUB-A')[0].drivers > 0);
 });
 
+test('assessment rows land on the hub label, not its Position Ref', () => {
+  const csv = '"Link_SecondaryPowerRef","SumQuantity","CC/CV","SumPower"\n"P5014","4","CC","20"\n';
+  assert.equal(engine.parseAssessment(csv)[0].zone, 'P5014');
+  assert.equal(engine.parseAssessment(csv, { P5014: '3FA' })[0].zone, '3FA');
+  const m = engine.buildEstimate(csv, '"ElementTypeRef","ElementTypeName"\n"X","x"\n', null, { P5014: '3FA' });
+  assert.deepEqual(m.zones, ['3FA']);
+});
+
 test('compareEstimate counts per type and flags a difference', () => {
   const plan = { lines: [{ typeRef: 'T1', count: 2 }, { typeRef: 'T2', count: 1 }] };
   const same = engine.compareEstimate(plan, [{ typeRef: 'T1' }, { typeRef: 'T1' }, { typeRef: 'T2' }]);
