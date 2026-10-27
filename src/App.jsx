@@ -100,7 +100,7 @@ export default function App({ domain = driversDomain }) {
         // blank, then prior work replaces it in the same tick if there is any.
         const prior = loadSession();
         if (prior?.model) {
-          dispatch({ type: 'RESTORE', saved: prior, view: init.view, presets: loadTypes(), ...loadTypeExtras() });
+          dispatch({ type: 'RESTORE', saved: prior, fresh: model, view: init.view, presets: loadTypes(), ...loadTypeExtras() });
         }
       } catch (e) {
         // a bad re-init when we already have working data is a notice, not a
