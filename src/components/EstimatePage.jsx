@@ -171,7 +171,8 @@ export default function EstimatePage({ state, dispatch, zone }) {
   const posTypes = new Set(rows.map((r) => r.positionType).filter(Boolean));
   // a line opens to its rows, and its rows to the arithmetic behind the count
   const [open, setOpen] = useState(() => new Set());
-  const [working, setWorking] = useState(() => new Set());
+  // one working at a time, in a dialog: several open inline was too busy (report TZY2VC)
+  const [working, setWorking] = useState(null);
   const toggle = (set, k) => set((p) => { const n = new Set(p); if (!n.delete(k)) n.add(k); return n; });
 
   const RowTable = ({ refs }) => (
@@ -531,10 +532,20 @@ export default function EstimatePage({ state, dispatch, zone }) {
                     <div className="est-body">
                       <ForceType k={k} l={l} />
                       <RowTable refs={l.rows} />
-                      <div className="est-howto" role="button" onClick={() => toggle(setWorking, k)}>
-                        {working.has(k) ? '▾' : '▸'} How {l.count} was worked out
+                      <div className="est-howto" role="button" onClick={() => setWorking(k)}>
+                        ▸ How {l.count} was worked out
                       </div>
-                      {working.has(k) && <Working l={l} zone={z.zone} />}
+                      {working === k && (
+                        <div className="nt-backdrop" onClick={(e) => e.target === e.currentTarget && setWorking(null)}>
+                          <div className="fd-dialog est-working-dialog" role="dialog" aria-label="How the count was worked out">
+                            <div className="fd-head">
+                              <b>How {l.count} × {l.typeRef} was worked out</b>
+                              <button className="btn btn-sm btn-link ms-auto p-0" onClick={() => setWorking(null)}>close</button>
+                            </div>
+                            <Working l={l} zone={z.zone} />
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>

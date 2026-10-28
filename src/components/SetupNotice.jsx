@@ -20,7 +20,7 @@ export default function SetupNotice({ state, dispatch, className = '' }) {
     && inUse.filter((t) => statedAttributes(t) === 0).length;
 
   if (!onboarding && !banned.length && !partly) return null;
-  const go = () => dispatch({ type: 'SET_VIEW', view: { page: 'types' } });
+  const go = () => dispatch({ type: 'SET_VIEW', view: { page: 'types', back: state.view } });
 
   if (onboarding) {
     return (

@@ -7,14 +7,17 @@ Updated: 2026-10-27
 
 ## Now
 
-The app side of self-hosting is shipped (`main` 54deb0c, #9, 2026-10-27): companion probe, sent bug
-reports, build names and badge. `dat-autodeploy.timer` keeps Connected on Pages' build. The host side, `/data/projects/dat_bridge`, is live on
+`main` is 86b4ae8 (#13, 2026-10-27), shipping #10–#12: the estimate rework, forced driver types and
+E/Em own lines. The self-hosting app side (#9) has the companion probe, sent bug reports, build
+names and badge. `dat-autodeploy.timer` keeps Connected on Pages' build. The host side, `/data/projects/dat_bridge`, is live on
 `drivers.erikrees.co.uk` and `drivers-dev.wallcop.org`. Reports land in datajoin (#19 live
 2026-10-27).
 
 ## Next
 
 1. n8n overlay sync (plan §7): not built; needs the read/save gateway actions in datajoin first.
+2. Report AUSTHZ: a shared driver catalogue through the companion, like PS&R's. Needs a design,
+   and a datajoin + dat_bridge side.
 
 ## Blocked / needs Erik
 
@@ -22,8 +25,18 @@ Nothing.
 
 ## Log
 
+## 2026-10-28
+
+- Worked the 8 open `dat` reports (PR to `dev`; reports resolved once on prod):
+  B3TPLM a pending fix clears its type's "to check" flags; FTQH78 bug pip counts unsent only, menu
+  gets "Send N unsent"; 6QSCLN types page goes back to the page that opened it; TZY2VC working is a
+  dialog, one at a time; MEBAP4 `.dp-list` no longer clips row menus; RAJ9XJ "Own line" is stored
+  per set, not per hub; FTGR6Z embed parse failure shows the crash card with Send, and says "data
+  from DataJoin" not "CSV". AUSTHZ (shared type catalogue via companion) not started.
+
 ## 2026-10-27
 
+- Shipped `dev` to `main` (#13, 86b4ae8); the Pages deploy run succeeded.
 - Own line per PositionType (merged to `dev` in #12). A PositionTypeRef suffixed `E` or `Em`, case-sensitive (the emergency variant, e.g. `B02wE`), is taken out of a bundled estimate line onto its own line by default. Any type can be toggled in or out from the row's ⋮ menu (`OWN_LINE`, `state.ownLine`, saved with the session; engine `isOwnLine`). This only matters while "Fitting types" is not kept separate per driver. 347 tests green, build clean; not clicked through.
 - Force a driver type per estimate line (merged to `dev` in #12). There is a "Driver type" select on each line. `FORCE_TYPE` stores the choice in `state.forcedTypes`, keyed by zone and line key, and it is saved with the session. The engine sizes the forced type even when it does not match the fittings, and flags it as `mismatch` (a red step and a "⚠ forced" chip). If the type cannot be sized, it keeps the automatic pick and reports `forcedIssue`. The working still shows the automatic pick as an untaken branch. 346 tests green, build clean, clicked through on HUB-A.
 - Estimate working with several ControlGroups (merged to `dev` in #12). ControlGroups now always sit on separate outputs. An output is dimmed as one, so the per-output box is locked on and `prefs.nodeControlGroup` is gone. The working shows one step per group or per fitting type: "qty ÷ per = N outputs". After those comes "Drivers = max(outputs ÷ n, W ÷ usable W)", and a new `outputs` limit chip. Each line also lists the driver types it compared and why each lost (`considered`, using the same order as the ranking). Clicked through on demo HUB-A. 344 tests green, build clean. Erik turned down the vertical trace and kept the left-to-right row. Wherever the engine chose, the row now shows a fork: the options stacked in one column, the taken one solid and the others dashed. The forks are driver type, the tightest per-driver limit, each group, and enough drivers for both outputs and watts. "Prefer single output" became "Pick by": Single output, Fewest drivers or Spare outputs (`prefs.pickBy`, `PICK_BY` in the engine). Emergency stock always loses, and the reason a type lost comes from the same rules. 345 tests green.

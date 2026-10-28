@@ -77,6 +77,16 @@ export default function BugReporter({ screen, getApp, getData }) {
     if (ok) commit(list.map((x) => (x.id === r.id ? { ...x, sent: true } : x)));
     flash(ok ? `Sent ${r.id}` : `Saved ${r.id} - not sent`);
   };
+  // the pip counts what is still only here; a sent report is in datajoin already
+  const unsent = reports.filter((x) => !x.sent);
+  const sendAll = async () => {
+    setMenu(false);
+    const ok = new Set();
+    // shortcut: the row lookup uses the hub open now, not the one each report was written on
+    for (const r of unsent) if (await companion.report(remoteReport(r, getData ? getData() : {}))) ok.add(r.id);
+    commit(reports.map((x) => (ok.has(x.id) ? { ...x, sent: true } : x)));
+    flash(`Sent ${ok.size} of ${unsent.length}`);
+  };
   const copy = async () => {
     try { await navigator.clipboard.writeText(reportsToMarkdown(reports)); setToast('Copied'); } catch { setToast('Copy blocked'); }
     setMenu(false);
@@ -118,11 +128,12 @@ export default function BugReporter({ screen, getApp, getData }) {
           <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
             <path d="M20 8h-2.8a6 6 0 0 0-1.6-1.8L17 4.8 15.6 3.4l-2 2a6 6 0 0 0-3.2 0l-2-2L7 4.8l1.4 1.4A6 6 0 0 0 6.8 8H4v2h2v2H4v2h2v2H4v2h2.8a6 6 0 0 0 10.4 0H20v-2h-2v-2h2v-2h-2v-2h2z" />
           </svg>
-          {' '}{reports.length}
+          {' '}{unsent.length}
         </button>
         <button className="btn btn-sm btn-outline-secondary" onClick={() => setMenu(!menu)} aria-label="Bug report actions">▾</button>
         {menu && (
           <div className="bug-menu">
+            {canSend && <button disabled={!unsent.length} onClick={sendAll}>Send {unsent.length} unsent</button>}
             <button disabled={!reports.length} onClick={copy}>Copy all as Markdown</button>
             <button disabled={!reports.length} onClick={() => { download(`bug-reports-${new Date().toISOString().slice(0, 10)}.md`, reportsToMarkdown(reports)); setMenu(false); }}>Save as .md</button>
             <button disabled={!reports.length} onClick={() => { if (window.confirm(`Delete all ${reports.length} reports?`)) commit([]); setMenu(false); }}>Delete all</button>

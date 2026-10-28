@@ -93,10 +93,11 @@ export default function TypesPage({ state, dispatch, zone }) {
 
   const flagged = cards.filter((c) => c.f.length).length;
   const closeEdit = () => { setEditKey(null); setDraft(null); };
-  // Arriving from the space layout, every way out of here goes back to it.
-  const back = state.view?.from === 'layout' && zone
+  // Every way out goes back where you came from: the page that sent you, else
+  // the space layout, else the hub (report 6QSCLN).
+  const back = state.view?.back ?? (state.view?.from === 'layout' && zone
     ? { page: 'layout', zone }
-    : (zone ? { page: 'zone', zone } : { page: 'landing' });
+    : (zone ? { page: 'zone', zone } : { page: 'landing' }));
   const zoneCables = zone ? model.links.filter((l) => l.zone === zone && l.powerType).length : 0;
 
   return (
@@ -104,7 +105,7 @@ export default function TypesPage({ state, dispatch, zone }) {
       <div className="dp-head">
         <button className="btn btn-sm btn-outline-secondary d-flex align-items-center"
           onClick={() => dispatch({ type: 'SET_VIEW', view: back })}>
-          <span className="material-icons small-icon">arrow_back</span> {zone ?? 'Zones'}
+          <span className="material-icons small-icon">arrow_back</span> {back.zone ?? 'Zones'}
         </button>
         <h5 className="mb-0">{zone ? `Add a driver to ${zone}` : 'Driver types'}</h5>
         {/* Where the list came from. Embedded, the host posts the whole project's

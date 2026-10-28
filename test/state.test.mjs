@@ -343,3 +343,10 @@ test('INIT and RESTORE start from the options last set, not the defaults', () =>
   assert.equal(r.prefs.margin, 0.2);
   assert.equal(reducer(initialState, { type: 'INIT', model }).prefs.margin, st.DEFAULT_PREFS.margin);
 });
+
+test('own-line choices are the set\'s, so another hub opens with them (report RAJ9XJ)', () => {
+  assert.deepEqual(reducer(initialState, { type: 'INIT', model, ownLine: ['B02E'] }).ownLine, ['B02E']);
+  const saved = { model, assignments: {}, ownLine: ['OLD'] };
+  assert.deepEqual(reducer(initialState, { type: 'RESTORE', saved, ownLine: ['B02E'] }).ownLine, ['B02E']);
+  assert.deepEqual(reducer(initialState, { type: 'RESTORE', saved }).ownLine, ['OLD'], 'no set slot: the hub\'s own');
+});

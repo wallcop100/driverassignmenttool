@@ -456,7 +456,8 @@ body { background: #f6f8fb; }
   background: #f3f0ff; border: 1px solid #d9cffc; border-radius: 8px;
   padding: 10px 14px; margin-bottom: 14px;
 }
-.dp-list { border: 1px solid #e6ebf2; border-radius: 8px; overflow: hidden; background: #fff; }
+/* not overflow: hidden - it clipped a row's menu on the last line (report MEBAP4) */
+.dp-list { border: 1px solid #e6ebf2; border-radius: 8px; background: #fff; }
 
 .dp-part + .dp-part { border-top: 1px solid #eef1f6; }
 .dp-part.is-open { background: #fbfcfe; }
@@ -1165,6 +1166,8 @@ body { background: #f6f8fb; }
 .build-badge.is-dev { color: #dc3545; font-weight: 600; }
 
 .est-patch { width: min(640px, 100%); }
+.est-working-dialog { width: min(1100px, 100%); overflow-y: auto; }
+.est-working-dialog .est-working { padding: 12px 16px 16px; }
 .est-patch-modes { display: grid; gap: 8px; margin: 0; padding: 12px 16px; border: 0; }
 .est-patch-modes legend { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: #64748b; margin-bottom: 2px; }
 .est-patch-modes label { display: flex; gap: 8px; align-items: flex-start; cursor: pointer; font-size: 13px; }
