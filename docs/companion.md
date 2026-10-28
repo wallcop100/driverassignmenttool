@@ -15,8 +15,8 @@ A 404, an HTML page or no answer at all means there is no companion, so nothing 
 ## What a report sends
 
 `remoteReport()` in `src/bugReports.js` builds the report from allowlists. It never builds one by
-removing fields from a fuller object, so a new field is never sent by default. **What will be sent**
-in the note shows the exact JSON before the person sends it.
+removing fields from a fuller object, so a new field is never sent by default. Where is always
+recorded and the payload is not shown in the note: allowlists, not a preview, are what keep it safe.
 
 - **The row the report is about.** This is looked up in the model by ref, never read from the screen.
   It holds the Element IDs, type, loadings, and the proposed placement beside the baseline. For a
@@ -35,7 +35,7 @@ in the note shows the exact JSON before the person sends it.
 It never sends a CSV, the session, or any free text from the screen: no row text, no button
 labels and no location names.
 
-![Send, with the payload open](img/companion-send.png)
+![Send](img/companion-send.png)
 
 On Pages the same note offers only Save:
 

@@ -23,7 +23,6 @@ export default function BugReporter({ screen, getApp, getData }) {
   const [menu, setMenu] = useState(false);
   const [note, setNote] = useState(null);       // { x, y, target }
   const [text, setText] = useState('');
-  const [where, setWhere] = useState(true);
   const [toast, setToast] = useState('');
   const screenRef = useRef(screen);
   screenRef.current = screen;
@@ -63,7 +62,7 @@ export default function BugReporter({ screen, getApp, getData }) {
   const toggle = () => { const v = !on; setOn(v); saveMode(v); setNote(null); };
   const commit = (list) => { setReports(list); saveReports(list); };
   const flash = (t) => { setToast(t); setTimeout(() => setToast(''), 2500); };
-  const draft = (kind) => ({ ...buildReport({ note: text.trim(), kind, target: note.target, withWhere: where,
+  const draft = (kind) => ({ ...buildReport({ note: text.trim(), kind, target: note.target, withWhere: true,
     app: { screen: screenRef.current, ...(getApp ? getApp() : {}) }, id: note.id }), ...note.extra });
   const save = async (kind) => {
     if (!text.trim()) return;
@@ -97,21 +96,11 @@ export default function BugReporter({ screen, getApp, getData }) {
   const w = 300;
   const top = note && Math.max(8, Math.min(note.y, window.innerHeight - 220));
   const box = note && (
-    // scrolls rather than run off the bottom once the preview is open
     <div data-bug-reporter className="bug-note"
       style={{ left: Math.max(8, Math.min(note.x, window.innerWidth - w - 8)),
         top, width: w, maxHeight: window.innerHeight - top - 8, overflowY: 'auto' }}>
       <textarea autoFocus rows={4} className="form-control form-control-sm" placeholder="What's wrong?"
         value={text} onChange={(e) => setText(e.target.value)} />
-      <label className="small d-block mt-1">
-        <input type="checkbox" checked={where} onChange={(e) => setWhere(e.target.checked)} /> Record where
-      </label>
-      {canSend && (
-        <details className="bug-preview small mt-1">
-          <summary>What will be sent</summary>
-          <pre>{JSON.stringify(remoteReport(draft(), getData ? getData() : {}), null, 1)}</pre>
-        </details>
-      )}
       <div className="d-flex gap-1 justify-content-end mt-1">
         <button className="btn btn-sm btn-outline-secondary" onClick={() => setNote(null)}>Cancel</button>
         <button className="btn btn-sm bug-feature" disabled={!text.trim()} onClick={() => save('feature')}>{canSend ? 'Send' : 'Save'} as Feature Request</button>
