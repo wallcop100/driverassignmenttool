@@ -31,7 +31,7 @@ Nothing.
 - New reports: KWZZDH duplicate LinkRef K6002 now names the rows and differing columns (data not
   checked: Kaizen was down); a crash before INIT carries the host's context. YMD8JN the multi-run
   watts bound counted watts, not whole fittings (10 x 30W on 100W = 4 drivers, said 3); working says
-  fittings are never split. U5EN7Q unclear, asked Erik. Report data: trail now carries each click's
+  fittings are never split. U5EN7Q: the working's Fittings step now names the PositionTypes (aca899f). Report data: trail now carries each click's
   debug areas, the app's own dialogs are captured, estimate lines/options are tagged; datajoin's
   listing showed every DAT trail as null and hid estimate/patch (fixed on `dat-parts`).
 - AUSTHZ, shared driver parts (scope: parts only; trust: live as observed). datajoin `dat_parts`
