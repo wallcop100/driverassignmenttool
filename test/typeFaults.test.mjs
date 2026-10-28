@@ -76,3 +76,11 @@ test('ratingsOf reads the side of the type it is given', () => {
   assert.equal(ratingsOf(type()), '185W · 1.05A');
   assert.equal(ratingsOf({ maxPowerW: 180, outputVoltageV: 24, nodeMaxFvV: 55 }), '180W · 24V · 55fV/out');
 });
+
+test('a shared part fills blanks, never overwrites, and says where it came from', () => {
+  const shared = { ...SOLO, shared: 'observed' };
+  assert.match(faults(type(), shared)[0][0], /shared catalogue says 30W/);
+  assert.equal(canReplace(type(), shared), false);
+  assert.equal(fixPreset(type({ maxPowerW: null }), shared, 'fill').origin, 'shared');
+  assert.equal(fixPreset(type(), SOLO, 'fill').origin, 'datasheet');
+});

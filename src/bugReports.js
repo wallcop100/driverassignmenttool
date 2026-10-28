@@ -33,16 +33,23 @@ export function describeElement(el) {
   return clip(`${el.getAttribute('role') || el.tagName.toLowerCase()} “${clip(label)}”`);
 }
 
-export function domContext(target) {
+const areasOf = (target) => {
   const areas = [];
   for (let e = target; e && e.getAttribute && areas.length < 6; e = e.parentElement) {
     const a = e.getAttribute('data-debug-id') || e.getAttribute('data-testid');
     if (a) areas.push(a);
   }
+  return areas;
+};
+
+export function domContext(target) {
+  const areas = areasOf(target);
   const tr = target?.closest?.('tr');
   const row = tr ? [...tr.cells].slice(0, 10).map((c) => clip(c.textContent, 40)).join(' | ') : '';
   const code = target?.closest?.('[data-code]')?.getAttribute('data-code') || '';
-  const dialogs = [...document.querySelectorAll('.modal.show .modal-title')].map((n) => clip(n.textContent));
+  // the app's own dialogs are role=dialog with a fixed aria-label, not Bootstrap modals
+  const dialogs = [...document.querySelectorAll('.modal.show .modal-title, [role=dialog][aria-label]')]
+    .map((n) => clip(n.getAttribute('aria-label') || n.textContent));
   // code first: it names exactly what was flagged, and flaggedRow takes the first ref it knows
   const refs = [...new Set(`${code} ${target?.textContent ?? ''} ${row}`.match(REF_RE) || [])].slice(0, 10);
   return { element: describeElement(target), areas, dialogs, row, refs, code };
@@ -52,7 +59,7 @@ export function domContext(target) {
 export const trail = [];
 export function noteClick(e, screen) {
   if (e.target?.closest?.('[data-bug-reporter]')) return;
-  trail.push({ at: new Date().toISOString(), screen, label: describeElement(e.target) });
+  trail.push({ at: new Date().toISOString(), screen, label: describeElement(e.target), areas: areasOf(e.target) });
   if (trail.length > 10) trail.shift();
 }
 
@@ -144,7 +151,7 @@ export function remoteReport(r, data = {}) {
     context: pick(data.context, CONTEXT),
     ...(r.app ? { app: pick(r.app, ['screen', 'zone', 'counts']) } : {}),
     ...(r.dom ? { dom: pick(r.dom, ['areas', 'dialogs', 'refs', 'code']) } : {}),
-    ...(r.trail ? { trail: r.trail.map((t) => pick(t, ['at', 'screen'])) } : {}),
+    ...(r.trail ? { trail: r.trail.map((t) => pick(t, ['at', 'screen', 'areas'])) } : {}),
     ...(r.viewport ? { viewport: r.viewport } : {}),
     ...(row ? { row } : {}),
     ...(r.patch ? { patch: r.patch } : {}),

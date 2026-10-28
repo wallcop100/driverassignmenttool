@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useReducer, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useReducer, useRef, useState, useSyncExternalStore } from 'react';
 import * as api from './api.js';
 import { DomainProvider } from './core/domain.js';
 import driversDomain from './drivers/domain.js';
@@ -10,6 +10,7 @@ import BugReporter from './components/BugReporter.jsx';
 import { APP_CHANNEL, BUILD_NAME } from './build.js';
 import { remoteReport } from './bugReports.js';
 import { useCompanion } from './companion.js';
+import { onSharedParts, setSharedParts, sharedSnapshot } from './catalogue.js';
 import EstimatePage from './components/EstimatePage.jsx';
 import ImportScreen from './components/ImportScreen.jsx';
 import Landing from './components/Landing.jsx';
@@ -47,6 +48,9 @@ export default function App({ domain = driversDomain }) {
   const [behind, setBehind] = useState(false);   // offer a reload on the notice
   const [fatal, setFatal] = useState(null);
   const companion = useCompanion();
+  // The shared catalogue, once per tab; a change to it re-renders every picker and match.
+  useSyncExternalStore(onSharedParts, sharedSnapshot);
+  useEffect(() => { companion?.parts?.list().then((r) => r && setSharedParts(r.parts)); }, [companion]);
 
   // Standalone keeps the ask-first banner. Embedded resumes silently - the frame
   // is flaky by nature, so coming back to your own work is the expected outcome,
@@ -264,8 +268,10 @@ export default function App({ domain = driversDomain }) {
     screen = <Landing state={state} dispatch={dispatch} />;
   }
   // What a SENT report may look up its row in (bugReports.js remoteReport picks from it).
+  // a parse that failed never reached INIT, so the host's own context is all a crash has
+  const context = state.context ?? payload.current?.context ?? null;
   const reportData = () => ({
-    model, assignments, addedDrivers, flags: state.flags, context: state.context,
+    model, assignments, addedDrivers, flags: state.flags, context,
     mode: embedded ? `embed:${domain.id}` : 'standalone', overlay: payload.current?.overlay,
   });
 
@@ -289,7 +295,7 @@ export default function App({ domain = driversDomain }) {
       )}
       {/* the screen as the person sees it: a lab keeps the view on 'landing',
           which would send whoever reads the report to the wrong place */}
-      <ErrorBoundary context={state.context}
+      <ErrorBoundary context={context}
         where={lab && state.view.page === 'landing' ? `lab:${lab}` : state.view.page}
         send={companion?.report && ((r) => companion.report(remoteReport(r, reportData())))}>
         {screen}

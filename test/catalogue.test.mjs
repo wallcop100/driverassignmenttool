@@ -133,3 +133,32 @@ test('a CV pair gets the ref its rail implies', () => {
     'ET-CVR-D-24-2CH-01',   // the ref this pairing actually has in live data
   );
 });
+
+// The shared catalogue (AUSTHZ): parts from other people, beside the datasheets.
+test('a shared part is matched and marked, but never in place of a datasheet', async () => {
+  const { setSharedParts, allParts, sharedAmendment } = await import('../src/catalogue.js');
+  try {
+    setSharedParts([
+      { name: 'Acme Drive 100', aliases: ['ACD100'], powerType: 'CC', maxPowerW: 100, minA: 0.35, maxA: 1.05, tier: 'observed' },
+      { name: 'EldoLED SoloDrive 360/A', powerType: 'CC', maxPowerW: 33, tier: 'observed' },  // an amendment
+      { name: 'Grabs everything', aliases: ['solo'], powerType: 'CC', maxPowerW: 1 },
+      { name: 'No power type', maxPowerW: 5 }, null, 'junk',
+      { name: 'Bad numbers', powerType: 'CV', maxPowerW: 'lots', re: '.*' },
+    ]);
+    const acme = resolveSpec('Acme ACD100 at 700mA');
+    assert.equal(acme.name, 'Acme Drive 100');
+    assert.equal(acme.shared, 'observed');
+    // the datasheet comes first, so a greedy alias cannot take a known part
+    assert.equal(resolveSpec('EldoLED SoloDrive 360/A').maxPowerW, 30);
+    assert.equal(sharedAmendment('EldoLED SoloDrive 360/A').maxPowerW, 33);
+    assert.equal(allParts().filter((p) => p.name === 'EldoLED SoloDrive 360/A').length, 1);
+    assert.ok(!allParts().some((p) => p.name === 'No power type'));
+    const bad = allParts().find((p) => p.name === 'Bad numbers');
+    assert.equal(bad.maxPowerW, undefined, 'only finite numbers are kept');
+    assert.equal(typeof bad.re.test, 'function', 'a sent pattern is never used');
+  } finally {
+    setSharedParts([]);
+  }
+  assert.equal(matchPart('Acme ACD100'), null);
+  assert.equal(allParts(), PARTS);
+});

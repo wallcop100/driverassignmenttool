@@ -4,6 +4,7 @@
 // Self-hosted, the same build finds it and reports are sent instead.
 //
 //   reports   POST companion/reports - one report (bugReports.js buildRemoteReport shape)
+//   parts     GET|POST companion/parts - the shared driver catalogue (catalogue.js setSharedParts)
 //
 // Not at `./api/`: that is the embed entry for DJ 101681. Every call is relative to
 // the site root, so the build knows nothing about who answers, and failures are quiet:
@@ -35,6 +36,14 @@ function build(base, features) {
     report: features.has('reports') ? (r) => quiet(getJson(`${base}reports`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(r),
     })) : null,
+    /** The shared catalogue: list() -> { parts } | null; add(part) -> { parts } | { error }. */
+    parts: features.has('parts') ? {
+      list: () => quiet(getJson(`${base}parts`)),
+      add: (part) => getJson(`${base}parts`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ part }),
+      }).then(({ res, body }) => (res.ok && body ? body : { error: body?.message ?? 'Not sent' }))
+        .catch(() => ({ error: 'Not sent' })),
+    } : null,
   };
 }
 

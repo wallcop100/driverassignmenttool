@@ -1,6 +1,6 @@
 # driverassignmenttool — state
 
-Updated: 2026-10-27
+Updated: 2026-10-28
 
 <!-- Now / Next / Blocked are rewritten in place and never grow. Finish something, delete the
      line. Only Log appends. Format: /srv/projects/FORMAT.md -->
@@ -16,8 +16,9 @@ names and badge. `dat-autodeploy.timer` keeps Connected on Pages' build. The hos
 ## Next
 
 1. n8n overlay sync (plan §7): not built; needs the read/save gateway actions in datajoin first.
-2. Report AUSTHZ: a shared driver catalogue through the companion, like PS&R's. Needs a design,
-   and a datajoin + dat_bridge side.
+2. AUSTHZ shared driver parts (`feat/shared-parts`): deploy datajoin (`dat-parts`) first, then
+   dat_bridge (`shared-parts`), then merge the app PR. Resolve AUSTHZ once on prod.
+3. Ship `dev` to `main`, then resolve the 7 reports fixed in #14.
 
 ## Blocked / needs Erik
 
@@ -26,6 +27,18 @@ Nothing.
 ## Log
 
 ## 2026-10-28
+
+- New reports: KWZZDH duplicate LinkRef K6002 now names the rows and differing columns (data not
+  checked: Kaizen was down); a crash before INIT carries the host's context. YMD8JN the multi-run
+  watts bound counted watts, not whole fittings (10 x 30W on 100W = 4 drivers, said 3); working says
+  fittings are never split. U5EN7Q: the working's Fittings step now names the PositionTypes (aca899f). Report data: trail now carries each click's
+  debug areas, the app's own dialogs are captured, estimate lines/options are tagged; datajoin's
+  listing showed every DAT trail as null and hid estimate/patch (fixed on `dat-parts`).
+- AUSTHZ, shared driver parts (scope: parts only; trust: live as observed). datajoin `dat_parts`
+  table + `GET|POST /gateway/dat/parts`; bridge `companion/parts` (20 r/min, 8k body); app
+  `setSharedParts` in catalogue.js, shared chip, amendments offered beside the datasheet, Share form
+  under the type editor, origin `shared` in Review. 351 tests green, build clean, clicked through
+  with a mocked companion. Not deployed. Docs: `docs/companion.md`.
 
 - Worked the 8 open `dat` reports (PR to `dev`; reports resolved once on prod):
   B3TPLM a pending fix clears its type's "to check" flags; FTQH78 bug pip counts unsent only, menu

@@ -249,14 +249,18 @@ function parseLinks(text) {
   const { rows } = readCsv(text, LINK_ESSENTIAL, 'Links Assignment CSV', true);
   const links = [];
   const seen = new Map();
-  const sameButRoom = (a, b) => Object.keys({ ...a, ...b })
-    .every((k) => k === 'ToLocationName' || s(a[k]) === s(b[k]));
+  // column names only: a value can be a location name, and this message is sent in crash reports
+  const differ = (a, b) => Object.keys({ ...a, ...b })
+    .filter((k) => k !== 'ToLocationName' && s(a[k]) !== s(b[k]));
   rows.forEach((row, i) => {
     const ref = s(row.LinkRef);
     if (!ref) throw new Error(`Links Assignment CSV: row ${i + 2} has no LinkRef`);
     if (seen.has(ref)) {
       const first = seen.get(ref);
-      if (!sameButRoom(first.row, row)) throw new Error(`Links Assignment CSV: duplicate LinkRef: ${ref}`);
+      const cols = differ(first.row, row);
+      if (cols.length) {
+        throw new Error(`Links Assignment CSV: duplicate LinkRef: ${ref} (rows ${first.i + 2} and ${i + 2} differ in ${cols.join(', ')})`);
+      }
       const room = s(row.ToLocationName);
       const rooms = first.link.location ? String(first.link.location).split('; ') : [];
       if (room && !rooms.includes(room)) first.link.location = [...rooms, room].join('; ');
@@ -272,7 +276,7 @@ function parseLinks(text) {
       positionType: s(row.PositionType), threadCount: s(row.ThreadCount), controlType: s(row.ControlType),
     };
     links.push(link);
-    seen.set(ref, { row, link });
+    seen.set(ref, { row, link, i });
   });
   return links;
 }
@@ -866,7 +870,9 @@ function applyPresets(drivers, presetTypes) {
 // Datasheet-backed parts, from the Driver Specs page group. Offered in the
 // editor as a starting point, and used to check what someone types against what
 // the part actually is. See catalogue.js.
-export { PARTS, combine, matchPart, matchParts, resolveSpec, reachableW } from './catalogue.js';
+export {
+  PARTS, allParts, combine, matchPart, matchParts, resolveSpec, reachableW, setSharedParts, sharedAmendment,
+} from './catalogue.js';
 
 // A CC part's datasheet gives a RANGE; the design picks one value out of it and
 // says so twice - in the ref (ET-CCR-D-1050-…) and in the name ("at 1050mA").
@@ -1244,7 +1250,9 @@ export function planFromRequirements(model, zone, opts = {}) {
         });
         if (!runList.every((r) => r.per > 0)) return null;
         outputs = runList.reduce((n, r) => n + r.outputs, 0);
-        byWatts = Math.ceil(totalW / (t.maxPowerW * keep));
+        // whole fittings, not watts: 10 x 30W on a 100W driver is 4 drivers of 3, not 3.
+        // shortcut: sized on the line's largest fitting, so mixed sizes over-count slightly
+        byWatts = perDriverW > 0 ? Math.ceil(qty / perDriverW) : Infinity;
         count = Math.max(Math.ceil(outputs / t.nodes.length), byWatts);
         perDriver = Math.ceil(qty / count);
       }
