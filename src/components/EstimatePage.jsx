@@ -274,7 +274,7 @@ export default function EstimatePage({ state, dispatch, zone }) {
     const byOutputs = w.runList ? Math.ceil(l.outputs / n) : null;
     return (
       <div className="est-working">
-        {step('Fittings', `${amount(l.qty, l.rows)} · ${fmt(w.wPer)} W each${w.fvPer ? ` · ${fmt(w.fvPer)} V each` : ''}`,
+        {step('Fittings', `${l.positionTypes?.length ? `${l.positionTypes.join(', ')} · ` : ''}${amount(l.qty, l.rows)} ·${fmt(w.wPer)} W each${w.fvPer ? ` · ${fmt(w.fvPer)} V each` : ''}`,
           'each one whole: never split across outputs or drivers')}
         {arr}
         {l.forcedIssue && <>{step('Forced type not used', l.forcedIssue, 'sized on the automatic pick instead', ' warn')}{arr}</>}
