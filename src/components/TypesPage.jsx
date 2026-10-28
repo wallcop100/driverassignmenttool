@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import * as api from '../api.js';
-import { bannedNodes, driverTypes, fixNodeName, needsSetup, resolveSpec, statedAttributes } from '../engine.js';
+import { bannedNodes, driverTypes, filledHere, fixNodeName, needsSetup, resolveSpec, statedAttributes } from '../engine.js';
 import { effectiveDrivers } from '../state.js';
 import { canFill, canReplace, currentOptions, faults, fixPreset, fmt } from '../typeFaults.js';
 import FaultDialog from './FaultDialog.jsx';
@@ -39,6 +39,7 @@ export default function TypesPage({ state, dispatch, zone }) {
   const inUse = useMemo(() => driverTypes(model), [model]);
   const unset = inUse.filter((t) => statedAttributes(t) === 0).length;
   const onboarding = needsSetup(model);
+  const pending = filledHere(model, presets);
 
   // ':' is banned inside a node name. Correcting it is a rename, so it is safe
   // to do for the whole job at once - and it has to be, because a node written
@@ -157,9 +158,12 @@ export default function TypesPage({ state, dispatch, zone }) {
           <div>
             <b>
               {onboarding
-                ? `None of this project’s ${inUse.length} driver types have their attributes filled in`
-                : `${unset} of ${inUse.length} driver types still have nothing filled in`}
+                ? `None of this project’s ${inUse.length} driver types have their attributes filled in the DesignDB`
+                : `${unset} of ${inUse.length} driver types still have no attributes filled in`}
             </b>
+            {pending > 0 && (
+              <div className="small">{pending} filled in here, waiting on the patch to reach the DesignDB.</div>
+            )}
             <div className="text-secondary small">
               {onboarding
                 ? 'Most fill in from their datasheet in one press. The patch adds the columns if the workbook predates them.'

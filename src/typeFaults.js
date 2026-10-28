@@ -2,7 +2,7 @@
 // states against the datasheet the type's Name matched. No JSX and no React, so
 // `node --test` can cover the judgement itself rather than only the screens
 // built on it.
-import { currentFromName, currentFromRef } from './engine.js';
+import { atCurrent, checkOf, currentFromName, currentFromRef } from './engine.js';
 
 export const fmt = (n) => {
   if (n == null || n === '') return null;
@@ -24,6 +24,7 @@ export function faults(t, spec) {
   // "to check" (report B3TPLM). Its blanks are still flagged; its disagreements
   // with the spec page are not - that would flag the user's own answer back at them.
   const judgeSpec = !t.preset;
+  spec = atCurrent(spec, t.currentA);
   const page = spec?.shared ? 'shared catalogue' : 'spec page';
   const out = [];
   if (t.maxPowerW == null) {
@@ -34,7 +35,7 @@ export function faults(t, spec) {
     out.push([`${t.maxPowerW}W here · ${page} says ${fmt(spec.maxPowerW)}W`,
       `This type states ${t.maxPowerW}W. The ${spec.name} ${page} says ${fmt(spec.maxPowerW)}W`
       + `${times >= 1.5 ? ` - ${fmt(times)}× higher, so checks against it would pass an overload` : ''}. `
-      + `If this is not a ${spec.name}, the name is what matched it.`]);
+      + `If this is not a ${spec.name}, the name is what matched it.`, 'disagrees']);
   }
   if (t.powerType == null) {
     out.push(['no CC/CV - matches no cable', 'With no declared CC/CV type this driver matches nothing.']);
@@ -46,10 +47,17 @@ export function faults(t, spec) {
   } else if (judgeSpec && t.powerType === 'CC' && t.currentA != null && spec?.minA != null
     && (t.currentA < spec.minA || t.currentA > spec.maxA)) {
     out.push([`${t.currentA}A · ${page} range is ${spec.minA}–${spec.maxA}A`,
-      `${t.currentA}A is outside the ${spec.minA}–${spec.maxA}A the ${spec.name} ${page} gives.`]);
+      `${t.currentA}A is outside the ${spec.minA}–${spec.maxA}A the ${spec.name} ${page} gives.`, 'disagrees']);
   }
   return out;
 }
+
+// Types whose stated ratings a trusted spec disagrees with - a datasheet, or a
+// shared part a second person has checked. An unchecked one is not evidence.
+export const disagreeing = (types, resolveSpec) => types.filter((t) => {
+  const spec = resolveSpec(t.name || t.typeRef);
+  return spec && ![spec.driver ?? spec, spec.supply].some((p) => checkOf(p) === 'unchecked') && faults(t, spec).some((f) => f[2] === 'disagrees');
+});
 
 // One line of ratings, from whichever side of a type is being shown.
 export const ratingsOf = (t) => [
@@ -94,6 +102,7 @@ export function fixPreset(t, spec, mode, currentA) {
   const d = t.designDB ?? t;
   const take = (mine, theirs) => (mode === 'replace' ? theirs ?? mine : mine ?? theirs);
   const a = currentA ?? currentOptions(t, spec)[0]?.a ?? null;
+  spec = atCurrent(spec, a);
   // Aligning the name to the chosen current is safe; aligning the ref is not.
   const name = a != null && currentFromName(t.name) != null && currentFromName(t.name) !== a
     ? String(t.name).replace(NAME_MA_G, `${Math.round(a * 1000)}mA`)
@@ -145,6 +154,11 @@ export function autoFillable(inventory, resolveSpec) {
     // half of a pair, and resolveSpec has already combined the two.
     // a DC/DC driver with no supply named is a pair we cannot complete
     if (part.kind === 'dcdc' && !spec.supply) { asks.push({ t, spec, why: 'which supply?' }); continue; }
+    // one person's word: the next person checks it before it fills anything
+    if ([part, spec.supply].some((p) => checkOf(p) === 'unchecked')) {
+      asks.push({ t, spec, why: 'shared part, not yet checked' });
+      continue;
+    }
     let currentA = null;
     if (spec.powerType === 'CC') {
       const opts = currentOptions(t, spec);
@@ -167,6 +181,7 @@ export function autoFillable(inventory, resolveSpec) {
 // The preset autoFillable's `ready` entry becomes. Ratings from the datasheet,
 // the Ref and the node names left exactly as the design has them.
 export function fillFromSpec({ t, spec, currentA }) {
+  spec = atCurrent(spec, currentA);
   return {
     typeRef: t.typeRef,
     name: t.name || spec.name,

@@ -43,6 +43,11 @@ function build(base, features) {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ part }),
       }).then(({ res, body }) => (res.ok && body ? body : { error: body?.message ?? 'Not sent' }))
         .catch(() => ({ error: 'Not sent' })),
+      /** A person's check of the version they were shown -> { parts } | { error }. */
+      vote: (name, rev, vote) => getJson(`${base}parts`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ vote: { name, rev, vote } }),
+      }).then(({ res, body }) => (res.ok && body ? body : { error: body?.message ?? 'Not sent' }))
+        .catch(() => ({ error: 'Not sent' })),
     } : null,
   };
 }

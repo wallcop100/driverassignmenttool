@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
-import { allParts, combine, nextTypeRef, reachableW, resolveSpec, setSharedParts, sharedAmendment } from '../engine.js';
+import { allParts, atCurrent, combine, nextTypeRef, reachableW, resolveSpec, setSharedParts, sharedAmendment } from '../engine.js';
 import { useCompanion } from '../companion.js';
+import SharedCheck from './SharedCheck.jsx';
 
 // The driver type editor, shared by the Add-driver modal and the Driver types
 // page. A preset is a rating nobody declared, supplied here and patched into the
@@ -90,9 +91,9 @@ export default function PresetEditor({ draft, setDraft, inventory, onSave, onCan
   // it advises, never edits.
   const chosen = parts.find((p) => p.name === draft.part);
   const chosenPsu = parts.find((p) => p.name === draft.psu);
-  const part = draft.invented && chosen
+  const part = atCurrent(draft.invented && chosen
     ? combine(chosen, chosenPsu)
-    : resolveSpec(draft.name || draft.typeRef);
+    : resolveSpec(draft.name || draft.typeRef), numOrNull(draft.currentA));
 
   useEffect(() => {
     if (!draft.invented || ownRef) return;
@@ -180,6 +181,7 @@ export default function PresetEditor({ draft, setDraft, inventory, onSave, onCan
 
   return (
     <div className="preset-editor">
+      {[part?.driver ?? part, part?.supply].filter(Boolean).map((p) => <SharedCheck key={p.name} part={p} />)}
       {draft.invented ? (
         <div className="spec-pick">
           <label>
@@ -191,7 +193,7 @@ export default function PresetEditor({ draft, setDraft, inventory, onSave, onCan
               }}>
               <option value="">Choose a driver…</option>
               {parts.filter((p) => p.kind !== 'supply').map((p) => (
-                <option key={p.name} value={p.name}>{p.name}{p.shared ? ' · shared' : ''}</option>
+                <option key={p.name} value={p.name}>{p.name}</option>
               ))}
             </select>
           </label>
@@ -207,7 +209,7 @@ export default function PresetEditor({ draft, setDraft, inventory, onSave, onCan
                 }}>
                 <option value="">Choose a PSU…</option>
                 {parts.filter((p) => p.kind === 'supply').map((p) => (
-                  <option key={p.name} value={p.name}>{p.name}{p.shared ? ' · shared' : ''}</option>
+                  <option key={p.name} value={p.name}>{p.name}</option>
                 ))}
               </select>
             </label>

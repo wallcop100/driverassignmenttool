@@ -50,7 +50,8 @@ npm run build                   # -> dist/
   bin-packing are pure functions over a few hundred rows. The one exception is the optional
   companion (`src/companion.js`): the app must stay complete without it, and only what the person
   chooses to send leaves the browser: a bug report built from allowlists in `remoteReport()`, or a
-  datasheet driver part they share (`partFromDraft` in `PresetEditor.jsx`). Never send a CSV, the
+  datasheet driver part they share (`partFromDraft` in `PresetEditor.jsx`), or their Yes/No/Not sure
+  check of someone else's (`SharedCheck.jsx`). Never send a CSV, the
   session, or any free text from the screen.
 - **`src/engine.js` stays plain exported functions over a `model`** — no classes, no internal mutable
   state, no singleton. That is exactly how `test/engine.test.mjs` uses them: build a synthetic model,
@@ -151,3 +152,6 @@ node docs/hub-layout-shots.mjs
   not a parameter, because 36 call sites read the catalogue. `allParts()` is the list; App
   re-renders on a change via `onSharedParts`. A test that sets shared parts must clear them with
   `setSharedParts([])` or it leaks into the next (2026-10-28).
+- **A shared part's checks belong to one version (`rev`, a hash of the stored part).** Any amendment
+  starts the votes again, so a part edited after two people agreed it is unchecked once more and
+  "Fill in all" skips it until someone checks it again. That is deliberate (2026-10-28).

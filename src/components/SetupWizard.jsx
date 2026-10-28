@@ -1,5 +1,7 @@
-import { useMemo, useState } from 'react';
-import { allParts, combine, resolveSpec } from '../engine.js';
+import { useMemo, useState, useSyncExternalStore } from 'react';
+import { allParts, atCurrent, checkOf, combine, resolveSpec } from '../engine.js';
+import { onSharedParts, sharedSnapshot } from '../catalogue.js';
+import SharedCheck from './SharedCheck.jsx';
 import PresetEditor, { draftFrom, draftFromPart, toPreset } from './PresetEditor.jsx';
 import { autoFillable, currentOptions, fillFromSpec, fmt, fromShared } from '../typeFaults.js';
 
@@ -39,8 +41,10 @@ export default function SetupWizard({ model, presets, dispatch, onClose, only })
     () => (only ? model.inventory.filter((t) => only.has(t.typeRef)) : model.inventory),
     [model.inventory, only],
   );
-  const steps = useMemo(() => inventory.map(stepFor), [inventory]);
-  const auto = useMemo(() => autoFillable(inventory, resolveSpec), [inventory]);
+  // a check of a shared part changes what can be filled without asking
+  const sharedSet = useSyncExternalStore(onSharedParts, sharedSnapshot);
+  const steps = useMemo(() => inventory.map(stepFor), [inventory, sharedSet]);
+  const auto = useMemo(() => autoFillable(inventory, resolveSpec), [inventory, sharedSet]);
   const pending = auto.ready.filter((r) => !presets[r.t.typeRef]);
   const [i, setI] = useState(0);
   const [draft, setDraft] = useState(null);
@@ -62,6 +66,7 @@ export default function SetupWizard({ model, presets, dispatch, onClose, only })
   const spec = part ? combine(part, part.kind === 'dcdc' ? psu : null) : null;
   const needsPsu = part?.kind === 'dcdc';
   const needsCurrent = spec?.powerType === 'CC' && !(spec.minA != null && spec.minA === spec.maxA);
+  const unchecked = [part, needsPsu ? psu : null].filter((p) => checkOf(p) === 'unchecked');
   const ready = !!spec && (!needsPsu || psu) && (!needsCurrent || Number(currentMa) > 0);
 
   const set = (patch) => setChoice({ ...choice, [key]: { ...picked, ...patch } });
@@ -69,7 +74,7 @@ export default function SetupWizard({ model, presets, dispatch, onClose, only })
   // What the tool would write for this type: the datasheet's values, the node
   // list the part defines, and the Ref kept exactly as the DesignDB has it.
   const proposed = () => {
-    const d = draftFromPart(part, needsPsu ? psu : null);
+    const d = draftFromPart(atCurrent(part, needsCurrent ? Number(currentMa) / 1000 : null), needsPsu ? psu : null);
     return toPreset({
       ...d,
       typeRef: step.t.typeRef,
@@ -143,7 +148,7 @@ export default function SetupWizard({ model, presets, dispatch, onClose, only })
                   onChange={(e) => set({ part: e.target.value, psu: '', currentA: '' })}>
                   <option value="">Not one of these…</option>
                   {parts.filter((p) => p.kind !== 'supply').map((p) => (
-                    <option key={p.name} value={p.name}>{p.name}{p.shared ? ' · shared' : ''}</option>
+                    <option key={p.name} value={p.name}>{p.name}</option>
                   ))}
                 </select>
                 {step.part && !picked.part && (
@@ -158,7 +163,7 @@ export default function SetupWizard({ model, presets, dispatch, onClose, only })
                     onChange={(e) => set({ psu: e.target.value })}>
                     <option value="">Choose…</option>
                     {parts.filter((p) => p.kind === 'supply').map((p) => (
-                      <option key={p.name} value={p.name}>{p.name}{p.shared ? ' · shared' : ''}</option>
+                      <option key={p.name} value={p.name}>{p.name}</option>
                     ))}
                   </select>
                   <span className="fld-ds">it sets the voltage and caps the watts</span>
@@ -177,6 +182,8 @@ export default function SetupWizard({ model, presets, dispatch, onClose, only })
                   <span className="fld-ds">the Ref usually says: {step.t.typeRef}</span>
                 </label>
               )}
+
+              {unchecked.map((p) => <SharedCheck key={p.name} part={p} />)}
 
               {ready ? (
                 <div className="sw-preview">
@@ -238,7 +245,8 @@ export default function SetupWizard({ model, presets, dispatch, onClose, only })
               onClick={() => { setI(i - 1); setDraft(null); }}>Back</button>
             <button className="btn btn-sm btn-outline-secondary" disabled={i >= steps.length - 1}
               onClick={() => { setI(i + 1); setDraft(null); }}>Skip</button>
-            <button className="btn btn-sm btn-primary" disabled={!ready} onClick={accept}>
+            <button className="btn btn-sm btn-primary" disabled={!ready || unchecked.length > 0} onClick={accept}
+              title={unchecked.length ? 'A shared part needs a second person to check it first' : undefined}>
               {i < steps.length - 1 ? 'Use this, next' : 'Use this'}
             </button>
           </div>
