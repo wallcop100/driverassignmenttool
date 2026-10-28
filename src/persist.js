@@ -85,17 +85,19 @@ export function loadTypes() {
 }
 
 // Sizes typed in the space layout and TBC flags set here. Like presets they
-// belong to the set, not the hub, so they sit beside the presets slot.
-const EMPTY_EXTRAS = { typeSizes: {}, tbc: {}, recipes: {}, jboxes: {} };
+// belong to the set, not the hub, so they sit beside the presets slot. So does
+// ownLine: it is per PositionType, which is the project's (report RAJ9XJ).
+const EMPTY_EXTRAS = { typeSizes: {}, tbc: {}, recipes: {}, jboxes: {}, ownLine: [] };
 export function loadTypeExtras() {
   try {
     const v = JSON.parse(localStorage.getItem(`${typesKey}:extras`) ?? '{}') ?? {};
-    return { typeSizes: v.typeSizes ?? {}, tbc: v.tbc ?? {}, recipes: v.recipes ?? {}, jboxes: v.jboxes ?? {} };
+    return { typeSizes: v.typeSizes ?? {}, tbc: v.tbc ?? {}, recipes: v.recipes ?? {}, jboxes: v.jboxes ?? {},
+      ownLine: v.ownLine ?? [] };
   } catch { return { ...EMPTY_EXTRAS }; }
 }
 
-function saveTypeExtras({ typeSizes = {}, tbc = {}, recipes = {}, jboxes = {} }) {
-  const extras = { typeSizes, tbc, recipes, jboxes };
+function saveTypeExtras({ typeSizes = {}, tbc = {}, recipes = {}, jboxes = {}, ownLine = [] }) {
+  const extras = { typeSizes, tbc, recipes, jboxes, ownLine };
   try {
     if (Object.values(extras).every((v) => !Object.keys(v).length)) localStorage.removeItem(`${typesKey}:extras`);
     else localStorage.setItem(`${typesKey}:extras`, JSON.stringify(extras));

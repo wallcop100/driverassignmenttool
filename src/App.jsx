@@ -21,6 +21,8 @@ import { clearSession, loadPrefs, loadSession, loadTypeExtras, loadTypes, savePr
 import { changeCount, diffRows, initialState, intersectionSuggestions, reducer } from './state.js';
 
 const embedded = embed.isEmbedded();
+// The host's data failing to parse is shown as a crash, so it gets the one-click report.
+const Fatal = ({ message }) => { throw new Error(message); };
 // A lab surface is asked for by name in the URL and linked from nowhere. Read
 // once at module load, so nothing in the app can navigate into one by accident.
 // Asked for by name, either in the URL or by the page that embeds the build.
@@ -218,13 +220,15 @@ export default function App({ domain = driversDomain }) {
   }, [lab, model]);
 
   let screen;
-  if (!model && embedded) {
+  if (!model && embedded && fatal) {
+    screen = <Fatal message={fatal} />;
+  } else if (!model && embedded) {
     // A silent blank iframe is the worst failure mode - it looks identical to a
     // broken host. Always say which of the two we are.
     screen = (
       <div className="container d-flex justify-content-center align-items-center min-vh-100">
-        <div className={`alert ${fatal ? 'alert-danger' : 'alert-secondary'} text-center mb-0`}>
-          {fatal ?? 'Waiting for the host to send this hub’s data…'}
+        <div className="alert alert-secondary text-center mb-0">
+          Waiting for the host to send this hub’s data…
         </div>
       </div>
     );

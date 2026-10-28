@@ -31,9 +31,12 @@ test('a wattage the spec page disagrees with is attributed, not asserted', () =>
   assert.equal(faults(type({ maxPowerW: 30 }), SOLO).length, 0);
 });
 
-test('a preset is a proposal, so the DesignDB row is what gets judged', () => {
-  const t = { ...type({ maxPowerW: 30 }), designDB: type() };
-  assert.equal(faults(t, SOLO).length, 1, 'still flags the 185W underneath');
+test('a pending fix clears the flags it answers, but not its own blanks', () => {
+  const blank = type({ maxPowerW: null, powerType: null, currentA: null });
+  assert.equal(faults({ ...type({ maxPowerW: 30 }), preset: true, designDB: blank }, SOLO).length, 0);
+  assert.equal(faults({ ...type({ maxPowerW: 100 }), preset: true, designDB: blank }, SOLO).length, 0,
+    'a chosen wattage off the spec page is the user\'s answer, not a fault');
+  assert.equal(faults({ ...type({ maxPowerW: null }), preset: true, designDB: blank }, SOLO).length, 1);
 });
 
 test('fill adds only what is missing; replace overwrites what disagrees', () => {

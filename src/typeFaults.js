@@ -19,15 +19,16 @@ export const fmt = (n) => {
 // on a free-text name, so a mismatch might be the match's fault rather than the
 // data's: attribute the number to the page instead of asserting it. Each entry
 // is [what the card shows, the full sentence on hover].
-export function faults(type, spec) {
-  // Judge the design's own numbers. A preset is a proposal, and flagging it
-  // would be flagging the user's own unsaved answer back at them.
-  const t = type.designDB ?? type;
+export function faults(t, spec) {
+  // A pending fix is what the patch will write, so a type filled in is no longer
+  // "to check" (report B3TPLM). Its blanks are still flagged; its disagreements
+  // with the spec page are not - that would flag the user's own answer back at them.
+  const judgeSpec = !t.preset;
   const out = [];
   if (t.maxPowerW == null) {
     out.push(['no MaxPower(W) - nothing to size against',
       'Without a max power this type cannot be checked or sized against.']);
-  } else if (spec?.maxPowerW != null && Math.abs(t.maxPowerW - spec.maxPowerW) > 0.01) {
+  } else if (judgeSpec && spec?.maxPowerW != null && Math.abs(t.maxPowerW - spec.maxPowerW) > 0.01) {
     const times = t.maxPowerW / spec.maxPowerW;
     out.push([`${t.maxPowerW}W here · spec page says ${fmt(spec.maxPowerW)}W`,
       `This type states ${t.maxPowerW}W. The ${spec.name} spec page says ${fmt(spec.maxPowerW)}W`
@@ -41,7 +42,7 @@ export function faults(type, spec) {
       'With CurrentRange empty the driver has no declared current, so it matches no cable.']);
   } else if (t.powerType === 'CV' && t.outputVoltageV == null) {
     out.push(['no OutputVoltage(V)', 'Without an output voltage the CV check cannot run.']);
-  } else if (t.powerType === 'CC' && t.currentA != null && spec?.minA != null
+  } else if (judgeSpec && t.powerType === 'CC' && t.currentA != null && spec?.minA != null
     && (t.currentA < spec.minA || t.currentA > spec.maxA)) {
     out.push([`${t.currentA}A · spec page range is ${spec.minA}–${spec.maxA}A`,
       `${t.currentA}A is outside the ${spec.minA}–${spec.maxA}A the ${spec.name} spec page gives.`]);
