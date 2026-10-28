@@ -109,6 +109,8 @@ export default function ReviewModal({ state, dispatch, onClose }) {
             {[
               ['datasheet', 'Driver types filled from the datasheet',
                 'Not in the DB. The tool filled these in so work could carry on, and the patch writes them. Drop any you do not want written.'],
+              ['shared', 'Driver types filled from the shared catalogue',
+                'Not in the DB and not from a spec page: someone using this tool sent these ratings. Check them before the patch writes them.'],
               ['edited', 'Driver types edited',
                 'Ratings only. Every other column on the row is left alone, and the edits apply across the set.'],
             ].map(([origin, title, note]) => {

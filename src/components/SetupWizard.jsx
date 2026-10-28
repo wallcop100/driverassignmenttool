@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
-import { PARTS, combine, resolveSpec } from '../engine.js';
+import { allParts, combine, resolveSpec } from '../engine.js';
 import PresetEditor, { draftFrom, draftFromPart, toPreset } from './PresetEditor.jsx';
-import { autoFillable, currentOptions, fillFromSpec, fmt } from '../typeFaults.js';
+import { autoFillable, currentOptions, fillFromSpec, fmt, fromShared } from '../typeFaults.js';
 
 // Onboarding a project to Lighting DesignDB V4.6. Every driver ElementType on
 // the job states none of the ten attributes the checks run on, so nothing here
@@ -31,6 +31,7 @@ const stepFor = (t) => {
 };
 
 export default function SetupWizard({ model, presets, dispatch, onClose, only }) {
+  const parts = allParts();   // the datasheets, then any shared additions
   // Only the types this walk is about. From the types page that is the ones in
   // use - a library of forty parts nobody has placed is not what you came to
   // fill in - and the caller says so rather than the wizard guessing.
@@ -53,10 +54,10 @@ export default function SetupWizard({ model, presets, dispatch, onClose, only })
   const picked = choice[key] ?? {};
   // What the name resolved to, unless the user has said otherwise. `undefined`
   // means untouched, so the match stands; an empty string means they cleared it.
-  const part = PARTS.find((p) => p.name === picked.part) ?? (picked.part == null ? step.part : null);
+  const part = parts.find((p) => p.name === picked.part) ?? (picked.part == null ? step.part : null);
   const psu = picked.psu == null
     ? step.supply
-    : (PARTS.find((p) => p.name === picked.psu) ?? null);
+    : (parts.find((p) => p.name === picked.psu) ?? null);
   const currentMa = picked.currentA ?? step.currentMa;
   const spec = part ? combine(part, part.kind === 'dcdc' ? psu : null) : null;
   const needsPsu = part?.kind === 'dcdc';
@@ -79,7 +80,7 @@ export default function SetupWizard({ model, presets, dispatch, onClose, only })
   };
 
   const accept = () => {
-    dispatch({ type: 'SET_PRESET', preset: { ...proposed(), origin: 'datasheet' } });
+    dispatch({ type: 'SET_PRESET', preset: { ...proposed(), origin: fromShared(spec) ? 'shared' : 'datasheet' } });
     setDraft(null);
     if (i < steps.length - 1) setI(i + 1);
   };
@@ -141,8 +142,8 @@ export default function SetupWizard({ model, presets, dispatch, onClose, only })
                 <select className="form-select form-select-sm" value={part?.name ?? ''}
                   onChange={(e) => set({ part: e.target.value, psu: '', currentA: '' })}>
                   <option value="">Not one of these…</option>
-                  {PARTS.filter((p) => p.kind !== 'supply').map((p) => (
-                    <option key={p.name} value={p.name}>{p.name}</option>
+                  {parts.filter((p) => p.kind !== 'supply').map((p) => (
+                    <option key={p.name} value={p.name}>{p.name}{p.shared ? ' · shared' : ''}</option>
                   ))}
                 </select>
                 {step.part && !picked.part && (
@@ -156,8 +157,8 @@ export default function SetupWizard({ model, presets, dispatch, onClose, only })
                   <select className="form-select form-select-sm" value={psu?.name ?? ''}
                     onChange={(e) => set({ psu: e.target.value })}>
                     <option value="">Choose…</option>
-                    {PARTS.filter((p) => p.kind === 'supply').map((p) => (
-                      <option key={p.name} value={p.name}>{p.name}</option>
+                    {parts.filter((p) => p.kind === 'supply').map((p) => (
+                      <option key={p.name} value={p.name}>{p.name}{p.shared ? ' · shared' : ''}</option>
                     ))}
                   </select>
                   <span className="fld-ds">it sets the voltage and caps the watts</span>

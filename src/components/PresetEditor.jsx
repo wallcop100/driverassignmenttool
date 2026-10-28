@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { combine, nextTypeRef, PARTS, reachableW, resolveSpec } from '../engine.js';
+import { allParts, combine, nextTypeRef, reachableW, resolveSpec, setSharedParts, sharedAmendment } from '../engine.js';
+import { useCompanion } from '../companion.js';
 
 // The driver type editor, shared by the Add-driver modal and the Driver types
 // page. A preset is a rating nobody declared, supplied here and patched into the
@@ -80,14 +81,15 @@ const isComplete = (d) => !!d.typeRef.trim() && numOrNull(d.maxPowerW) > 0
   && (d.powerType === 'CC' ? numOrNull(d.currentA) > 0 : numOrNull(d.outputVoltageV) > 0);
 
 export default function PresetEditor({ draft, setDraft, inventory, onSave, onCancel, onDelete }) {
+  const parts = allParts();   // the datasheets, then any shared additions
   const set = (patch) => setDraft({ ...draft, ...patch });
   const [ownRef, setOwnRef] = useState(false);
 
   // The datasheet for whatever the type's Name says it is - a driver, a supply,
   // or the pair. Names are free text, so this is a loose match and can be wrong:
   // it advises, never edits.
-  const chosen = PARTS.find((p) => p.name === draft.part);
-  const chosenPsu = PARTS.find((p) => p.name === draft.psu);
+  const chosen = parts.find((p) => p.name === draft.part);
+  const chosenPsu = parts.find((p) => p.name === draft.psu);
   const part = draft.invented && chosen
     ? combine(chosen, chosenPsu)
     : resolveSpec(draft.name || draft.typeRef);
@@ -116,6 +118,16 @@ export default function PresetEditor({ draft, setDraft, inventory, onSave, onCan
     controlType: part?.controlType,
   };
 
+  // What people have sent for this datasheet part, offered beside the page and
+  // never in its place (report AUSTHZ). A part that is itself shared says so.
+  const amend = sharedAmendment((part?.driver ?? part)?.name);
+  const said = {
+    maxPowerW: amend?.maxPowerW, outputVoltageV: amend?.outputV, outputs: amend?.outputs,
+    addresses: amend?.addresses, nodeMaxFvV: amend?.maxFvV, nodeMaxLoadW: amend?.nodeMaxLoadW,
+    nodeCurrentA: amend?.nodeCurrentA,
+  };
+  const from = part?.shared ? 'shared' : 'spec page';
+
   // One field: the schema's own column name above a box that looks like a box,
   // and - where the datasheet says otherwise - an offer you can take rather than
   // a red note that only nags.
@@ -124,6 +136,8 @@ export default function PresetEditor({ draft, setDraft, inventory, onSave, onCan
     const has = numOrNull(draft[k]);
     const off = want != null && has != null && Math.abs(has - want) > 1e-9;
     const blank = want != null && draft[k] === '';
+    const alt = said[k];
+    const altOff = alt != null && (has == null || Math.abs(has - alt) > 1e-9) && alt !== want;
     return (
       <label className={`fld ${off ? 'is-off' : ''}`}>
         <span className="fld-col" title={tip}>{col}</span>
@@ -133,8 +147,14 @@ export default function PresetEditor({ draft, setDraft, inventory, onSave, onCan
         )}
         {(off || blank) && (
           <button type="button" className="fld-ds" onClick={() => set({ [k]: want })}
-            title={`Take ${g(want)} from the ${part.name} spec page`}>
-            {off ? `spec page: ${g(want)}` : `use ${g(want)}`}
+            title={`Take ${g(want)} from the ${part.name} ${from}`}>
+            {off ? `${from}: ${g(want)}` : `use ${g(want)}`}
+          </button>
+        )}
+        {altOff && (
+          <button type="button" className="fld-ds is-shared" onClick={() => set({ [k]: alt })}
+            title={`Sent for the ${amend.name} by someone using this tool - not from its spec page`}>
+            shared: {g(alt)}
           </button>
         )}
       </label>
@@ -166,12 +186,12 @@ export default function PresetEditor({ draft, setDraft, inventory, onSave, onCan
             <span>Part</span>
             <select className="form-select form-select-sm" value={draft.part ?? ''}
               onChange={(e) => {
-                const d = PARTS.find((x) => x.name === e.target.value);
+                const d = parts.find((x) => x.name === e.target.value);
                 setDraft({ ...draftFromPart(d, d?.kind === 'dcdc' ? chosenPsu : null), typeRef: '' });
               }}>
               <option value="">Choose a driver…</option>
-              {PARTS.filter((p) => p.kind !== 'supply').map((p) => (
-                <option key={p.name} value={p.name}>{p.name}</option>
+              {parts.filter((p) => p.kind !== 'supply').map((p) => (
+                <option key={p.name} value={p.name}>{p.name}{p.shared ? ' · shared' : ''}</option>
               ))}
             </select>
           </label>
@@ -182,12 +202,12 @@ export default function PresetEditor({ draft, setDraft, inventory, onSave, onCan
               <span>Supply</span>
               <select className="form-select form-select-sm" value={draft.psu ?? ''}
                 onChange={(e) => {
-                  const psu = PARTS.find((x) => x.name === e.target.value);
+                  const psu = parts.find((x) => x.name === e.target.value);
                   setDraft({ ...draftFromPart(chosen, psu), typeRef: '' });
                 }}>
                 <option value="">Choose a PSU…</option>
-                {PARTS.filter((p) => p.kind === 'supply').map((p) => (
-                  <option key={p.name} value={p.name}>{p.name}</option>
+                {parts.filter((p) => p.kind === 'supply').map((p) => (
+                  <option key={p.name} value={p.name}>{p.name}{p.shared ? ' · shared' : ''}</option>
                 ))}
               </select>
             </label>
@@ -278,6 +298,86 @@ export default function PresetEditor({ draft, setDraft, inventory, onSave, onCan
           <button className="btn btn-sm btn-link text-danger ms-auto" onClick={onDelete}>Remove</button>
         )}
       </div>
+      <SharePart draft={draft} part={part?.driver ?? part} />
+    </div>
+  );
+}
+
+// The ratings above, sent to the shared catalogue as a datasheet part: a new one,
+// or an amendment to a part the page has wrong. Only with a companion, and only
+// these fields - never the Ref, the node names, or anything else of the design.
+export const partFromDraft = (d, { name, aliases, kind, minMa, maxMa }) => ({
+  name: name.trim(),
+  aliases: aliases.split(',').map((a) => a.trim()).filter(Boolean),
+  kind, powerType: d.powerType,
+  maxPowerW: numOrNull(d.maxPowerW),
+  ...(d.powerType === 'CC'
+    ? { minA: numOrNull(minMa) == null ? null : numOrNull(minMa) / 1000,
+        maxA: numOrNull(maxMa) == null ? null : numOrNull(maxMa) / 1000 }
+    : { outputV: numOrNull(d.outputVoltageV) }),
+  outputs: Math.max(1, Number(d.outputs) || 1),
+  addresses: numOrNull(d.addresses),
+  maxFvV: numOrNull(d.nodeMaxFvV),
+  nodeMaxLoadW: numOrNull(d.nodeMaxLoadW),
+  nodeCurrentA: numOrNull(d.nodeCurrentA),
+  controlType: (d.controlType ?? '').trim() || null,
+});
+
+function SharePart({ draft, part }) {
+  const companion = useCompanion();
+  const [form, setForm] = useState(null);
+  const [said, setSaid] = useState(null);
+  if (!companion?.parts) return null;
+  const ma = (a) => (a == null ? '' : String(Math.round(a * 1000)));
+  const open = () => {
+    setSaid(null);
+    setForm({
+      name: part?.name ?? draft.part ?? draft.name ?? '',
+      aliases: '', kind: part?.kind ?? 'driver',
+      minMa: ma(part?.minA ?? numOrNull(draft.currentA)), maxMa: ma(part?.maxA ?? numOrNull(draft.currentA)),
+    });
+  };
+  const send = async () => {
+    const r = await companion.parts.add(partFromDraft(draft, form));
+    if (r.parts) { setSharedParts(r.parts); setForm(null); setSaid('Shared - everyone using this tool can pick it now'); }
+    else setSaid(r.error);
+  };
+  const f = (k) => ({ value: form[k], onChange: (e) => setForm({ ...form, [k]: e.target.value }) });
+  return (
+    <div className="share-part">
+      {!form && (
+        <button type="button" className="btn btn-sm btn-link p-0" onClick={open}
+          title="Add these ratings to the catalogue everyone using this tool picks from">
+          {part && !part.shared ? `Suggest a correction to ${part.name}…` : 'Share as a catalogue part…'}
+        </button>
+      )}
+      {form && (
+        <div className="fld-grid">
+          <label className="fld"><span className="fld-col" title="The part, as its maker names it">Part name</span>
+            <input {...f('name')} /></label>
+          <label className="fld"><span className="fld-col" title="Comma-separated. A type whose Name contains one is matched to this part">Also matches</span>
+            <input {...f('aliases')} placeholder="e.g. SLO360" /></label>
+          <label className="fld"><span className="fld-col">Kind</span>
+            <select {...f('kind')}>
+              <option value="driver">driver</option>
+              <option value="dcdc">DC/DC driver</option>
+              <option value="supply">supply</option>
+            </select></label>
+          {draft.powerType === 'CC' && (
+            <label className="fld"><span className="fld-col" title="The datasheet's current range, mA">Range (mA)</span>
+              <span className="share-range"><input type="number" min="0" {...f('minMa')} />–<input type="number" min="0" {...f('maxMa')} /></span>
+            </label>
+          )}
+        </div>
+      )}
+      {form && (
+        <div className="fld-foot">
+          <button className="btn btn-sm btn-outline-primary" disabled={form.name.trim().length < 4} onClick={send}>Share</button>
+          <button className="btn btn-sm btn-link" onClick={() => setForm(null)}>Cancel</button>
+          <span className="fld-foot-note">Shown to everyone as shared, never in place of a spec page</span>
+        </div>
+      )}
+      {said && <div className="fld-foot-note">{said}</div>}
     </div>
   );
 }

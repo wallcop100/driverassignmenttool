@@ -24,14 +24,15 @@ export function faults(t, spec) {
   // "to check" (report B3TPLM). Its blanks are still flagged; its disagreements
   // with the spec page are not - that would flag the user's own answer back at them.
   const judgeSpec = !t.preset;
+  const page = spec?.shared ? 'shared catalogue' : 'spec page';
   const out = [];
   if (t.maxPowerW == null) {
     out.push(['no MaxPower(W) - nothing to size against',
       'Without a max power this type cannot be checked or sized against.']);
   } else if (judgeSpec && spec?.maxPowerW != null && Math.abs(t.maxPowerW - spec.maxPowerW) > 0.01) {
     const times = t.maxPowerW / spec.maxPowerW;
-    out.push([`${t.maxPowerW}W here · spec page says ${fmt(spec.maxPowerW)}W`,
-      `This type states ${t.maxPowerW}W. The ${spec.name} spec page says ${fmt(spec.maxPowerW)}W`
+    out.push([`${t.maxPowerW}W here · ${page} says ${fmt(spec.maxPowerW)}W`,
+      `This type states ${t.maxPowerW}W. The ${spec.name} ${page} says ${fmt(spec.maxPowerW)}W`
       + `${times >= 1.5 ? ` - ${fmt(times)}× higher, so checks against it would pass an overload` : ''}. `
       + `If this is not a ${spec.name}, the name is what matched it.`]);
   }
@@ -44,8 +45,8 @@ export function faults(t, spec) {
     out.push(['no OutputVoltage(V)', 'Without an output voltage the CV check cannot run.']);
   } else if (judgeSpec && t.powerType === 'CC' && t.currentA != null && spec?.minA != null
     && (t.currentA < spec.minA || t.currentA > spec.maxA)) {
-    out.push([`${t.currentA}A · spec page range is ${spec.minA}–${spec.maxA}A`,
-      `${t.currentA}A is outside the ${spec.minA}–${spec.maxA}A the ${spec.name} spec page gives.`]);
+    out.push([`${t.currentA}A · ${page} range is ${spec.minA}–${spec.maxA}A`,
+      `${t.currentA}A is outside the ${spec.minA}–${spec.maxA}A the ${spec.name} ${page} gives.`]);
   }
   return out;
 }
@@ -82,6 +83,9 @@ export function currentOptions(t, spec) {
 
 const NAME_MA_G = /\d{2,4}\s*mA/i;
 
+// Whether a spec, or the supply half of a pair, came from the shared catalogue.
+export const fromShared = (spec) => !!(spec?.shared || spec?.supply?.shared);
+
 // The preset a fix would produce. `mode` is 'fill' - add only what the design
 // states nothing for - or 'replace', which also overwrites what disagrees.
 // Both go through SET_PRESET, so the result is pending and reviewable either way.
@@ -107,7 +111,7 @@ export function fixPreset(t, spec, mode, currentA) {
     controlType: take(d.controlType, spec.controlType),
     nodeNames: d.nodes?.map((n) => n.name) ?? null,
     invented: false,
-    origin: 'datasheet',
+    origin: fromShared(spec) ? 'shared' : 'datasheet',
   };
 }
 
@@ -117,7 +121,8 @@ export const canFill = (t, spec) => !!spec && (t.maxPowerW == null || t.powerTyp
   || (spec.powerType === 'CC' && t.currentA == null)
   || (t.nodes?.[0]?.maxFvV == null && spec.maxFvV != null));
 
-export const canReplace = (t, spec) => !!spec && spec.maxPowerW != null && t.maxPowerW != null
+// A shared part only ever fills blanks: it never overwrites what the design states.
+export const canReplace = (t, spec) => !!spec && !fromShared(spec) && spec.maxPowerW != null && t.maxPowerW != null
   && Math.abs(t.maxPowerW - spec.maxPowerW) > 0.01;
 
 // Everything the datasheet can settle without asking. A type's Name matches a
@@ -177,6 +182,6 @@ export function fillFromSpec({ t, spec, currentA }) {
     controlType: spec.controlType ?? null,
     nodeNames: spec.nodeNames ?? null,
     invented: false,
-    origin: 'datasheet',
+    origin: fromShared(spec) ? 'shared' : 'datasheet',
   };
 }

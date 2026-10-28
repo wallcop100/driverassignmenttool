@@ -180,12 +180,53 @@ export const PARTS = [
 // part's key as a substring. Nothing here is anchored or exact.
 const norm = (s) => String(s ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
 
+// The shared catalogue (report AUSTHZ): parts people added through the companion,
+// beside PARTS and never in place of one. Empty on Pages. A name PARTS already
+// has is an amendment - offered beside the datasheet, never matched instead of it.
+// Rows come from other people, so only the known fields are kept, and a part
+// matches a type name containing its name or one of its aliases.
+// shortcut: module state rather than a parameter on 36 call sites; App re-renders on a change.
+const SHARED_NUM = ['maxPowerW', 'minA', 'maxA', 'outputV', 'maxFvV', 'nodeMaxLoadW', 'nodeCurrentA', 'outputs', 'addresses'];
+let shared = { all: PARTS, amends: new Map() };
+const subs = new Set();
+
+export function setSharedParts(rows) {
+  const known = new Set(PARTS.map((p) => p.name));
+  const added = [];
+  const amends = new Map();
+  for (const r of Array.isArray(rows) ? rows : []) {
+    if (typeof r?.name !== 'string' || !['CC', 'CV'].includes(r.powerType)) continue;
+    const keys = [r.name, ...(Array.isArray(r.aliases) ? r.aliases : [])].map(norm).filter((k) => k.length >= 4);
+    const p = {
+      name: r.name, powerType: r.powerType,
+      kind: ['driver', 'dcdc', 'supply'].includes(r.kind) ? r.kind : 'driver',
+      ...(typeof r.code === 'string' && { code: r.code }),
+      ...(typeof r.controlType === 'string' && { controlType: r.controlType }),
+      ...Object.fromEntries(SHARED_NUM.filter((k) => Number.isFinite(r[k])).map((k) => [k, r[k]])),
+      aliases: keys, discontinued: r.discontinued === true,
+      shared: r.tier === 'confirmed' ? 'confirmed' : 'observed',
+      re: { test: (hay) => keys.some((k) => hay.includes(k)) },
+    };
+    if (known.has(p.name)) amends.set(p.name, p); else if (keys.length) added.push(p);
+  }
+  shared = { all: added.length ? [...PARTS, ...added] : PARTS, amends };
+  subs.forEach((f) => f());
+}
+
+/** Every part a picker offers: the datasheets, then the shared additions. */
+export const allParts = () => shared.all;
+/** What people have sent for a datasheet part, or undefined. Never applied by itself. */
+export const sharedAmendment = (name) => shared.amends.get(name);
+/** For useSyncExternalStore: subscribe, and the snapshot that changes with the shared set. */
+export const onSharedParts = (f) => { subs.add(f); return () => subs.delete(f); };
+export const sharedSnapshot = () => shared;
+
 // Every part whose pattern appears in the text, plus a supply derived from the
 // Meanwell part number when one isn't in the catalogue by name.
 export function matchParts(elementTypeName) {
   const hay = norm(elementTypeName);
   if (!hay) return [];
-  const hits = PARTS.filter((p) => p.re.test(hay));
+  const hits = shared.all.filter((p) => p.re.test(hay));
   if (!hits.some((p) => p.kind === 'supply')) {
     const d = deriveSupply(hay);
     if (d) hits.push(d);

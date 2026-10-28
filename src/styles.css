@@ -417,6 +417,14 @@ body { background: #f6f8fb; }
 .fld-ref input { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
 .fld-foot { display: flex; align-items: center; gap: 8px; margin-top: 14px; }
 .fld-foot-note { font-size: 11px; color: #94a3b8; }
+/* the shared catalogue (AUSTHZ): what people sent, told apart from a spec page */
+.fld-ds.is-shared { color: #7c3aed; }
+.part-shared {
+  font-size: 10px; font-weight: 600; color: #7c3aed; border: 1px solid #ddd6fe;
+  border-radius: 4px; padding: 0 4px; flex: 0 0 auto;
+}
+.share-part { margin-top: 10px; border-top: 1px dashed #dbe3ee; padding-top: 8px; }
+.share-range { display: flex; align-items: center; gap: 4px; }
 
 .preset-warn {
   font-size: 12px; color: #8a6d1f; background: #fdf6e3; border: 1px solid #e2d7b4;
@@ -948,6 +956,8 @@ body { background: #f6f8fb; }
 .origin-chip::before { content: ''; width: 5px; height: 5px; border-radius: 50%; }
 .origin-chip.is-datasheet { color: #475569; border: 1px dotted #64748b; }
 .origin-chip.is-datasheet::before { background: #94a3b8; }
+.origin-chip.is-shared { color: #7c3aed; border: 1px dotted #a78bfa; }
+.origin-chip.is-shared::before { background: #a78bfa; }
 .origin-chip.is-edited { color: #6b5a22; border: 1px dashed #d9a441; }
 .origin-chip.is-edited::before { background: #d9a441; }
 .origin-chip.is-missing { color: #9f1239; border: 1px dashed #e11d48; }

@@ -7,9 +7,10 @@ A 404, an HTML page or no answer at all means there is no companion, so nothing 
 
 | | Pages | Self-hosted |
 |---|---|---|
-| `companion/capabilities` | 404 | `{"protocol":"dat-companion/1","features":["reports"]}` |
+| `companion/capabilities` | 404 | `{"protocol":"dat-companion/1","features":["reports","opened","parts"]}` |
 | Bug note buttons | Save | Send (the report is still kept locally) |
 | Crash screen | Copy | Copy, plus **Send the report** (sends only on a click) |
+| Driver parts | the static catalogue | the static catalogue, plus the shared one; a part can be shared from the type editor |
 
 ## What a report sends
 
@@ -38,6 +39,26 @@ labels and no location names.
 On Pages the same note offers only Save:
 
 ![Pages: Save](img/companion-pages.png)
+
+## Shared driver parts
+
+`GET companion/parts` returns the shared catalogue for the channel (prod and dev are separate);
+`POST companion/parts` with `{part}` adds one and returns the new list. datajoin stores them in
+`dat_parts`: one `observed` row per name, the latest write wins, and a `confirmed` row (set by hand)
+outranks it. Each row keeps a hash of the sender's IP so one source can be purged.
+
+A part is datasheet ratings only, never design data: name, code, aliases (matched as substrings, no
+regex is ever shared), CC/CV, kind, control type, the numeric ratings. datajoin validates every
+field against fixed ranges and drops anything else.
+
+In the app (`setSharedParts` in `src/catalogue.js`):
+
+- The static catalogue always wins. A shared part whose name matches a static one is an
+  **amendment**: the editor offers its value beside the datasheet's ("shared: 33"), never in its place.
+- A shared part only fills blanks, never overwrites (`canReplace` is false), and a type filled from
+  one has origin **shared**, listed on its own in Review changes so it is checked before the patch.
+- **Share as a catalogue part…** / **Suggest a correction to X…** sits under the type editor;
+  "Describe it yourself" in New type reaches it when no part matches.
 
 ## Build names
 

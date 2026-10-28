@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { PARTS, combine, nextTypeRef } from '../engine.js';
+import { allParts, combine, nextTypeRef } from '../engine.js';
 import PresetEditor, { draftFromPart, toPreset } from './PresetEditor.jsx';
 import { fmt } from '../typeFaults.js';
 
@@ -14,6 +14,7 @@ import { fmt } from '../typeFaults.js';
 const anyOf = (v, ...vals) => vals.some((x) => x === v);
 
 export default function NewTypeDialog({ zone, inventory, dispatch, onClose, onCreated }) {
+  const parts = allParts();   // the datasheets, then any shared additions
   const [powerType, setPowerType] = useState('any');
   const [minA, setMinA] = useState('');       // mA, as people say it
   const [minW, setMinW] = useState('');
@@ -36,7 +37,7 @@ export default function NewTypeDialog({ zone, inventory, dispatch, onClose, onCr
     const a = minA === '' ? null : Number(minA) / 1000;
     const w = minW === '' ? null : Number(minW);
     const needle = q.trim().toLowerCase();
-    return PARTS.filter((p) => {
+    return parts.filter((p) => {
       if (p.kind === 'supply') return false;             // a PSU is half a type, never a type
       if (p.discontinued) return false;                  // you cannot buy it
       if (powerType !== 'any' && p.powerType !== powerType) return false;
@@ -49,14 +50,14 @@ export default function NewTypeDialog({ zone, inventory, dispatch, onClose, onCr
       if (needle && !p.name.toLowerCase().includes(needle)) return false;
       return true;
     });
-  }, [powerType, minA, minW, outputs, q]);
+  }, [parts, powerType, minA, minW, outputs, q]);
 
   const common = matches.filter((p) => p.common);
   const shown = (filtering || showAll || !common.length) ? matches : common;
   const folded = matches.length - shown.length;
 
-  const part = PARTS.find((p) => p.name === chosen) ?? null;
-  const supply = PARTS.find((p) => p.name === psu) ?? null;
+  const part = parts.find((p) => p.name === chosen) ?? null;
+  const supply = parts.find((p) => p.name === psu) ?? null;
   const spec = part ? combine(part, part.kind === 'dcdc' ? supply : null) : null;
 
   // The two things the datasheet cannot settle for us.
@@ -151,6 +152,7 @@ export default function NewTypeDialog({ zone, inventory, dispatch, onClose, onCr
               onClick={() => { setChosen(p.name); setAdvanced(null); }}>
               <span className={`type-power is-${p.powerType.toLowerCase()}`}>{p.powerType}</span>
               <span className="nt-part-name">{p.name}</span>
+              {p.shared && <span className="part-shared" title="Sent by someone using this tool, not read from a spec page">shared</span>}
               <span className="nt-part-spec">
                 {p.maxPowerW != null ? `${fmt(p.maxPowerW)}W` : 'W set by the supply'}
                 {p.powerType === 'CC' && p.minA != null
@@ -162,7 +164,13 @@ export default function NewTypeDialog({ zone, inventory, dispatch, onClose, onCr
             </button>
           ))}
           {!matches.length && (
-            <div className="nt-empty">No datasheet part matches those filters.</div>
+            <div className="nt-empty">
+              No datasheet part matches those filters.
+              {/* not in the catalogue: describe it, and the editor can share it */}
+              <button type="button" className="btn btn-sm btn-link" onClick={() => setAdvanced(draftFromPart(null))}>
+                Describe it yourself
+              </button>
+            </div>
           )}
           {folded > 0 && (
             <button type="button" className="nt-more" onClick={() => setShowAll(true)}>
@@ -184,8 +192,8 @@ export default function NewTypeDialog({ zone, inventory, dispatch, onClose, onCr
                 <select className="form-select form-select-sm" value={psu}
                   onChange={(e) => setPsu(e.target.value)}>
                   <option value="">Choose…</option>
-                  {PARTS.filter((p) => p.kind === 'supply').map((p) => (
-                    <option key={p.name} value={p.name}>{p.name}</option>
+                  {parts.filter((p) => p.kind === 'supply').map((p) => (
+                    <option key={p.name} value={p.name}>{p.name}{p.shared ? ' · shared' : ''}</option>
                   ))}
                 </select>
               </label>

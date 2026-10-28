@@ -866,7 +866,9 @@ function applyPresets(drivers, presetTypes) {
 // Datasheet-backed parts, from the Driver Specs page group. Offered in the
 // editor as a starting point, and used to check what someone types against what
 // the part actually is. See catalogue.js.
-export { PARTS, combine, matchPart, matchParts, resolveSpec, reachableW } from './catalogue.js';
+export {
+  PARTS, allParts, combine, matchPart, matchParts, resolveSpec, reachableW, setSharedParts, sharedAmendment,
+} from './catalogue.js';
 
 // A CC part's datasheet gives a RANGE; the design picks one value out of it and
 // says so twice - in the ref (ET-CCR-D-1050-…) and in the name ("at 1050mA").
