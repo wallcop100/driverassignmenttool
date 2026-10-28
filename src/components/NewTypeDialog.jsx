@@ -152,7 +152,6 @@ export default function NewTypeDialog({ zone, inventory, dispatch, onClose, onCr
               onClick={() => { setChosen(p.name); setAdvanced(null); }}>
               <span className={`type-power is-${p.powerType.toLowerCase()}`}>{p.powerType}</span>
               <span className="nt-part-name">{p.name}</span>
-              {p.shared && <span className="part-shared" title="Sent by someone using this tool, not read from a spec page">shared</span>}
               <span className="nt-part-spec">
                 {p.maxPowerW != null ? `${fmt(p.maxPowerW)}W` : 'W set by the supply'}
                 {p.powerType === 'CC' && p.minA != null
@@ -193,7 +192,7 @@ export default function NewTypeDialog({ zone, inventory, dispatch, onClose, onCr
                   onChange={(e) => setPsu(e.target.value)}>
                   <option value="">Choose…</option>
                   {parts.filter((p) => p.kind === 'supply').map((p) => (
-                    <option key={p.name} value={p.name}>{p.name}{p.shared ? ' · shared' : ''}</option>
+                    <option key={p.name} value={p.name}>{p.name}</option>
                   ))}
                 </select>
               </label>

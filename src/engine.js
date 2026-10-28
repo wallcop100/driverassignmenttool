@@ -548,6 +548,12 @@ export function needsSetup(model) {
   return types.every((t) => statedAttributes(t) === 0);
 }
 
+// Types still empty in the DesignDB but filled in this session, waiting on the
+// patch. The setup offer is judged on the DesignDB, so it says these apart (MBVCAZ).
+export const filledHere = (model, presets) => driverTypes(model)
+  .filter((t) => statedAttributes(t) === 0 && presets?.[t.typeRef]
+    && statedAttributes(presets[t.typeRef]) > 0).length;
+
 // ---- validation (port of DriverHealthCheck.sql, 7 checks) ----
 function makeCtx(model) {
   return {
@@ -871,7 +877,7 @@ function applyPresets(drivers, presetTypes) {
 // editor as a starting point, and used to check what someone types against what
 // the part actually is. See catalogue.js.
 export {
-  PARTS, allParts, combine, matchPart, matchParts, resolveSpec, reachableW, setSharedParts, sharedAmendment,
+  PARTS, allParts, atCurrent, checkOf, combine, matchPart, matchParts, resolveSpec, reachableW, setSharedParts, sharedAmendment,
 } from './catalogue.js';
 
 // A CC part's datasheet gives a RANGE; the design picks one value out of it and
@@ -1142,6 +1148,57 @@ export const PICK_BY = {
 // own unless toggled back into the bundle; any other type only when toggled out.
 export const isOwnLine = (pt, ownLine = []) => !!pt && /Em?$/.test(pt) !== ownLine.includes(pt);
 
+// Fittings of different sizes, packed as they are (MBTBA2): largest first onto
+// each run's own outputs, then the outputs onto drivers. First-fit decreasing,
+// so near-optimal rather than optimal - an estimate, not the detail design.
+// A fractional quantity (strip in metres) is a last, part-sized piece.
+const EPS = 1e-9;
+export function packLine(runs, t, keep) {
+  const node = t.nodes[0] ?? {};
+  const fvCap = node.maxFvV != null ? node.maxFvV * keep : Infinity;
+  const nodeWCap = node.maxLoadW != null ? node.maxLoadW * keep : Infinity;
+  const dCap = t.maxPowerW * keep;
+  const wCap = Math.min(nodeWCap, dCap);
+  const outs = [];
+  const runList = [];
+  for (const run of runs) {
+    const items = run.rows.flatMap((r) => {
+      const whole = Math.floor(r.qty);
+      const part = r.qty - whole;
+      const one = { pt: r.positionType || null, q: 1, w: r.wPer, fv: r.fvPer ?? 0 };
+      return [...Array(whole).fill(one),
+        ...(part > 0 ? [{ ...one, q: part, w: one.w * part, fv: one.fv * part }] : [])];
+    }).sort((a, b) => b.fv - a.fv || b.w - a.w);
+    const mine = [];
+    for (const it of items) {
+      if (it.fv > fvCap + EPS || it.w > wCap + EPS) return null;
+      const o = mine.find((x) => x.fv + it.fv <= fvCap + EPS && x.w + it.w <= wCap + EPS);
+      if (o) { o.fv += it.fv; o.w += it.w; o.items.push(it); } else mine.push({ run: run.label, fv: it.fv, w: it.w, items: [it] });
+    }
+    // the smallest fitting in the run, so each output can say why nothing more joined it
+    const least = items[items.length - 1];
+    for (const o of mine) o.least = least;
+    runList.push({ label: run.label, qty: run.qty, outputs: mine.length, most: Math.max(...mine.map((o) => o.items.length)) });
+    outs.push(...mine);
+  }
+  const drivers = [];
+  for (const o of [...outs].sort((a, b) => b.w - a.w)) {
+    const d = drivers.find((x) => x.outs.length < t.nodes.length && x.w + o.w <= dCap + EPS);
+    if (d) { d.w += o.w; d.outs.push(o); } else drivers.push({ w: o.w, outs: [o] });
+  }
+  drivers.forEach((d, i) => d.outs.forEach((o, j) => { o.driver = i + 1; o.output = j + 1; }));
+  const sum = (k) => outs.reduce((a, o) => a + o[k], 0);
+  const bound = sum('fv') / fvCap >= sum('w') / wCap ? 'fV' : nodeWCap < dCap ? 'node W' : 'driver W';
+  return {
+    count: drivers.length, outputs: outs.length, runList, bound,
+    // every output as packed, in driver order, for the working to show in full
+    detail: {
+      fvCap: Number.isFinite(fvCap) ? fvCap : null, wCap, dCap,
+      drivers: drivers.map((d) => ({ w: d.w, outs: d.outs })),
+    },
+  };
+}
+
 export function planFromRequirements(model, zone, opts = {}) {
   const {
     restrictControlGroup = true,
@@ -1209,7 +1266,17 @@ export function planFromRequirements(model, zone, opts = {}) {
       qty: rs.reduce((n, r) => n + r.qty, 0),
       wPer: Math.max(...rs.map((r) => r.wPer)),
       fvPer: Math.max(...rs.map((r) => r.fvPer ?? 0)),
+      rows: rs,
     }));
+    // one entry per fitting type and size, for the working's cards
+    const fittings = [...group.reduce((m, r) => {
+      const k = [r.positionType, r.wPer, r.fvPer].join('|');
+      const f = m.get(k) ?? { positionType: r.positionType || null, wPer: r.wPer, fvPer: r.fvPer || null, qty: 0, refs: [] };
+      f.qty += r.qty;
+      f.refs.push(r.ref);
+      return m.set(k, f);
+    }, new Map()).values()];
+    const mixed = group.some((r) => r.wPer !== group[0].wPer || (r.fvPer ?? 0) !== (group[0].fvPer ?? 0));
     const wPer = Math.max(...runs.map((r) => r.wPer));
 
     // Rank candidates by the count THIS arithmetic gives, not by pickType's,
@@ -1236,7 +1303,13 @@ export function planFromRequirements(model, zone, opts = {}) {
       let outputs;
       let runList = null;
       let byWatts = null;
-      if (runs.length === 1) {
+      let packed = null;
+      if (mixed) {
+        packed = packLine(runs, t, keep);
+        if (!packed) return null;
+        ({ count, outputs } = packed);
+        perDriver = Math.ceil(qty / count);
+      } else if (runs.length === 1) {
         perDriver = Math.min(perNode * t.nodes.length, perDriverW);
         if (!(perDriver > 0)) return null;
         count = Math.ceil(qty / perDriver);
@@ -1251,7 +1324,6 @@ export function planFromRequirements(model, zone, opts = {}) {
         if (!runList.every((r) => r.per > 0)) return null;
         outputs = runList.reduce((n, r) => n + r.outputs, 0);
         // whole fittings, not watts: 10 x 30W on a 100W driver is 4 drivers of 3, not 3.
-        // shortcut: sized on the line's largest fitting, so mixed sizes over-count slightly
         byWatts = perDriverW > 0 ? Math.ceil(qty / perDriverW) : Infinity;
         count = Math.max(Math.ceil(outputs / t.nodes.length), byWatts);
         perDriver = Math.ceil(qty / count);
@@ -1262,7 +1334,7 @@ export function planFromRequirements(model, zone, opts = {}) {
         count,
         perDriver,
         outputs,
-        perNode: Number.isFinite(perNode) ? perNode : null,
+        perNode: !mixed && Number.isFinite(perNode) ? perNode : null,
         em: isEmergency(t.typeRef) ? 1 : 0,
         waste: count * t.maxPowerW * keep - totalW,
         spareOutputs: count * t.nodes.length - outputs,
@@ -1271,13 +1343,19 @@ export function planFromRequirements(model, zone, opts = {}) {
           keep, maxPowerW: t.maxPowerW, outputs: t.nodes.length,
           maxFvV: node.maxFvV ?? null, maxLoadW: node.maxLoadW ?? null,
           wPer, fvPer: Math.max(...runs.map((r) => r.fvPer)) || null, runs: runs.length,
+          mixed,
+          fittings,
+          packed: packed?.runList ?? null,
+          packing: packed?.detail ?? null,
           perNodeFv: Number.isFinite(perNodeFv) ? perNodeFv : null,
           perNodeW: Number.isFinite(perNodeW) ? perNodeW : null,
           perDriverW,
           totalW, runList, byWatts,
         },
         // the limit that actually bound it, in the reader's terms
-        limit: byWatts != null && byWatts > Math.ceil(outputs / t.nodes.length) ? 'driver W'
+        limit: packed ? (count > Math.ceil(outputs / t.nodes.length) ? 'driver W'
+          : runs.length > 1 ? 'outputs' : packed.bound)
+          : byWatts != null && byWatts > Math.ceil(outputs / t.nodes.length) ? 'driver W'
           : runList ? 'outputs'
           : perNode * t.nodes.length <= perDriverW
           ? (perNodeFv <= perNodeW ? 'fV' : 'node W')

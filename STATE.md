@@ -17,7 +17,8 @@ names and badge. `dat-autodeploy.timer` keeps Connected on Pages' build. The hos
 
 1. n8n overlay sync (plan §7): not built; needs the read/save gateway actions in datajoin first.
 2. AUSTHZ shared driver parts (`feat/shared-parts`): deploy datajoin (`dat-parts`) first, then
-   dat_bridge (`shared-parts`), then merge the app PR. Resolve AUSTHZ once on prod.
+   dat_bridge (`shared-parts`), then merge the app PR. Resolve AUSTHZ once on prod. Then have Erik
+   run datajoin `oneoff/dat-research-2026-10-28/seed.py dev`, check on drivers-dev, then `prod`.
 3. Ship `dev` to `main`, then resolve the 7 reports fixed in #14.
 
 ## Blocked / needs Erik
@@ -27,6 +28,24 @@ Nothing.
 ## Log
 
 ## 2026-10-28
+
+- Shared parts carry no chip in the part list or dropdowns any more (Erik's call). The check card is
+  the only sign of one. The Origin chip on a filled value says "suggested".
+- Shared parts are checked by a second person, PS&R's way (suggestion_votes, `_tally`). Sending is
+  the sender's yes; `checkOf()` in `catalogue.js` says confirmed / agreed (2 yes from 2 origins) /
+  yours / unchecked, and a newer "no" asks again. `SharedCheck` asks Yes / No / Not sure in the
+  editor and the setup wizard. An unchecked part is never filled by "Fill in all" or "Use this".
+  Parts can carry per-current `windows` (TCI MP 32 is 19W/54fV at 350mA, 32W/46fV at 700mA),
+  applied by `atCurrent()` in faults, fixes, fills and the editor. SetupNotice now flags in-use types
+  a datasheet or checked part disagrees with (`disagreeing()`). 28 researched parts are ready as a
+  seed in datajoin (origin `research`, with a source link). Uncommitted.
+- Four more reports, uncommitted on `feat/shared-parts` (already merged as #15): WNUC6N wording
+  "no attributes filled in"; MBVCAZ the setup offer says "in the DesignDB" and counts types filled
+  here awaiting the patch (`engine.filledHere`); MBTBA2 a line whose fittings differ in size is packed
+  fitting by fitting (`engine.packLine`, first-fit decreasing onto outputs, then outputs onto
+  drivers) instead of every fitting counting as the largest, and its working shows a card per fitting type and per output (what is on it, volts and watts summed against the limits, why nothing more fits); SSCMMX the line's driver type select moved behind a ⋮
+  "Change driver type" (still shown when forced). KWZZDH left open: needs the K6002 data checked.
+  352 tests green, build clean, not clicked through.
 
 - New reports: KWZZDH duplicate LinkRef K6002 now names the rows and differing columns (data not
   checked: Kaizen was down); a crash before INIT carries the host's context. YMD8JN the multi-run

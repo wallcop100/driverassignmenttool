@@ -206,11 +206,37 @@ export function setSharedParts(rows) {
       aliases: keys, discontinued: r.discontinued === true,
       shared: r.tier === 'confirmed' ? 'confirmed' : 'observed',
       re: { test: (hay) => keys.some((k) => hay.includes(k)) },
+      ...(Array.isArray(r.windows) && { windows: r.windows.filter((w) => Number.isFinite(w?.a) && Number.isFinite(w?.w)) }),
+      // a link, never free text: only an https URL from the research seed survives
+      ...(typeof r.source === 'string' && /^https:\/\/[^\s"<>]{1,290}$/.test(r.source) && { source: r.source }),
+      ...(typeof r.rev === 'string' && { rev: r.rev }),
+      votes: r.votes && typeof r.votes === 'object' ? r.votes : null,
+      own: r.own === true,
     };
     if (known.has(p.name)) amends.set(p.name, p); else if (keys.length) added.push(p);
   }
   shared = { all: added.length ? [...PARTS, ...added] : PARTS, amends };
   subs.forEach((f) => f());
+}
+
+// How far a shared part can be trusted, PS&R's rule (certainty.js): the sender's
+// own is one yes, a second person's makes it agreed, and a newer "no" asks again.
+// null for a datasheet part. Only 'unchecked' is asked about or held back.
+export function checkOf(p) {
+  if (!p?.shared) return null;
+  const v = p.votes ?? {};
+  if (p.shared === 'confirmed' || v.verdict === 'confirmed') return 'confirmed';
+  if (v.openNo) return 'unchecked';
+  if (p.own) return 'yours';
+  return v.yes >= 2 && v.origins >= 2 ? 'agreed' : 'unchecked';
+}
+
+// A CC part rated per current (TCI's MP 32 is 19W/54fV at 350mA, 32W/46fV at
+// 700mA): its ratings at the current the design uses.
+// shortcut: exact currents only, no interpolation between windows; upgrade if a datasheet gives a curve.
+export function atCurrent(spec, a) {
+  const w = a != null && spec?.windows?.find((x) => Math.abs(x.a - a) < 0.001);
+  return w ? { ...spec, maxPowerW: w.w, maxFvV: w.fv ?? spec.maxFvV } : spec;
 }
 
 /** Every part a picker offers: the datasheets, then the shared additions. */
