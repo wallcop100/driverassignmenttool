@@ -29,7 +29,8 @@ in the note shows the exact JSON before the person sends it.
 - **Context.** Branch and set IDs, the hub, the mode and the overlay version.
 - **The build.** Version, channel, build name and commit.
 - **Where it happened.** Screen, hub and counts; the area and dialog names; up to ten refs; the
-  times and screens of the last clicks.
+  times, screens and areas (`data-debug-id`) of the last clicks. Tag a new surface with a
+  `data-debug-id` or a report from it says nothing about where it came from.
 
 It never sends a CSV, the session, or any free text from the screen: no row text, no button
 labels and no location names.

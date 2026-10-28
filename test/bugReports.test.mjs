@@ -45,7 +45,7 @@ const local = {
   id: 'ABCDEF', at: '2026-10-27T10:00:00.000Z', note: 'wrong fit', version: '0.1.0',
   app: { screen: 'zone', zone: 'Z1', counts: { drivers: 1 } },
   dom: { element: 'td “Bedroom 3”', areas: ['tray'], dialogs: [], row: 'L-1 | Bedroom 3, Smith residence | 12.5 W', refs: ['L-1'], code: '' },
-  trail: [{ at: '2026-10-27T09:59:00.000Z', screen: 'zone', label: 'button “Bedroom 3”' }],
+  trail: [{ at: '2026-10-27T09:59:00.000Z', screen: 'zone', label: 'button “Bedroom 3”', areas: ['tray'] }],
   viewport: '1×2',
 };
 
@@ -80,7 +80,7 @@ test('a sent report never carries on-screen free text, CSV contents or extra con
   const text = JSON.stringify(r);
   for (const leak of ['Bedroom', 'Smith', 'Kitchen', 'secret', 'element']) assert.ok(!text.includes(leak), leak);
   assert.deepEqual(r.context, { systemSetId: 109833, hubRef: 'P-1', hubLabel: 'HUB A' });
-  assert.deepEqual(r.trail, [{ at: '2026-10-27T09:59:00.000Z', screen: 'zone' }]);
+  assert.deepEqual(r.trail, [{ at: '2026-10-27T09:59:00.000Z', screen: 'zone', areas: ['tray'] }]);   // the label is screen text
   assert.equal(r.id, 'ABCDEF');
   assert.equal(r.kind, 'bug');
   assert.equal(r.row.ref, 'L-1');

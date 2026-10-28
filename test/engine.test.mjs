@@ -1077,7 +1077,7 @@ test('one cable to two rooms is one link; a real clash under one ref still fails
   assert.equal(m.links.length, 1);
   assert.equal(m.links[0].location, '2F WC; Primary Ensuite');
   assert.throws(() => engine.buildModel(null, [head, row('2F WC'), row('Primary Ensuite', '30')].join('\n') + '\n', types),
-    /duplicate LinkRef: _GENERATIVE-X500641/);
+    /duplicate LinkRef: _GENERATIVE-X500641 \(rows 2 and 3 differ in LinkSumPower\(W\)\)/);
 });
 
 test('an assessment row carries its UoM when the overlay sends one', () => {
@@ -1436,6 +1436,17 @@ test('keeping groups apart per output lets one driver carry both, one on each ou
   assert.deepEqual(w.runList.map((r) => [r.label, r.outputs]), [['CG1', 1], ['CG2', 1]]);
   assert.equal(w.byWatts, 1);
   assert.equal(perOutput.lines[0].limit, 'outputs');
+});
+
+test('the watts bound counts whole fittings, never watts split across drivers', () => {
+  const types = ctDali('ElementTypeRef,MaxPower(W),CurrentRange,NodeMaxForwardVoltage(fV),Channels\n'
+    + 'ET-CCR-D-300-2CH-01,100,0.3,55,2\n');
+  const rows = ASSESS_HEAD + 'P1,Study,DALI,CG1,B02w,5,1,CC,,0.3,5,150\n'
+    + 'P1,Study,DALI,CG2,B02w,5,1,CC,,0.3,5,150\n';
+  const e = engine.estimate(engine.buildEstimate(rows, types), { margin: 0, restrictControlGroup: false })[0];
+  // 300 W / 100 W would say 3; only 3 x 30 W fit on each, so 10 fittings need 4
+  assert.equal(e.lines[0].working.byWatts, 4);
+  assert.equal(e.drivers, 4);
 });
 
 test('pickBy ranks driver types by simplicity, fewest drivers or spare outputs', () => {

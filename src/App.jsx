@@ -268,8 +268,10 @@ export default function App({ domain = driversDomain }) {
     screen = <Landing state={state} dispatch={dispatch} />;
   }
   // What a SENT report may look up its row in (bugReports.js remoteReport picks from it).
+  // a parse that failed never reached INIT, so the host's own context is all a crash has
+  const context = state.context ?? payload.current?.context ?? null;
   const reportData = () => ({
-    model, assignments, addedDrivers, flags: state.flags, context: state.context,
+    model, assignments, addedDrivers, flags: state.flags, context,
     mode: embedded ? `embed:${domain.id}` : 'standalone', overlay: payload.current?.overlay,
   });
 
@@ -293,7 +295,7 @@ export default function App({ domain = driversDomain }) {
       )}
       {/* the screen as the person sees it: a lab keeps the view on 'landing',
           which would send whoever reads the report to the wrong place */}
-      <ErrorBoundary context={state.context}
+      <ErrorBoundary context={context}
         where={lab && state.view.page === 'landing' ? `lab:${lab}` : state.view.page}
         send={companion?.report && ((r) => companion.report(remoteReport(r, reportData())))}>
         {screen}

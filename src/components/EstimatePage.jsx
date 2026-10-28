@@ -274,7 +274,8 @@ export default function EstimatePage({ state, dispatch, zone }) {
     const byOutputs = w.runList ? Math.ceil(l.outputs / n) : null;
     return (
       <div className="est-working">
-        {step('Fittings', `${amount(l.qty, l.rows)} · ${fmt(w.wPer)} W each${w.fvPer ? ` · ${fmt(w.fvPer)} V each` : ''}`)}
+        {step('Fittings', `${amount(l.qty, l.rows)} · ${fmt(w.wPer)} W each${w.fvPer ? ` · ${fmt(w.fvPer)} V each` : ''}`,
+          'each one whole: never split across outputs or drivers')}
         {arr}
         {l.forcedIssue && <>{step('Forced type not used', l.forcedIssue, 'sized on the automatic pick instead', ' warn')}{arr}</>}
         {l.considered?.length > 1 && <>
@@ -307,7 +308,8 @@ export default function EstimatePage({ state, dispatch, zone }) {
             { key: 'o', taken: byOutputs >= w.byWatts, cls: ' bind', label: 'By outputs',
               body: <>{l.outputs} ÷ {n}{l.outputs % n ? ' ↑' : ''} = <b>{byOutputs}</b></> },
             { key: 'w', taken: w.byWatts > byOutputs, cls: ' bind', label: 'By driver watts',
-              body: <>{fmt(w.totalW)} W ÷ {fmt(w.maxPowerW * w.keep)} W ↑ = <b>{w.byWatts}</b></> },
+              body: <>{fmt(l.qty)} ÷ {w.perDriverW}{l.qty % w.perDriverW ? ' ↑' : ''} = <b>{w.byWatts}</b></>,
+              note: `${w.perDriverW} whole fittings per driver: ${fmt(w.maxPowerW * w.keep)} W ÷ ${fmt(w.wPer)} W` },
           ])}
         </> : fork('Per driver, the tightest limit', [
           w.perNodeFv != null && { key: 'fV', taken: l.limit === 'fV', cls: ' bind', label: 'Per output by voltage',
@@ -421,7 +423,7 @@ export default function EstimatePage({ state, dispatch, zone }) {
       {/* Each of these makes the estimate looser, and the count higher. Turning
           them all off gives the tightest possible answer, which is rarely the
           one to price at tender. */}
-      <aside className="est-assume">
+      <aside className="est-assume" data-debug-id="estimate-options">
         <div className="est-c-label">Keep separate</div>
         <table className="est-grid">
           <thead><tr><th /><th>per driver</th><th>per output</th></tr></thead>
@@ -510,7 +512,7 @@ export default function EstimatePage({ state, dispatch, zone }) {
               const k = `${z.zone}|${l.key}`;
               const isOpen = open.has(k);
               return (
-                <div key={l.key} className={`est-line${isOpen ? ' open' : ''}`}>
+                <div key={l.key} className={`est-line${isOpen ? ' open' : ''}`} data-debug-id="estimate-line" data-code={l.typeRef}>
                   <div className="dp-ref est-line-head" role="button" aria-expanded={isOpen} onClick={() => toggle(setOpen, k)}>
                     <span className="est-caret">{isOpen ? '▾' : '▸'}</span>
                     <span className="dp-ref-id">{l.count} × {l.typeRef}</span>
@@ -555,7 +557,7 @@ export default function EstimatePage({ state, dispatch, zone }) {
               const k = `${z.zone}|${u.key}`;
               const isOpen = open.has(k);
               return (
-                <div key={u.key} className={`est-line${isOpen ? ' open' : ''}`}>
+                <div key={u.key} className={`est-line${isOpen ? ' open' : ''}`} data-debug-id="estimate-unmatched">
                   <div className="dp-ref is-off est-line-head" role="button" aria-expanded={isOpen} onClick={() => toggle(setOpen, k)}>
                     <span className="est-caret">{isOpen ? '▾' : '▸'}</span>
                     <span className="dp-ref-id">{amount(u.qty, u.rows)}</span>
