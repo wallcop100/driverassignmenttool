@@ -2,7 +2,7 @@
 // states against the datasheet the type's Name matched. No JSX and no React, so
 // `node --test` can cover the judgement itself rather than only the screens
 // built on it.
-import { atCurrent, checkOf, currentFromName, currentFromRef } from './engine.js';
+import { atCurrent, checkOf, combine, currentFromName, currentFromRef, sharedSupply } from './engine.js';
 
 export const fmt = (n) => {
   if (n == null || n === '') return null;
@@ -92,7 +92,7 @@ export function currentOptions(t, spec) {
 const NAME_MA_G = /\d{2,4}\s*mA/i;
 
 // Whether a spec, or the supply half of a pair, came from the shared catalogue.
-export const fromShared = (spec) => !!(spec?.shared || spec?.supply?.shared);
+export const fromShared = (spec) => !!(spec?.shared || spec?.supply?.shared || spec?.pairedShared);
 
 // The preset a fix would produce. `mode` is 'fill' - add only what the design
 // states nothing for - or 'replace', which also overwrites what disagrees.
@@ -145,8 +145,11 @@ export function autoFillable(inventory, resolveSpec) {
   const ready = [];
   const asks = [];
   for (const t of inventory ?? []) {
-    const spec = resolveSpec(t.name || t.typeRef);
+    let spec = resolveSpec(t.name || t.typeRef);
     const part = spec?.driver ?? spec ?? null;
+    // no supply in the Name: the one people agreed this driver is usually paired with
+    const usual = part?.kind === 'dcdc' && !spec.supply ? sharedSupply(part) : null;
+    if (usual) spec = { ...combine(part, usual), pairedShared: true };
     if (!part) { asks.push({ t, spec, why: 'no datasheet match' }); continue; }
     // A supply named on its own IS the driver - an unswitched PSU feeding a tape
     // run directly, one output, ControlType Local, which is how page 140180

@@ -28,6 +28,9 @@ const rows = (p) => [
   ['ControlType', p.controlType],
   ['Per current', p.windows?.length
     ? p.windows.map((w) => `${g(w.a * 1000)}mA ${g(w.w)}W${w.fv != null ? `/${g(w.fv)}fV` : ''}`).join(' · ') : null],
+  ['Size (mm)', p.sizeMm?.map(g).join(' × ')],
+  ['Junction boxes', p.jboxes],
+  ['Usual supply', p.psu],
 ].filter(([, v]) => v != null && v !== '');
 
 export default function SharedCheck({ part }) {

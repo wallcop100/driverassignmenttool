@@ -155,3 +155,7 @@ node docs/hub-layout-shots.mjs
 - **A shared part's checks belong to one version (`rev`, a hash of the stored part).** Any amendment
   starts the votes again, so a part edited after two people agreed it is unchecked once more and
   "Fill in all" skips it until someone checks it again. That is deliberate (2026-10-28).
+- **A shared size, box count or supply is read only through `checked(part, key)`** in
+  `src/catalogue.js`. Reading `part.sizeMm` directly would draw an unchecked size, or miss an agreed
+  amendment that fills a datasheet part's gap. An amendment never overrides a value the datasheet has.
+  A shared size reports its origin as `shared` ("suggested"), and the patch treats it like a datasheet size (2026-10-29).

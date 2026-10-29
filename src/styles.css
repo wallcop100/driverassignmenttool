@@ -1051,6 +1051,7 @@ body { background: #f6f8fb; }
 .pe-envelope { fill: none; stroke: #94a3b8; stroke-dasharray: 4 3; }
 .pe-rect { fill: #fff; stroke: #16212e; stroke-width: 1.2; cursor: move; }
 .pe-rect.is-datasheet { stroke: #64748b; stroke-dasharray: 3 2; }
+.pe-rect.is-shared { stroke: #a78bfa; stroke-dasharray: 3 2; }
 .pe-rect.is-edited { stroke: #b7791f; stroke-dasharray: 6 3; }
 .pe-rect.is-missing { stroke: #e11d48; stroke-dasharray: 3 2; }
 .pe-part.is-active .pe-rect { stroke: #2563eb; stroke-width: 2; }

@@ -1,6 +1,6 @@
 # driverassignmenttool — state
 
-Updated: 2026-10-28
+Updated: 2026-10-29
 
 <!-- Now / Next / Blocked are rewritten in place and never grow. Finish something, delete the
      line. Only Log appends. Format: /srv/projects/FORMAT.md -->
@@ -16,8 +16,9 @@ names and badge. `dat-autodeploy.timer` keeps Connected on Pages' build. The hos
 ## Next
 
 1. n8n overlay sync (plan §7): not built; needs the read/save gateway actions in datajoin first.
-2. AUSTHZ shared driver parts (`feat/shared-parts`): deploy datajoin (`dat-parts`) first, then
-   dat_bridge (`shared-parts`), then merge the app PR. Resolve AUSTHZ once on prod. Then have Erik
+2. AUSTHZ shared driver parts: the app side is in `dev` (#15, #16 → 8235fb8). Deploy datajoin
+   (`dat-parts`) and dat_bridge (`shared-parts`) before shipping `dev` to `main`. Resolve AUSTHZ,
+   WNUC6N, MBVCAZ, MBTBA2 and SSCMMX once on prod. Then have Erik
    run datajoin `oneoff/dat-research-2026-10-28/seed.py dev`, check on drivers-dev, then `prod`.
 3. Ship `dev` to `main`, then resolve the 7 reports fixed in #14.
 
@@ -26,6 +27,25 @@ names and badge. `dat-autodeploy.timer` keeps Connected on Pages' build. The hos
 Nothing.
 
 ## Log
+
+## 2026-10-29
+
+- VMNW7Y: the hub layout hears Del (selection back to the tray, a layout undo step) and Ctrl+C /
+  Ctrl+V (an ADD_DRIVER per copied type, placed just after the original through `pasting` in the
+  redraw effect). Shift-click multi-select already worked; the hint line now names all four.
+- MNBJ6W: "None - supplied elsewhere" (`NO_SUPPLY`) for a DC/DC driver's supply in New type and
+  the setup wizard. The type is then the driver alone, with its watts left blank.
+- Shared parts now also carry `sizeMm`, `jboxes` and a DC/DC driver's `psu`, through the share form,
+  the check card, and datajoin `_dat_part` (branch `dat-parts`; its test is written but not run here,
+  because docker was refused and the host has no `mcp`). `checked(part, key)` is the only reader. It
+  fills a datasheet gap from an agreed amendment and never overrides the datasheet. Amendments are now
+  voted on in the preset editor. Type attributes were already shared, but only on an explicit "Share…".
+  A shared size shows as "suggested" in the layout and still goes into the patch. "Fill in all" pairs
+  a DC/DC driver with its agreed supply. datajoin `test_psr_app.py`: 55 pass. It was run with a stub
+  `mcp` module (`scratchpad/run_dat.py`), because docker and venv are unavailable here. The share
+  form was checked in the browser against a mocked companion: the POST carries
+  `sizeMm`/`jboxes`/`psu`.
+  Branch `fix/vmnw7y-mnbj6w`, not committed.
 
 ## 2026-10-28
 

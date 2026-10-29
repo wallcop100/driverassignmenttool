@@ -877,7 +877,7 @@ function applyPresets(drivers, presetTypes) {
 // editor as a starting point, and used to check what someone types against what
 // the part actually is. See catalogue.js.
 export {
-  PARTS, allParts, atCurrent, checkOf, combine, matchPart, matchParts, resolveSpec, reachableW, setSharedParts, sharedAmendment,
+  NO_SUPPLY, PARTS, allParts, atCurrent, checkOf, checked, combine, matchPart, matchParts, resolveSpec, reachableW, setSharedParts, sharedAmendment, sharedSize, sharedSupply,
 } from './catalogue.js';
 
 // A CC part's datasheet gives a RANGE; the design picks one value out of it and

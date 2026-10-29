@@ -20,6 +20,10 @@
 //   children   the DB's child Elements, laid out by the house rule (not stored)
 //   suggested  the datasheet pair the name resolves to
 //   wrapper    nothing to go on
+import { checked, sharedSize } from '../catalogue.js';
+
+// Where a size off the catalogue came from: the spec page, or a part someone shared.
+const sheetOrigin = (p) => (checked(p, 'sizeMm') ? (sharedSize(p) ? 'shared' : 'datasheet') : 'missing');
 import { parseParams, formatParams } from '../core/params.js';
 
 export const GAP = 5;
@@ -140,8 +144,8 @@ export function partsFor({ wrapper, children = [], types = {}, resolveSpec = () 
       for (let i = 0; i < Math.max(1, Math.round(c.quantity ?? 1)); i += 1) {
         parts.push({
           role, roleOrigin, typeRef: c.typeRef, label: part?.code ?? t.name ?? c.typeRef,
-          size: own?.[0] > 0 && own?.[1] > 0 ? own : part?.sizeMm ?? null,
-          sizeOrigin: own?.[0] > 0 && own?.[1] > 0 ? 'db' : part?.sizeMm ? 'datasheet' : 'missing',
+          size: own?.[0] > 0 && own?.[1] > 0 ? own : checked(part, 'sizeMm'),
+          sizeOrigin: own?.[0] > 0 && own?.[1] > 0 ? 'db' : sheetOrigin(part),
         });
       }
     }
@@ -152,9 +156,9 @@ export function partsFor({ wrapper, children = [], types = {}, resolveSpec = () 
   if (spec?.driver && spec?.supply) {
     const parts = [
       { role: 'Driver', roleOrigin: 'datasheet', typeRef: null, label: spec.driver.code ?? spec.driver.name,
-        size: spec.driver.sizeMm ?? null, sizeOrigin: spec.driver.sizeMm ? 'datasheet' : 'missing' },
+        size: checked(spec.driver, 'sizeMm'), sizeOrigin: sheetOrigin(spec.driver) },
       { role: 'PSU', roleOrigin: 'datasheet', typeRef: null, label: spec.supply.code ?? spec.supply.name,
-        size: spec.supply.sizeMm ?? null, sizeOrigin: spec.supply.sizeMm ? 'datasheet' : 'missing' },
+        size: checked(spec.supply, 'sizeMm'), sizeOrigin: sheetOrigin(spec.supply) },
     ];
     return { source: 'suggested', parts: houseArrange(nameSpaces(parts)) };
   }
