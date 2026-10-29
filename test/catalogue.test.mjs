@@ -162,3 +162,39 @@ test('a shared part is matched and marked, but never in place of a datasheet', a
   assert.equal(matchPart('Acme ACD100'), null);
   assert.equal(allParts(), PARTS);
 });
+
+// Size, boxes and a DC/DC driver's supply are shared too, and fill nothing until checked.
+test('a checked shared size, box count and supply fill a datasheet gap; an unchecked one does not', async () => {
+  const { setSharedParts, checked, sharedSupply } = await import('../src/catalogue.js');
+  const lin = PARTS.find((p) => p.name === 'EldoLED LinearDrive 720D');
+  const agreed = { yes: 2, origins: 2 };
+  const amend = { name: lin.name, powerType: 'CV', kind: 'dcdc', rev: 'r1',
+    sizeMm: [280, 30, 21], jboxes: 2, psu: 'Meanwell HLG-185-24' };
+  try {
+    setSharedParts([{ ...amend, votes: { yes: 1, origins: 1 } }]);
+    assert.equal(checked(lin, 'sizeMm'), null, 'one person is not enough');
+    assert.equal(sharedSupply(lin), null);
+    setSharedParts([{ ...amend, votes: agreed }]);
+    assert.deepEqual(checked(lin, 'sizeMm'), [280, 30, 21]);
+    assert.equal(checked(lin, 'jboxes'), 2);
+    assert.equal(sharedSupply(lin).name, 'Meanwell HLG-185-24');
+    // the layout draws it as suggested, beside the supply's datasheet size
+    const { partsFor } = await import('../src/drivers/recipe.js');
+    const r = partsFor({ wrapper: { name: 'EldoLED LinearDrive 720D & Meanwell HLG-185-24' }, resolveSpec });
+    assert.deepEqual(r.parts.map((x) => x.sizeOrigin), ['shared', 'datasheet']);
+    // and Fill in all pairs it with the agreed supply instead of asking
+    const { autoFillable, fillFromSpec } = await import('../src/typeFaults.js');
+    const auto = autoFillable([{ typeRef: 'ET-X', name: 'EldoLED LinearDrive 720D' }], resolveSpec);
+    assert.equal(auto.ready[0].spec.supply.name, 'Meanwell HLG-185-24');
+    assert.equal(fillFromSpec(auto.ready[0]).origin, 'shared');
+    const hlg = PARTS.find((p) => p.name === 'Meanwell HLG-185-24');
+    setSharedParts([{ name: hlg.name, powerType: 'CV', kind: 'supply', sizeMm: [1, 1, 1], votes: agreed }]);
+    assert.deepEqual(checked(hlg, 'sizeMm'), hlg.sizeMm, 'never over the datasheet');
+    setSharedParts([{ ...amend, votes: agreed, sizeMm: [1, 2], jboxes: 99, psu: 'Not a supply' }]);
+    assert.equal(checked(lin, 'sizeMm'), null);
+    assert.equal(checked(lin, 'jboxes'), null);
+    assert.equal(sharedSupply(lin), null, 'only a supply we know');
+  } finally {
+    setSharedParts([]);
+  }
+});

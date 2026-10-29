@@ -1,5 +1,5 @@
 import { useMemo, useState, useSyncExternalStore } from 'react';
-import { allParts, atCurrent, checkOf, combine, resolveSpec } from '../engine.js';
+import { NO_SUPPLY, allParts, atCurrent, checkOf, combine, resolveSpec, sharedSupply } from '../engine.js';
 import { onSharedParts, sharedSnapshot } from '../catalogue.js';
 import SharedCheck from './SharedCheck.jsx';
 import PresetEditor, { draftFrom, draftFromPart, toPreset } from './PresetEditor.jsx';
@@ -27,7 +27,7 @@ const stepFor = (t) => {
     t,
     spec,
     part,
-    supply: spec?.supply ?? null,
+    supply: spec?.supply ?? (part?.kind === 'dcdc' ? sharedSupply(part) : null),
     currentMa: opts.length ? String(Math.round(opts[0].a * 1000)) : '',
   };
 };
@@ -67,7 +67,7 @@ export default function SetupWizard({ model, presets, dispatch, onClose, only })
   const needsPsu = part?.kind === 'dcdc';
   const needsCurrent = spec?.powerType === 'CC' && !(spec.minA != null && spec.minA === spec.maxA);
   const unchecked = [part, needsPsu ? psu : null].filter((p) => checkOf(p) === 'unchecked');
-  const ready = !!spec && (!needsPsu || psu) && (!needsCurrent || Number(currentMa) > 0);
+  const ready = !!spec && (!needsPsu || psu || picked.psu === NO_SUPPLY) && (!needsCurrent || Number(currentMa) > 0);
 
   const set = (patch) => setChoice({ ...choice, [key]: { ...picked, ...patch } });
 
@@ -159,9 +159,10 @@ export default function SetupWizard({ model, presets, dispatch, onClose, only })
               {needsPsu && (
                 <label className="fld sw-part">
                   <span className="fld-col">On which supply?</span>
-                  <select className="form-select form-select-sm" value={psu?.name ?? ''}
+                  <select className="form-select form-select-sm" value={picked.psu === NO_SUPPLY ? NO_SUPPLY : psu?.name ?? ''}
                     onChange={(e) => set({ psu: e.target.value })}>
                     <option value="">Choose…</option>
+                    <option value={NO_SUPPLY}>None - supplied elsewhere</option>
                     {parts.filter((p) => p.kind === 'supply').map((p) => (
                       <option key={p.name} value={p.name}>{p.name}</option>
                     ))}

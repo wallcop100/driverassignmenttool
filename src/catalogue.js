@@ -209,6 +209,12 @@ export function setSharedParts(rows) {
       ...(Array.isArray(r.windows) && { windows: r.windows.filter((w) => Number.isFinite(w?.a) && Number.isFinite(w?.w)) }),
       // a link, never free text: only an https URL from the research seed survives
       ...(typeof r.source === 'string' && /^https:\/\/[^\s"<>]{1,290}$/.test(r.source) && { source: r.source }),
+      // the case off the datasheet, the supply a DC/DC driver runs on, and the
+      // junction boxes it brings: shared so the layout can draw it
+      ...(Array.isArray(r.sizeMm) && r.sizeMm.length === 3 && r.sizeMm.every((v) => Number.isFinite(v) && v > 0)
+        && { sizeMm: r.sizeMm }),
+      ...(Number.isInteger(r.jboxes) && r.jboxes >= 0 && r.jboxes <= 8 && { jboxes: r.jboxes }),
+      ...(typeof r.psu === 'string' && { psu: r.psu }),
       ...(typeof r.rev === 'string' && { rev: r.rev }),
       votes: r.votes && typeof r.votes === 'object' ? r.votes : null,
       own: r.own === true,
@@ -230,6 +236,23 @@ export function checkOf(p) {
   if (p.own) return 'yours';
   return v.yes >= 2 && v.origins >= 2 ? 'agreed' : 'unchecked';
 }
+
+// A size, supply or box count to use for a part: its own, else what people sent
+// for a datasheet part that lacks one. Never an unchecked one - it fills nothing.
+export function checked(p, key) {
+  if (p?.[key] != null) return checkOf(p) === 'unchecked' ? null : p[key];
+  const a = p && shared.amends.get(p.name);
+  return a?.[key] != null && checkOf(a) !== 'unchecked' ? a[key] : null;
+}
+
+/** True when the size `checked` gives came from a person, not the spec page. */
+export const sharedSize = (p) => checked(p, 'sizeMm') != null && (!!p.shared || p.sizeMm == null);
+
+/** The supply a DC/DC driver is shared with, if it names a part we know. */
+export const sharedSupply = (p) => {
+  const name = checked(p, 'psu');
+  return name ? shared.all.find((s) => s.kind === 'supply' && s.name === name) ?? null : null;
+};
 
 // A CC part rated per current (TCI's MP 32 is 19W/54fV at 350mA, 32W/46fV at
 // 700mA): its ratings at the current the design uses.
@@ -298,6 +321,10 @@ export function resolveSpec(elementTypeName) {
 
 // The effective spec for a DC/DC driver on a given supply. Either half alone is
 // returned as-is; only a dcdc driver takes a supply's rail and cap.
+// A DC/DC driver whose supply is chosen elsewhere, or is a central one (MNBJ6W):
+// the type is the driver alone, and the supply's watts are left for the user.
+export const NO_SUPPLY = 'none';
+
 export function combine(driver, supply) {
   if (!driver) return supply ? { ...supply, driver: null, supply } : null;
   if (driver.kind !== 'dcdc' || !supply) return { ...driver, supply: null };

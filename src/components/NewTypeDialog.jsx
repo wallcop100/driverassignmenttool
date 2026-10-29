@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { allParts, combine, nextTypeRef } from '../engine.js';
+import { NO_SUPPLY, allParts, combine, nextTypeRef, sharedSupply } from '../engine.js';
 import PresetEditor, { draftFromPart, toPreset } from './PresetEditor.jsx';
 import { fmt } from '../typeFaults.js';
 
@@ -63,7 +63,7 @@ export default function NewTypeDialog({ zone, inventory, dispatch, onClose, onCr
   // The two things the datasheet cannot settle for us.
   const needsPsu = part?.kind === 'dcdc';
   const needsCurrent = spec?.powerType === 'CC' && !(spec.minA != null && spec.minA === spec.maxA);
-  const ready = !!part && (!needsPsu || supply) && (!needsCurrent || Number(currentA) > 0);
+  const ready = !!part && (!needsPsu || supply || psu === NO_SUPPLY) && (!needsCurrent || Number(currentA) > 0);
 
   // draftFromPart leaves the Ref blank: only the full editor used to fill it in,
   // from its own effect. So the dialog showed "-" where the Ref goes and both
@@ -149,7 +149,7 @@ export default function NewTypeDialog({ zone, inventory, dispatch, onClose, onCr
         <div className="nt-list">
           {shown.map((p) => (
             <button key={p.name} className={`nt-part ${chosen === p.name ? 'is-on' : ''}`}
-              onClick={() => { setChosen(p.name); setAdvanced(null); }}>
+              onClick={() => { setChosen(p.name); setAdvanced(null); if (sharedSupply(p)) setPsu(sharedSupply(p).name); }}>
               <span className={`type-power is-${p.powerType.toLowerCase()}`}>{p.powerType}</span>
               <span className="nt-part-name">{p.name}</span>
               <span className="nt-part-spec">
@@ -191,6 +191,7 @@ export default function NewTypeDialog({ zone, inventory, dispatch, onClose, onCr
                 <select className="form-select form-select-sm" value={psu}
                   onChange={(e) => setPsu(e.target.value)}>
                   <option value="">Choose…</option>
+                  <option value={NO_SUPPLY}>None - supplied elsewhere</option>
                   {parts.filter((p) => p.kind === 'supply').map((p) => (
                     <option key={p.name} value={p.name}>{p.name}</option>
                   ))}

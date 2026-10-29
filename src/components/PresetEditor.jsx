@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { allParts, atCurrent, combine, nextTypeRef, reachableW, resolveSpec, setSharedParts, sharedAmendment } from '../engine.js';
+import { allParts, atCurrent, checked, combine, nextTypeRef, reachableW, resolveSpec, setSharedParts, sharedAmendment } from '../engine.js';
 import { useCompanion } from '../companion.js';
 import SharedCheck from './SharedCheck.jsx';
 
@@ -181,7 +181,8 @@ export default function PresetEditor({ draft, setDraft, inventory, onSave, onCan
 
   return (
     <div className="preset-editor">
-      {[part?.driver ?? part, part?.supply].filter(Boolean).map((p) => <SharedCheck key={p.name} part={p} />)}
+      {/* an amendment is checked here too: its size, boxes and supply fill the layout once agreed */}
+      {[part?.driver ?? part, part?.supply, amend].filter(Boolean).map((p, n) => <SharedCheck key={`${n}${p.name}`} part={p} />)}
       {draft.invented ? (
         <div className="spec-pick">
           <label>
@@ -308,7 +309,7 @@ export default function PresetEditor({ draft, setDraft, inventory, onSave, onCan
 // The ratings above, sent to the shared catalogue as a datasheet part: a new one,
 // or an amendment to a part the page has wrong. Only with a companion, and only
 // these fields - never the Ref, the node names, or anything else of the design.
-export const partFromDraft = (d, { name, aliases, kind, minMa, maxMa }) => ({
+export const partFromDraft = (d, { name, aliases, kind, minMa, maxMa, size = [], jboxes = '', psu = '' }) => ({
   name: name.trim(),
   aliases: aliases.split(',').map((a) => a.trim()).filter(Boolean),
   kind, powerType: d.powerType,
@@ -323,6 +324,10 @@ export const partFromDraft = (d, { name, aliases, kind, minMa, maxMa }) => ({
   nodeMaxLoadW: numOrNull(d.nodeMaxLoadW),
   nodeCurrentA: numOrNull(d.nodeCurrentA),
   controlType: (d.controlType ?? '').trim() || null,
+  // what the layout needs to draw it: the case, its boxes, and a DC/DC driver's usual supply
+  ...(size.length === 3 && size.every((v) => numOrNull(v) > 0) && { sizeMm: size.map(Number) }),
+  ...(numOrNull(jboxes) != null && { jboxes: Math.round(Number(jboxes)) }),
+  ...(kind === 'dcdc' && psu && { psu }),
 });
 
 function SharePart({ draft, part }) {
@@ -337,6 +342,8 @@ function SharePart({ draft, part }) {
       name: part?.name ?? draft.part ?? draft.name ?? '',
       aliases: '', kind: part?.kind ?? 'driver',
       minMa: ma(part?.minA ?? numOrNull(draft.currentA)), maxMa: ma(part?.maxA ?? numOrNull(draft.currentA)),
+      size: (checked(part, 'sizeMm') ?? ['', '', '']).map(String),
+      jboxes: String(checked(part, 'jboxes') ?? ''), psu: draft.psu || checked(part, 'psu') || '',
     });
   };
   const send = async () => {
@@ -369,6 +376,20 @@ function SharePart({ draft, part }) {
             <label className="fld"><span className="fld-col" title="The datasheet's current range, mA">Range (mA)</span>
               <span className="share-range"><input type="number" min="0" {...f('minMa')} />–<input type="number" min="0" {...f('maxMa')} /></span>
             </label>
+          )}
+          <label className="fld"><span className="fld-col" title="Length × width × height off the datasheet, mm. The hub layout draws the driver at this size">Size (mm)</span>
+            <span className="share-range">{[0, 1, 2].map((n) => (
+              <input key={n} type="number" min="0" style={{ width: 72 }} aria-label={['Length', 'Width', 'Height'][n]} value={form.size[n]}
+                onChange={(e) => setForm({ ...form, size: form.size.map((v, i) => (i === n ? e.target.value : v)) })} />
+            ))}</span></label>
+          <label className="fld"><span className="fld-col" title="Junction boxes it arrives with in a hub. Blank: one per output for CV, none for CC">Junction boxes</span>
+            <input type="number" min="0" max="8" {...f('jboxes')} /></label>
+          {form.kind === 'dcdc' && (
+            <label className="fld"><span className="fld-col" title="The supply it is usually paired with, offered first when someone picks this driver">Usual supply</span>
+              <select {...f('psu')}>
+                <option value="">None</option>
+                {allParts().filter((p) => p.kind === 'supply').map((p) => <option key={p.name} value={p.name}>{p.name}</option>)}
+              </select></label>
           )}
         </div>
       )}
