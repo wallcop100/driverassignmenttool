@@ -1,7 +1,7 @@
 import { useMemo, useState, useSyncExternalStore } from 'react';
 import { NO_SUPPLY, allParts, atCurrent, checkOf, combine, resolveSpec, sharedSupply } from '../engine.js';
 import { onSharedParts, sharedSnapshot } from '../catalogue.js';
-import SharedCheck from './SharedCheck.jsx';
+import SharedCheck, { ReportSuggestion } from './SharedCheck.jsx';
 import PresetEditor, { draftFrom, draftFromPart, toPreset } from './PresetEditor.jsx';
 import { autoFillable, currentOptions, fillFromSpec, fmt, fromShared } from '../typeFaults.js';
 
@@ -196,6 +196,7 @@ export default function SetupWizard({ model, presets, dispatch, onClose, only })
                     {fromShared(spec) && !unchecked.length && (
                       <span className="sw-sug" title="Not from a spec page: other projects use these values, agreed by two people">
                         <span className="material-icons">auto_awesome</span>Suggested
+                        <ReportSuggestion what={part.name} />
                       </span>
                     )}
                   </div>

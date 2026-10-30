@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { allParts, atCurrent, checkOf, checked, combine, nextTypeRef, reachableW, resolveSpec, setSharedParts, sharedAmendment } from '../engine.js';
 import { useCompanion } from '../companion.js';
-import SharedCheck from './SharedCheck.jsx';
+import SharedCheck, { ReportSuggestion } from './SharedCheck.jsx';
 
 // The driver type editor, shared by the Add-driver modal and the Driver types
 // page. A preset is a rating nobody declared, supplied here and patched into the
@@ -149,16 +149,22 @@ export default function PresetEditor({ draft, setDraft, inventory, onSave, onCan
             placeholder="-" onChange={(e) => set({ [k]: e.target.value })} />
         )}
         {(off || blank) && (
-          <button type="button" className={`fld-ds${part.shared ? ' is-shared' : ''}`} onClick={() => set({ [k]: want })}
-            title={`Take ${g(want)} from the ${part.name} ${from}`}>
-            {part.shared && <span className="material-icons">auto_awesome</span>}{off ? `${from}: ${g(want)}` : `use ${g(want)}`}
-          </button>
+          <span className="fld-sug">
+            <button type="button" className={`fld-ds${part.shared ? ' is-shared' : ''}`} onClick={() => set({ [k]: want })}
+              title={`Take ${g(want)} from the ${part.name} ${from}`}>
+              {part.shared && <span className="material-icons">auto_awesome</span>}{off ? `${from}: ${g(want)}` : `use ${g(want)}`}
+            </button>
+            {part.shared && <ReportSuggestion what={`${part.name} ${col} ${g(want)}`} />}
+          </span>
         )}
         {altOff && (
-          <button type="button" className="fld-ds is-shared" onClick={() => set({ [k]: alt })}
-            title={`Use ${g(alt)} - what other projects use for the ${amend.name}, agreed by two people`}>
-            <span className="material-icons">auto_awesome</span>Suggested: {g(alt)}
-          </button>
+          <span className="fld-sug">
+            <button type="button" className="fld-ds is-shared" onClick={() => set({ [k]: alt })}
+              title={`Use ${g(alt)} - what other projects use for the ${amend.name}, agreed by two people`}>
+              <span className="material-icons">auto_awesome</span>Suggested: {g(alt)}
+            </button>
+            <ReportSuggestion what={`${amend.name} ${col} ${g(alt)}`} />
+          </span>
         )}
       </label>
     );

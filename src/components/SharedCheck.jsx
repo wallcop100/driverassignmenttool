@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { checkOf, setSharedParts } from '../engine.js';
 import { conflicts, partRows } from '../catalogue.js';
 import { useCompanion } from '../companion.js';
+import { openReport } from '../bugReports.js';
 
 // A shared part one person has vouched for, asked of the next person to use it -
 // PS&R's way (certainty.js), in PS&R's companion card (ConfirmSuggestionModal):
@@ -14,6 +15,17 @@ const said = () => { try { return JSON.parse(localStorage.getItem(KEY) ?? '{}') 
 const remember = (rev, v) => {
   try { localStorage.setItem(KEY, JSON.stringify({ ...said(), [rev]: v })); } catch { /* private window */ }
 };
+
+// PS&R's flag beside a suggestion: a bug note pinned to it, so a bad one is said where it was seen.
+// The note records the flag's label (first 60 characters), so it names the part first.
+export function ReportSuggestion({ what }) {
+  return (
+    <button type="button" className="sug-flag" title="Report a problem with this suggestion" aria-label={`Report suggested ${what}`}
+      onClick={(e) => { e.preventDefault(); openReport(e.currentTarget); }}>
+      <span className="material-icons">flag</span>
+    </button>
+  );
+}
 
 export default function SharedCheck({ part }) {
   const companion = useCompanion();
