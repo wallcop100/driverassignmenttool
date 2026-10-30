@@ -6,7 +6,7 @@ import { outRef } from '../state.js';
 // here; drag it into a bay to place it, or drag a block back here to take it out.
 // Grouped by type with a count, because an early design says "4 of these" long
 // before anyone says where.
-export default function HubTray({ items, dragging, trayRef, onPick, onHover, onBreakApart }) {
+export default function HubTray({ items, dragging, trayRef, selected = [], onToggle, onPick, onHover, onBreakApart }) {
   const groups = new Map();
   for (const i of items) {
     if (!groups.has(i.typeRef)) groups.set(i.typeRef, []);
@@ -34,9 +34,14 @@ export default function HubTray({ items, dragging, trayRef, onPick, onHover, onB
             <span className="text-secondary">{list.reduce((n, i) => n + (i.qty ?? 1), 0)}</span>
           </div>
           {list.map((i) => (
-            <div key={i.ref} className={`hub-tray-item ${dragging?.ref === i.ref ? 'is-dragging' : ''}`}
-              onMouseDown={(e) => { e.preventDefault(); onPick(i.ref); }}
-              title="Drag into a bay to place it">
+            <div key={i.ref}
+              className={`hub-tray-item ${(dragging?.refs ?? [dragging?.ref]).includes(i.ref) ? 'is-dragging' : ''} ${selected.includes(i.ref) ? 'is-sel' : ''}`}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                if (e.shiftKey || e.ctrlKey || e.metaKey) onToggle(i.ref);
+                else onPick(i.ref);
+              }}
+              title="Drag into a bay to place it. Ctrl or Shift+click to pick several.">
               <span className="material-icons hub-tray-grip">drag_indicator</span>
               <span className="hub-tray-ref">{outRef(i.ref)}</span>
               {i.qty > 1 && <span className="hub-tray-qty">×{i.qty}</span>}

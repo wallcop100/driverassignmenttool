@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react';
 import * as api from '../api.js';
 import { compareEstimate, ESTIMATE_WARNING, isOwnLine, resolveSpec, zoneViews } from '../engine.js';
 import { effectiveDrivers } from '../state.js';
-import Bom from './Bom.jsx';
 import { openReport } from '../bugReports.js';
 import KebabMenu from './KebabMenu.jsx';
 import Tooltip from './Tooltip.jsx';
@@ -251,6 +250,11 @@ export default function EstimatePage({ state, dispatch, zone }) {
     );
     const cap = l.count * w.maxPowerW * w.keep;
     const pct = Math.round((l.loadW / cap) * 100);
+    // per-driver load: the packer's own split, or fill order for plain division; grouped runs have none
+    const dCap = w.packing?.dCap ?? w.maxPowerW * w.keep;
+    const split = w.packing ? w.packing.drivers.map((d) => d.w)
+      : !w.runList && !w.packed && w.wPer ? Array.from({ length: l.count }, (_, i) => Math.min(l.perDriver, l.qty - i * l.perDriver) * w.wPer)
+      : null;
     const report = (e) => openReport(e.currentTarget.closest('.est-line'), {
       // allowlisted: refs and numbers only, no location names
       estimate: {
@@ -357,6 +361,12 @@ export default function EstimatePage({ state, dispatch, zone }) {
           ? w.packing.drivers.map((d, i) => `driver ${i + 1}: ${d.outs.length} of ${n} outputs, ${fmt(d.w)} of ${fmt(w.packing.dCap)} W`).join(' · ')
           : `one output each, within ${fmt(w.packing.dCap)} W`)
           : w.runList ? `${w.runs} groups kept on separate outputs` : `${l.perDriver} per driver`, ' result')}
+        {split && split.length > 1 && split.map((wd, i) => (
+          <div className="est-usage" key={i}>
+            <div className="est-bar"><i style={{ width: `${Math.min(100, Math.round(wd / dCap * 100))}%` }} /></div>
+            <span>Driver {i + 1}: {fmt(wd)} W of {fmt(dCap)} W</span>
+          </div>
+        ))}
         <div className="est-usage">
           <div className="est-bar"><i style={{ width: `${Math.min(100, pct)}%` }} /></div>
           <span>{fmt(l.loadW)} W of {fmt(cap)} W usable · {pct}% loaded</span>
@@ -425,8 +435,6 @@ export default function EstimatePage({ state, dispatch, zone }) {
         <div className="est-big">{totals.drivers}<small>driver{totals.drivers === 1 ? '' : 's'}</small></div>
         {totals.byType.map(([t, n]) => <span key={t} className="est-chip"><b>{n}</b> × {t}</span>)}
       </div>
-
-      <Bom counts={totals.byType} inventory={model.inventory} />
 
       <div className="est-actions">
         <button className="btn btn-sm btn-outline-secondary" onClick={exportCsv}>Export CSV</button>

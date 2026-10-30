@@ -26,6 +26,8 @@ names and badge. `dat-autodeploy.timer` keeps Connected on Pages' build. The hos
 
 ## Log
 
+- 2026-10-30: branch `fix/dat-reports-1030` (uncommitted): ZXP9N9, the BoM, moved to the hub layout page and shows ElementType Refs, including a supply's own type when the library has one. RANFZQ: the Not placed tray wraps and never scrolls. E5B3RC: Ctrl/Shift multi-select in that tray, dragged as one. 39NFYZ: the editor's reset lifts the supply clear of the junction boxes as the layout does, and is disabled when already reset. RXN4WV: the estimate dialog shows load per driver (the packer's split, or fill order); grouped runs still show the total only. 357 tests pass and the build is clean. Not checked in a browser. Not done: PHCJ7A (taskbar redesign) and GPLPG4 (Add drivers as a drawer) need a design decision.
+
 - 2026-10-30: #22 (c53dbec) to `dev`: "Suggest a correction" in the type editor is a purple companion card, not a blue link and bare form. Swept for the same miss: suggested parts get the sparkle in the New type list; two tooltips said "shared". TZUNGU resolved. Not on prod until the next ship.
 - 2026-10-30: shipped `dev` to `main` (#21, 584f49d "Rose Deer"), carrying #14–#20. Autodeploy reported `ok: prod 584f49d`, and the live page's build-commit meta matches.
 - 2026-10-30: #20 merged to `dev` (eaabc08), fixing WLN3JW (BoM on the assessment and in the hub header; `bom()` in recipe.js), RRKMER (type cards wrap the name; usage line removed) and ASJ33S (Add stays in the card). The uncommitted BoM work in this checkout went into #20 and is kept as a stash. All 10 DAT reports are resolved; each fix reaches prod with the next ship from `dev` to `main`.
