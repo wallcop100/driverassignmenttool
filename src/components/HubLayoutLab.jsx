@@ -11,6 +11,7 @@ import { hubPatch } from '../drivers/hubPatch.js';
 import Origin from './Origin.jsx';
 import PartEditor from './PartEditor.jsx';
 import ResizeIcon from './ResizeIcon.jsx';
+import Bom from './Bom.jsx';
 import HubTray from './HubTray.jsx';
 
 // Composing one PSU hub, drawn the way 5642600A draws it: equipment as plain
@@ -566,6 +567,18 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
     : (c.includes(ref) && c.length === 1 ? [] : [ref])));
 
   const tray = cur.tray ?? [];
+  // what the hub is bought as: placed and not, with the boxes the drawing holds
+  const bomCounts = (() => {
+    const n = new Map();
+    for (const i of [...cur.bays.flat(), ...tray]) {
+      if (i.kind === 'feed') continue;   // a placeholder, not something bought
+      const c = n.get(i.typeRef) ?? [i.typeRef, 0, 0];
+      c[1] += i.qty ?? 1;
+      c[2] += (i.qty ?? 1) * (i.jboxes ?? 0);
+      n.set(i.typeRef, c);
+    }
+    return [...n.values()].sort();
+  })();
 
   shortcutRef.current = (e) => {
     const k = e.key.toLowerCase();
@@ -613,12 +626,14 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
     const hit = drag && e && !onTray ? hitBay(e.clientX, e.clientY) : null;
     const d = drag && { ...drag, overTray: onTray, overBay: hit ? hit.overBay : null, atIndex: hit ? hit.atIndex : 0 };
     if (d?.fromTray && d.overBay != null) {
-      const item = tray.find((i) => i.ref === d.ref);
-      if (item) {
+      const refs = d.refs ?? [d.ref];
+      const items = tray.filter((i) => refs.includes(i.ref));
+      if (items.length) {
         edit({
-          tray: tray.filter((i) => i.ref !== d.ref),
-          bays: cur.bays.map((b, i) => (i === d.overBay ? [...b.slice(0, d.atIndex), item, ...b.slice(d.atIndex)] : b)),
+          tray: tray.filter((i) => !refs.includes(i.ref)),
+          bays: cur.bays.map((b, i) => (i === d.overBay ? [...b.slice(0, d.atIndex), ...items, ...b.slice(d.atIndex)] : b)),
         });
+        setSel([]);
       }
     } else if (d?.overTray && !d.fromTray) {
       const item = cur.bays.flat().find((i) => i.ref === d.ref);
@@ -643,7 +658,9 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
   const addBay = () => edit({ bays: hl.addBay(cur.bays), opts: [...cur.opts, bayDefaults()] });
   const removeBay = () => edit({ bays: hl.removeBay(cur.bays), opts: cur.opts.slice(0, -1) });
   const splitSelected = () => {
-    edit({ bays: hl.splitToBay(cur.bays, sel), opts: [...cur.opts, bayDefaults()] });
+    const bays = hl.splitToBay(cur.bays, sel);
+    if (bays === cur.bays) return;   // only tray items picked: nothing in a bay to split off
+    edit({ bays, opts: [...cur.opts, bayDefaults()] });
     setSel([]);
   };
 
@@ -928,6 +945,7 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
         {notice && <span className="hub-notice" role="status">{notice}</span>}
         {cur.fromDb && <span className="hub-fromdb" title="Opened from the bays and placements the DB holds">from the DB</span>}
         <span className="ms-auto d-flex align-items-center gap-2">
+          <Bom counts={bomCounts} inventory={model.inventory ?? []} className="is-drop" />
           {notInDb.length > 0 && (
             <details className="hub-inpatch">
               <summary>{inPatch.length} of {notInDb.length} types in the set not in the DB go in the patch</summary>
@@ -987,7 +1005,13 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
 
       <div className="hub-body">
       <HubTray items={tray} dragging={drag} trayRef={trayEl}
-        onPick={(ref) => { setSel([]); setDrag({ ref, fromTray: true, overBay: null, atIndex: 0 }); }}
+        selected={sel} onToggle={(ref) => toggle(ref, true)}
+        onPick={(ref) => {
+          // dragging one of a selection takes the whole selection with it
+          const refs = sel.includes(ref) ? tray.filter((i) => sel.includes(i.ref)).map((i) => i.ref) : [ref];
+          if (!sel.includes(ref)) setSel([]);
+          setDrag({ ref, refs, fromTray: true, overBay: null, atIndex: 0 });
+        }}
         onHover={(over) => setDrag((d) => (d && !d.fromTray ? { ...d, overTray: over, overBay: over ? null : d.overBay } : d))}
         onBreakApart={breakApart} />
       <div className="hub-sheets">

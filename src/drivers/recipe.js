@@ -179,24 +179,32 @@ export function defaultJboxes(spec, type) {
   return spec?.outputs ?? type?.nodes?.length ?? type?.outputs ?? 1;
 }
 
-// What a set of drivers is bought as: per type, its driver part and its supply,
-// and the junction boxes it brings. A type no datasheet matches is listed under
-// its own name, so nothing drops out of the count.
+// What a set of drivers is bought as: per ElementType, its driver part, then the
+// supplies and the junction boxes they bring. Counts are [typeRef, qty, jboxes]:
+// jboxes is the total the layout holds, or left out for the default per driver.
+// A type no datasheet matches is listed under its own name, so nothing drops out.
 export function bom(counts, inventory, resolveSpec) {
   const rows = new Map();
-  const add = (kind, item, n) => {
+  // a driver row is one per type; a supply or a box is one per part, whoever brings it
+  const add = (kind, ref, item, n) => {
     if (!n) return;
-    const r = rows.get(`${kind}|${item}`) ?? { kind, item, qty: 0 };
+    const key = kind === 'supply' || kind === 'jbox' ? `${kind}|${item}` : `${kind}|${ref}`;
+    const r = rows.get(key) ?? { kind, ref, item, qty: 0 };
     r.qty += n;
-    rows.set(`${kind}|${item}`, r);
+    rows.set(key, r);
   };
-  for (const [typeRef, n] of counts) {
+  // the supply's own ElementType, when the library has one for that part
+  const supplyRef = (s) => inventory.find((x) => {
+    const r = resolveSpec(x.name || x.typeRef);
+    return r?.kind === 'supply' && r.name === s.name;
+  })?.typeRef ?? null;
+  for (const [typeRef, n, jboxes] of counts) {
     const t = inventory.find((x) => x.typeRef === typeRef);
     const spec = resolveSpec(t?.name || typeRef);
     const part = spec?.driver ?? spec;
-    add(part ? 'driver' : 'unmatched', part?.name ?? (t?.name || typeRef), n);
-    if (spec?.supply) add('supply', spec.supply.name, n);
-    add('jbox', 'Junction box', n * defaultJboxes(spec, t));
+    add(part ? 'driver' : 'unmatched', typeRef, part?.name ?? t?.name ?? '', n);
+    if (spec?.supply) add('supply', supplyRef(spec.supply), spec.supply.name, n);
+    add('jbox', null, 'Junction box', jboxes ?? n * defaultJboxes(spec, t));
   }
   return [...rows.values()];
 }

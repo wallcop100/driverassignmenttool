@@ -575,7 +575,7 @@ body { background: #f6f8fb; }
 .est-bom table { max-width: 560px; margin-top: 6px; }
 .est-bom.is-drop { position: relative; margin: 0; }
 .est-bom.is-drop table {
-  position: absolute; z-index: 20; top: 100%; left: 0; width: max-content; max-width: 420px;
+  position: absolute; z-index: 20; top: 100%; right: 0; width: max-content; max-width: 560px;
   background: #fff; border: 1px solid #dbe3ee; border-radius: 6px; box-shadow: 0 4px 12px rgba(15,23,42,.12);
 }
 .est-bom-n { width: 3.5em; text-align: right; font-variant-numeric: tabular-nums; }
@@ -1136,7 +1136,9 @@ body { background: #f6f8fb; }
 .hub-body { display: flex; align-items: flex-start; gap: 16px; }
 .hub-body > .hub-sheets { flex: 1 1 auto; min-width: 0; }
 .hub-tray {
-  flex: 0 0 240px; position: sticky; top: 8px; max-height: calc(100vh - 24px); overflow-y: auto;
+  /* never scrolls: rows wrap rather than run sideways, and the tray grows down the
+     left as far as it needs (not sticky, or a long tray's foot would be out of reach) */
+  flex: 0 0 240px; min-width: 0;
   margin-top: 18px; padding: 8px; border: 1px solid #dbe2ea; border-radius: 8px; background: #fff; font-size: 12.5px;
   transition: border-color .12s, background .12s;
 }
@@ -1148,13 +1150,14 @@ body { background: #f6f8fb; }
 .hub-tray-type { display: flex; justify-content: space-between; gap: 6px; font-size: 11.5px; color: #64748b; padding: 2px 2px 3px; border-bottom: 1px solid #eef1f6; }
 .hub-tray-type .rv-ref { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hub-tray-item {
-  display: flex; align-items: center; gap: 6px; padding: 4px 4px; margin-top: 3px; border-radius: 5px;
-  border: 1px solid #e2e8f0; background: #f8fafc; cursor: grab; user-select: none;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; padding: 4px 4px; margin-top: 3px; border-radius: 5px;
+  border: 1px solid #e2e8f0; background: #f8fafc; cursor: grab; user-select: none; min-width: 0;
 }
 .hub-tray-item:hover { border-color: #93c5fd; background: #fff; }
+.hub-tray-item.is-sel { border-color: #2563eb; background: #eff6ff; }
 .hub-tray-item.is-dragging { opacity: .4; }
 .hub-tray-grip { font-size: 16px; color: #94a3b8; }
-.hub-tray-ref { font-weight: 600; }
+.hub-tray-ref { font-weight: 600; overflow-wrap: anywhere; }
 .hub-tray-qty { font-weight: 600; color: #6d28d9; }
 @media (max-width: 900px) { .hub-body { flex-direction: column; } .hub-tray { position: static; flex-basis: auto; width: 100%; } }
 @media (prefers-reduced-motion: reduce) { .hub-tray { transition: none; } }
