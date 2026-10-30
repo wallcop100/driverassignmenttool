@@ -1,7 +1,9 @@
-import { useMemo, useState } from 'react';
-import { PARTS, combine, resolveSpec } from '../engine.js';
+import { useMemo, useState, useSyncExternalStore } from 'react';
+import { NO_SUPPLY, allParts, atCurrent, checkOf, combine, resolveSpec, sharedSupply } from '../engine.js';
+import { onSharedParts, sharedSnapshot } from '../catalogue.js';
+import SharedCheck, { ReportSuggestion } from './SharedCheck.jsx';
 import PresetEditor, { draftFrom, draftFromPart, toPreset } from './PresetEditor.jsx';
-import { autoFillable, currentOptions, fillFromSpec, fmt } from '../typeFaults.js';
+import { autoFillable, currentOptions, fillFromSpec, fmt, fromShared } from '../typeFaults.js';
 
 // Onboarding a project to Lighting DesignDB V4.6. Every driver ElementType on
 // the job states none of the ten attributes the checks run on, so nothing here
@@ -25,12 +27,13 @@ const stepFor = (t) => {
     t,
     spec,
     part,
-    supply: spec?.supply ?? null,
+    supply: spec?.supply ?? (part?.kind === 'dcdc' ? sharedSupply(part) : null),
     currentMa: opts.length ? String(Math.round(opts[0].a * 1000)) : '',
   };
 };
 
 export default function SetupWizard({ model, presets, dispatch, onClose, only }) {
+  const parts = allParts();   // the datasheets, then any shared additions
   // Only the types this walk is about. From the types page that is the ones in
   // use - a library of forty parts nobody has placed is not what you came to
   // fill in - and the caller says so rather than the wizard guessing.
@@ -38,8 +41,10 @@ export default function SetupWizard({ model, presets, dispatch, onClose, only })
     () => (only ? model.inventory.filter((t) => only.has(t.typeRef)) : model.inventory),
     [model.inventory, only],
   );
-  const steps = useMemo(() => inventory.map(stepFor), [inventory]);
-  const auto = useMemo(() => autoFillable(inventory, resolveSpec), [inventory]);
+  // a check of a shared part changes what can be filled without asking
+  const sharedSet = useSyncExternalStore(onSharedParts, sharedSnapshot);
+  const steps = useMemo(() => inventory.map(stepFor), [inventory, sharedSet]);
+  const auto = useMemo(() => autoFillable(inventory, resolveSpec), [inventory, sharedSet]);
   const pending = auto.ready.filter((r) => !presets[r.t.typeRef]);
   const [i, setI] = useState(0);
   const [draft, setDraft] = useState(null);
@@ -53,22 +58,25 @@ export default function SetupWizard({ model, presets, dispatch, onClose, only })
   const picked = choice[key] ?? {};
   // What the name resolved to, unless the user has said otherwise. `undefined`
   // means untouched, so the match stands; an empty string means they cleared it.
-  const part = PARTS.find((p) => p.name === picked.part) ?? (picked.part == null ? step.part : null);
+  const part = parts.find((p) => p.name === picked.part) ?? (picked.part == null ? step.part : null);
   const psu = picked.psu == null
     ? step.supply
-    : (PARTS.find((p) => p.name === picked.psu) ?? null);
+    : (parts.find((p) => p.name === picked.psu) ?? null);
   const currentMa = picked.currentA ?? step.currentMa;
   const spec = part ? combine(part, part.kind === 'dcdc' ? psu : null) : null;
   const needsPsu = part?.kind === 'dcdc';
   const needsCurrent = spec?.powerType === 'CC' && !(spec.minA != null && spec.minA === spec.maxA);
-  const ready = !!spec && (!needsPsu || psu) && (!needsCurrent || Number(currentMa) > 0);
+  const unchecked = [part, needsPsu ? psu : null].filter((p) => checkOf(p) === 'unchecked');
+  const ready = !!spec && (!needsPsu || psu || picked.psu === NO_SUPPLY) && (!needsCurrent || Number(currentMa) > 0);
 
+  // a shared part is a suggestion once two people agree, and a question until then
+  const tag = (p) => (!p.shared ? '' : checkOf(p) === 'unchecked' ? ' - to check' : ' - suggested');
   const set = (patch) => setChoice({ ...choice, [key]: { ...picked, ...patch } });
 
   // What the tool would write for this type: the datasheet's values, the node
   // list the part defines, and the Ref kept exactly as the DesignDB has it.
   const proposed = () => {
-    const d = draftFromPart(part, needsPsu ? psu : null);
+    const d = draftFromPart(atCurrent(part, needsCurrent ? Number(currentMa) / 1000 : null), needsPsu ? psu : null);
     return toPreset({
       ...d,
       typeRef: step.t.typeRef,
@@ -79,7 +87,7 @@ export default function SetupWizard({ model, presets, dispatch, onClose, only })
   };
 
   const accept = () => {
-    dispatch({ type: 'SET_PRESET', preset: { ...proposed(), origin: 'datasheet' } });
+    dispatch({ type: 'SET_PRESET', preset: { ...proposed(), origin: fromShared(spec) ? 'shared' : 'datasheet' } });
     setDraft(null);
     if (i < steps.length - 1) setI(i + 1);
   };
@@ -141,8 +149,8 @@ export default function SetupWizard({ model, presets, dispatch, onClose, only })
                 <select className="form-select form-select-sm" value={part?.name ?? ''}
                   onChange={(e) => set({ part: e.target.value, psu: '', currentA: '' })}>
                   <option value="">Not one of these…</option>
-                  {PARTS.filter((p) => p.kind !== 'supply').map((p) => (
-                    <option key={p.name} value={p.name}>{p.name}</option>
+                  {parts.filter((p) => p.kind !== 'supply').map((p) => (
+                    <option key={p.name} value={p.name}>{p.name}{tag(p)}</option>
                   ))}
                 </select>
                 {step.part && !picked.part && (
@@ -153,11 +161,12 @@ export default function SetupWizard({ model, presets, dispatch, onClose, only })
               {needsPsu && (
                 <label className="fld sw-part">
                   <span className="fld-col">On which supply?</span>
-                  <select className="form-select form-select-sm" value={psu?.name ?? ''}
+                  <select className="form-select form-select-sm" value={picked.psu === NO_SUPPLY ? NO_SUPPLY : psu?.name ?? ''}
                     onChange={(e) => set({ psu: e.target.value })}>
                     <option value="">Choose…</option>
-                    {PARTS.filter((p) => p.kind === 'supply').map((p) => (
-                      <option key={p.name} value={p.name}>{p.name}</option>
+                    <option value={NO_SUPPLY}>None - supplied elsewhere</option>
+                    {parts.filter((p) => p.kind === 'supply').map((p) => (
+                      <option key={p.name} value={p.name}>{p.name}{tag(p)}</option>
                     ))}
                   </select>
                   <span className="fld-ds">it sets the voltage and caps the watts</span>
@@ -177,9 +186,20 @@ export default function SetupWizard({ model, presets, dispatch, onClose, only })
                 </label>
               )}
 
+              {unchecked.map((p) => (
+                <SharedCheck key={p.name} part={p} />
+              ))}
+
               {ready ? (
                 <div className="sw-preview">
-                  <div className="fld-sec">This writes</div>
+                  <div className="fld-sec">This writes
+                    {fromShared(spec) && !unchecked.length && (
+                      <span className="sw-sug" title="Not from a spec page: other projects use these values, agreed by two people">
+                        <span className="material-icons">auto_awesome</span>Suggested
+                        <ReportSuggestion what={part.name} />
+                      </span>
+                    )}
+                  </div>
                   <table className="table table-sm mb-0">
                     <tbody>
                       {[
@@ -237,7 +257,8 @@ export default function SetupWizard({ model, presets, dispatch, onClose, only })
               onClick={() => { setI(i - 1); setDraft(null); }}>Back</button>
             <button className="btn btn-sm btn-outline-secondary" disabled={i >= steps.length - 1}
               onClick={() => { setI(i + 1); setDraft(null); }}>Skip</button>
-            <button className="btn btn-sm btn-primary" disabled={!ready} onClick={accept}>
+            <button className="btn btn-sm btn-primary" disabled={!ready || unchecked.length > 0} onClick={accept}
+              title={unchecked.length ? 'A shared part needs a second person to check it first' : undefined}>
               {i < steps.length - 1 ? 'Use this, next' : 'Use this'}
             </button>
           </div>

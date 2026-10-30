@@ -1,29 +1,109 @@
 # driverassignmenttool — state
 
-Updated: 2026-10-27
+Updated: 2026-10-30
 
 <!-- Now / Next / Blocked are rewritten in place and never grow. Finish something, delete the
      line. Only Log appends. Format: /srv/projects/FORMAT.md -->
 
 ## Now
 
-The app side of self-hosting is shipped (`main` 54deb0c, #9, 2026-10-27): companion probe, sent bug
-reports, build names and badge. `dat-autodeploy.timer` keeps Connected on Pages' build. The host side, `/data/projects/dat_bridge`, is live on
+`main` is 86b4ae8 (#13, 2026-10-27), shipping #10–#12: the estimate rework, forced driver types and
+E/Em own lines. The self-hosting app side (#9) has the companion probe, sent bug reports, build
+names and badge. `dat-autodeploy.timer` keeps Connected on Pages' build. The host side, `/data/projects/dat_bridge`, is live on
 `drivers.erikrees.co.uk` and `drivers-dev.wallcop.org`. Reports land in datajoin (#19 live
 2026-10-27).
 
 ## Next
 
 1. n8n overlay sync (plan §7): not built; needs the read/save gateway actions in datajoin first.
+2. AUSTHZ shared driver parts: the app side is in `dev` (#15, #16, #17 → 307b9c9). datajoin is live
+   with it (#22, #23 → 6c13c5a, deployed 2026-10-29 12:05). dat_bridge `shared-parts` still has to be
+   deployed before shipping `dev` to `main`. Resolve AUSTHZ,
+   WNUC6N, MBVCAZ, MBTBA2 and SSCMMX once on prod. Then have Erik
+   run datajoin `oneoff/dat-research-2026-10-28/seed.py dev`, check on drivers-dev, then `prod`.
+3. Ship `dev` to `main`, then resolve the 7 reports fixed in #14.
 
 ## Blocked / needs Erik
 
-Nothing.
 
 ## Log
 
+- 2026-10-30: #20 merged to `dev` (eaabc08), fixing WLN3JW (BoM on the assessment and in the hub header; `bom()` in recipe.js), RRKMER (type cards wrap the name; usage line removed) and ASJ33S (Add stays in the card). The uncommitted BoM work in this checkout went into #20 and is kept as a stash. All 10 DAT reports are resolved; each fix reaches prod with the next ship from `dev` to `main`.
+- 2026-10-30: #18 merged to `dev`. #19 (`shared-check-card`) merged to `dev`: it splits shared parts the PS&R way. A suggestion is an agreed value shown inline under the field as "✨ Suggested: X" (Material `auto_awesome`) with a flag button that files a bug report anchored on it. The Driver attributes wizard marks parts "suggested" / "to check" and its "This writes" header shows Suggested + flag once the part is checked. An unchecked value is never offered: it is only asked about in the purple card, which compares it with its datasheet ("These look wrong") and asks "Are these ratings right for X?". The word "shared" and the source link are gone. `conflicts()` is in catalogue.js and tested. Verified in Playwright against a mocked catalogue.
+## 2026-10-30
+
+- PR #18 to `dev`: the bug reporter is now companion-kit 1.1.1 (api.github.com tarball + `.npmrc` token), with the once-per-tab opened ping. Tests and build pass; checked in a browser against a mocked companion. CI green once Erik set the `COMPANION_KIT_TOKEN` repo secret.
+
+## 2026-10-29
+
+ASJ33S: on "Add a driver to HUB-X" the Add button spilled out of narrow cards. Two causes: the
+button padding sat on the wrapper span, and the usage text could not shrink. Now the usage text
+truncates first, with the full list in its title. Checked at 1920 px and at the 280 px minimum card
+width. WLN3JW: a "Bill of materials" (`Bom.jsx` over `recipe.bom()`) lists each type's driver part,
+its supply and the default junction boxes (`defaultJboxes`, moved into `recipe.js`). On the
+assessment it counts the estimate; in a hub's assignment header it is a dropdown counting the hub's
+drivers, without feed provisions. Junction boxes edited per module in the layout are not counted.
+Not committed.
+
+- VMNW7Y: the hub layout hears Del (selection back to the tray, a layout undo step) and Ctrl+C /
+  Ctrl+V (an ADD_DRIVER per copied type, placed just after the original through `pasting` in the
+  redraw effect). Shift-click multi-select already worked; the hint line now names all four.
+- MNBJ6W: "None - supplied elsewhere" (`NO_SUPPLY`) for a DC/DC driver's supply in New type and
+  the setup wizard. The type is then the driver alone, with its watts left blank.
+- Shared parts now also carry `sizeMm`, `jboxes` and a DC/DC driver's `psu`, through the share form,
+  the check card, and datajoin `_dat_part` (branch `dat-parts`; its test is written but not run here,
+  because docker was refused and the host has no `mcp`). `checked(part, key)` is the only reader. It
+  fills a datasheet gap from an agreed amendment and never overrides the datasheet. Amendments are now
+  voted on in the preset editor. Type attributes were already shared, but only on an explicit "Share…".
+  A shared size shows as "suggested" in the layout and still goes into the patch. "Fill in all" pairs
+  a DC/DC driver with its agreed supply. datajoin `test_psr_app.py`: 55 pass. It was run with a stub
+  `mcp` module (`scratchpad/run_dat.py`), because docker and venv are unavailable here. The share
+  form was checked in the browser against a mocked companion: the POST carries
+  `sizeMm`/`jboxes`/`psu`.
+  Merged to `dev` as #17 (307b9c9). The datajoin side is #23 (6c13c5a), autodeployed.
+
+## 2026-10-28
+
+- Shared parts carry no chip in the part list or dropdowns any more (Erik's call). The check card is
+  the only sign of one. The Origin chip on a filled value says "suggested".
+- Shared parts are checked by a second person, PS&R's way (suggestion_votes, `_tally`). Sending is
+  the sender's yes; `checkOf()` in `catalogue.js` says confirmed / agreed (2 yes from 2 origins) /
+  yours / unchecked, and a newer "no" asks again. `SharedCheck` asks Yes / No / Not sure in the
+  editor and the setup wizard. An unchecked part is never filled by "Fill in all" or "Use this".
+  Parts can carry per-current `windows` (TCI MP 32 is 19W/54fV at 350mA, 32W/46fV at 700mA),
+  applied by `atCurrent()` in faults, fixes, fills and the editor. SetupNotice now flags in-use types
+  a datasheet or checked part disagrees with (`disagreeing()`). 28 researched parts are ready as a
+  seed in datajoin (origin `research`, with a source link). Uncommitted.
+- Four more reports, uncommitted on `feat/shared-parts` (already merged as #15): WNUC6N wording
+  "no attributes filled in"; MBVCAZ the setup offer says "in the DesignDB" and counts types filled
+  here awaiting the patch (`engine.filledHere`); MBTBA2 a line whose fittings differ in size is packed
+  fitting by fitting (`engine.packLine`, first-fit decreasing onto outputs, then outputs onto
+  drivers) instead of every fitting counting as the largest, and its working shows a card per fitting type and per output (what is on it, volts and watts summed against the limits, why nothing more fits); SSCMMX the line's driver type select moved behind a ⋮
+  "Change driver type" (still shown when forced). KWZZDH left open: needs the K6002 data checked.
+  352 tests green, build clean, not clicked through.
+
+- New reports: KWZZDH duplicate LinkRef K6002 now names the rows and differing columns (data not
+  checked: Kaizen was down); a crash before INIT carries the host's context. YMD8JN the multi-run
+  watts bound counted watts, not whole fittings (10 x 30W on 100W = 4 drivers, said 3); working says
+  fittings are never split. U5EN7Q: the working's Fittings step now names the PositionTypes (aca899f). Report data: trail now carries each click's
+  debug areas, the app's own dialogs are captured, estimate lines/options are tagged; datajoin's
+  listing showed every DAT trail as null and hid estimate/patch (fixed on `dat-parts`).
+- AUSTHZ, shared driver parts (scope: parts only; trust: live as observed). datajoin `dat_parts`
+  table + `GET|POST /gateway/dat/parts`; bridge `companion/parts` (20 r/min, 8k body); app
+  `setSharedParts` in catalogue.js, shared chip, amendments offered beside the datasheet, Share form
+  under the type editor, origin `shared` in Review. 351 tests green, build clean, clicked through
+  with a mocked companion. Not deployed. Docs: `docs/companion.md`.
+
+- Worked the 8 open `dat` reports (PR to `dev`; reports resolved once on prod):
+  B3TPLM a pending fix clears its type's "to check" flags; FTQH78 bug pip counts unsent only, menu
+  gets "Send N unsent"; 6QSCLN types page goes back to the page that opened it; TZY2VC working is a
+  dialog, one at a time; MEBAP4 `.dp-list` no longer clips row menus; RAJ9XJ "Own line" is stored
+  per set, not per hub; FTGR6Z embed parse failure shows the crash card with Send, and says "data
+  from DataJoin" not "CSV". AUSTHZ (shared type catalogue via companion) not started.
+
 ## 2026-10-27
 
+- Shipped `dev` to `main` (#13, 86b4ae8); the Pages deploy run succeeded.
 - Own line per PositionType (merged to `dev` in #12). A PositionTypeRef suffixed `E` or `Em`, case-sensitive (the emergency variant, e.g. `B02wE`), is taken out of a bundled estimate line onto its own line by default. Any type can be toggled in or out from the row's ⋮ menu (`OWN_LINE`, `state.ownLine`, saved with the session; engine `isOwnLine`). This only matters while "Fitting types" is not kept separate per driver. 347 tests green, build clean; not clicked through.
 - Force a driver type per estimate line (merged to `dev` in #12). There is a "Driver type" select on each line. `FORCE_TYPE` stores the choice in `state.forcedTypes`, keyed by zone and line key, and it is saved with the session. The engine sizes the forced type even when it does not match the fittings, and flags it as `mismatch` (a red step and a "⚠ forced" chip). If the type cannot be sized, it keeps the automatic pick and reports `forcedIssue`. The working still shows the automatic pick as an untaken branch. 346 tests green, build clean, clicked through on HUB-A.
 - Estimate working with several ControlGroups (merged to `dev` in #12). ControlGroups now always sit on separate outputs. An output is dimmed as one, so the per-output box is locked on and `prefs.nodeControlGroup` is gone. The working shows one step per group or per fitting type: "qty ÷ per = N outputs". After those comes "Drivers = max(outputs ÷ n, W ÷ usable W)", and a new `outputs` limit chip. Each line also lists the driver types it compared and why each lost (`considered`, using the same order as the ranking). Clicked through on demo HUB-A. 344 tests green, build clean. Erik turned down the vertical trace and kept the left-to-right row. Wherever the engine chose, the row now shows a fork: the options stacked in one column, the taken one solid and the others dashed. The forks are driver type, the tightest per-driver limit, each group, and enough drivers for both outputs and watts. "Prefer single output" became "Pick by": Single output, Fewest drivers or Spare outputs (`prefs.pickBy`, `PICK_BY` in the engine). Emergency stock always loses, and the reason a type lost comes from the same rules. 345 tests green.

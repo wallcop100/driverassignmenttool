@@ -48,9 +48,11 @@ npm run build                   # -> dist/
   never leaving the browser is a real property of a tool handling clients' design data, not a
   convenience. A backend would add deployment surface for no benefit — parsing, validation and
   bin-packing are pure functions over a few hundred rows. The one exception is the optional
-  companion (`src/companion.js`): the app must stay complete without it, and only a bug report the
-  person chooses to send leaves the browser, built from allowlists in `remoteReport()`. Never send
-  a CSV, the session, or any free text from the screen.
+  companion (`src/companion.js`): the app must stay complete without it, and only what the person
+  chooses to send leaves the browser: a bug report built from allowlists in `remoteReport()`, or a
+  datasheet driver part they share (`partFromDraft` in `PresetEditor.jsx`), or their Yes/No/Not sure
+  check of someone else's (`SharedCheck.jsx`). Never send a CSV, the
+  session, or any free text from the screen.
 - **`src/engine.js` stays plain exported functions over a `model`** — no classes, no internal mutable
   state, no singleton. That is exactly how `test/engine.test.mjs` uses them: build a synthetic model,
   assert on the output, no mocking. An OO layer would be pure indirection.
@@ -84,7 +86,7 @@ npm run build                   # -> dist/
 | `src/catalogue.js` | 34 driver parts transcribed from the Driver Specs page group |
 | `src/components/` | ~30 components; `ImportScreen`, `Landing`, `ZonePage`, `Tray`, `DriverBin`, `ReviewModal` are the spine |
 | `src/persist.js` | the only persistence — session autosave to localStorage, offered back as "Resume" |
-| `src/companion.js` | probes `./companion/capabilities` once; null on Pages |
+| `src/companion.js` | probes `./companion/capabilities` once; null on Pages. Reports and the shared parts catalogue |
 | `src/build.js`, `src/buildNames.json` | build commit, channel and name (stamped by `vite.config.js`), shown as the bottom-right badge |
 | `test/` | `node:test`, no Jest/Vitest/jsdom — the engine and reducer are pure and need no DOM |
 | `docs/screens.mjs`, `docs/shoot.mjs` | re-render every surface and retake screenshots in one pass |
@@ -146,3 +148,14 @@ node docs/hub-layout-shots.mjs
 - **For real datasets the deciding constraints are ControlGroup and capacity.** CC/CV is a trivial
   eyeball, CV voltage is a no-op (all 24 V) and CC current is unpopulated — so surfacing those two
   loudly and quieting the rest is deliberate, not an oversight (2026-07-06).
+- **Shared parts reach the engine through module state in `src/catalogue.js`** (`setSharedParts`),
+  not a parameter, because 36 call sites read the catalogue. `allParts()` is the list; App
+  re-renders on a change via `onSharedParts`. A test that sets shared parts must clear them with
+  `setSharedParts([])` or it leaks into the next (2026-10-28).
+- **A shared part's checks belong to one version (`rev`, a hash of the stored part).** Any amendment
+  starts the votes again, so a part edited after two people agreed it is unchecked once more and
+  "Fill in all" skips it until someone checks it again. That is deliberate (2026-10-28).
+- **A shared size, box count or supply is read only through `checked(part, key)`** in
+  `src/catalogue.js`. Reading `part.sizeMm` directly would draw an unchecked size, or miss an agreed
+  amendment that fills a datasheet part's gap. An amendment never overrides a value the datasheet has.
+  A shared size reports its origin as `shared` ("suggested"), and the patch treats it like a datasheet size (2026-10-29).

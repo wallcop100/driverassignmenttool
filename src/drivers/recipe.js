@@ -20,6 +20,10 @@
 //   children   the DB's child Elements, laid out by the house rule (not stored)
 //   suggested  the datasheet pair the name resolves to
 //   wrapper    nothing to go on
+import { checked, sharedSize } from '../catalogue.js';
+
+// Where a size off the catalogue came from: the spec page, or a part someone shared.
+const sheetOrigin = (p) => (checked(p, 'sizeMm') ? (sharedSize(p) ? 'shared' : 'datasheet') : 'missing');
 import { parseParams, formatParams } from '../core/params.js';
 
 export const GAP = 5;
@@ -140,8 +144,8 @@ export function partsFor({ wrapper, children = [], types = {}, resolveSpec = () 
       for (let i = 0; i < Math.max(1, Math.round(c.quantity ?? 1)); i += 1) {
         parts.push({
           role, roleOrigin, typeRef: c.typeRef, label: part?.code ?? t.name ?? c.typeRef,
-          size: own?.[0] > 0 && own?.[1] > 0 ? own : part?.sizeMm ?? null,
-          sizeOrigin: own?.[0] > 0 && own?.[1] > 0 ? 'db' : part?.sizeMm ? 'datasheet' : 'missing',
+          size: own?.[0] > 0 && own?.[1] > 0 ? own : checked(part, 'sizeMm'),
+          sizeOrigin: own?.[0] > 0 && own?.[1] > 0 ? 'db' : sheetOrigin(part),
         });
       }
     }
@@ -152,9 +156,9 @@ export function partsFor({ wrapper, children = [], types = {}, resolveSpec = () 
   if (spec?.driver && spec?.supply) {
     const parts = [
       { role: 'Driver', roleOrigin: 'datasheet', typeRef: null, label: spec.driver.code ?? spec.driver.name,
-        size: spec.driver.sizeMm ?? null, sizeOrigin: spec.driver.sizeMm ? 'datasheet' : 'missing' },
+        size: checked(spec.driver, 'sizeMm'), sizeOrigin: sheetOrigin(spec.driver) },
       { role: 'PSU', roleOrigin: 'datasheet', typeRef: null, label: spec.supply.code ?? spec.supply.name,
-        size: spec.supply.sizeMm ?? null, sizeOrigin: spec.supply.sizeMm ? 'datasheet' : 'missing' },
+        size: checked(spec.supply, 'sizeMm'), sizeOrigin: sheetOrigin(spec.supply) },
     ];
     return { source: 'suggested', parts: houseArrange(nameSpaces(parts)) };
   }
@@ -162,6 +166,40 @@ export function partsFor({ wrapper, children = [], types = {}, resolveSpec = () 
 }
 
 // ---- junction boxes, as spaces on the driver Element --------------------------
+
+// How many junction boxes a driver brings before anybody edits it. A constant
+// voltage run is broken out at a box per output, so a 4-output CV driver arrives
+// with 4. Constant current is a home run per output straight to the fitting, so
+// it brings none.
+export function defaultJboxes(spec, type) {
+  const told = checked(spec?.driver ?? spec, 'jboxes');   // a checked shared count wins
+  if (told != null) return told;
+  const power = spec?.powerType ?? type?.powerType ?? null;
+  if (power !== 'CV') return 0;
+  return spec?.outputs ?? type?.nodes?.length ?? type?.outputs ?? 1;
+}
+
+// What a set of drivers is bought as: per type, its driver part and its supply,
+// and the junction boxes it brings. A type no datasheet matches is listed under
+// its own name, so nothing drops out of the count.
+export function bom(counts, inventory, resolveSpec) {
+  const rows = new Map();
+  const add = (kind, item, n) => {
+    if (!n) return;
+    const r = rows.get(`${kind}|${item}`) ?? { kind, item, qty: 0 };
+    r.qty += n;
+    rows.set(`${kind}|${item}`, r);
+  };
+  for (const [typeRef, n] of counts) {
+    const t = inventory.find((x) => x.typeRef === typeRef);
+    const spec = resolveSpec(t?.name || typeRef);
+    const part = spec?.driver ?? spec;
+    add(part ? 'driver' : 'unmatched', part?.name ?? (t?.name || typeRef), n);
+    if (spec?.supply) add('supply', spec.supply.name, n);
+    add('jbox', 'Junction box', n * defaultJboxes(spec, t));
+  }
+  return [...rows.values()];
+}
 
 // Stacked down the right of the parts beneath the supply, the way the drawings put them.
 export function jbSpaces(count, parts) {

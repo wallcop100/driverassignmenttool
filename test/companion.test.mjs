@@ -46,3 +46,22 @@ test('a wrong protocol or no reports feature offers nothing', async () => {
   globalThis.fetch = reply(200, 'application/json', { protocol: 'dat-companion/1', features: [] });
   assert.equal((await getCompanion('https://h/')).report, null);
 });
+
+test('the parts feature lists and adds, and a refusal comes back as its message', async () => {
+  const calls = [];
+  globalThis.fetch = async (url, init) => {
+    calls.push([String(url), init?.method ?? 'GET', init?.body]);
+    if (String(url).endsWith('capabilities')) return reply(200, 'application/json', { protocol: 'dat-companion/1', features: ['parts'] })();
+    if (init?.method === 'POST' && JSON.parse(init.body).part.name === 'x') return reply(400, 'application/json', { error: 'BAD_PART', message: 'a part needs a name' })();
+    return reply(200, 'application/json', { parts: [{ name: 'Acme Drive 100' }] })();
+  };
+  const c = await getCompanion('https://h/');
+  assert.equal(c.report, null);
+  assert.deepEqual(await c.parts.list(), { parts: [{ name: 'Acme Drive 100' }] });
+  assert.deepEqual((await c.parts.add({ name: 'Acme Drive 100' })).parts.length, 1);
+  assert.deepEqual(calls[2].slice(0, 2), ['https://h/companion/parts', 'POST']);
+  assert.deepEqual(await c.parts.add({ name: 'x' }), { error: 'a part needs a name' });
+  resetCompanion();
+  globalThis.fetch = reply(200, 'application/json', { protocol: 'dat-companion/1', features: ['reports'] });
+  assert.equal((await getCompanion('https://h/')).parts, null, 'Pages and old bridges have no parts');
+});

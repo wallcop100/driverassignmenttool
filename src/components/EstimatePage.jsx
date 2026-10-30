@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import * as api from '../api.js';
 import { compareEstimate, ESTIMATE_WARNING, isOwnLine, resolveSpec, zoneViews } from '../engine.js';
 import { effectiveDrivers } from '../state.js';
+import Bom from './Bom.jsx';
 import { openReport } from '../bugReports.js';
 import KebabMenu from './KebabMenu.jsx';
 import Tooltip from './Tooltip.jsx';
@@ -171,7 +172,10 @@ export default function EstimatePage({ state, dispatch, zone }) {
   const posTypes = new Set(rows.map((r) => r.positionType).filter(Boolean));
   // a line opens to its rows, and its rows to the arithmetic behind the count
   const [open, setOpen] = useState(() => new Set());
-  const [working, setWorking] = useState(() => new Set());
+  // one working at a time, in a dialog: several open inline was too busy (report TZY2VC)
+  const [working, setWorking] = useState(null);
+  // the driver type select stays out of the way until asked for from ⋮ (SSCMMX)
+  const [forcing, setForcing] = useState(null);
   const toggle = (set, k) => set((p) => { const n = new Set(p); if (!n.delete(k)) n.add(k); return n; });
 
   const RowTable = ({ refs }) => (
@@ -273,7 +277,13 @@ export default function EstimatePage({ state, dispatch, zone }) {
     const byOutputs = w.runList ? Math.ceil(l.outputs / n) : null;
     return (
       <div className="est-working">
-        {step('Fittings', `${amount(l.qty, l.rows)} · ${fmt(w.wPer)} W each${w.fvPer ? ` · ${fmt(w.fvPer)} V each` : ''}`)}
+        {w.fittings?.length > 1
+          ? fork(`Fittings, each whole${w.mixed ? ' and packed at its own size' : ''}`, w.fittings.map((f, i) => ({
+            key: i, taken: true, label: f.positionType || '-',
+            body: `${amount(f.qty, f.refs)} · ${fmt(f.wPer)} W each${f.fvPer ? ` · ${fmt(f.fvPer)} V each` : ''}`,
+          })))
+          : step('Fittings', `${l.positionTypes?.length ? `${l.positionTypes.join(', ')} · ` : ''}${amount(l.qty, l.rows)} · ${fmt(w.wPer)} W each${w.fvPer ? ` · ${fmt(w.fvPer)} V each` : ''}`,
+            'each one whole: never split across outputs or drivers')}
         {arr}
         {l.forcedIssue && <>{step('Forced type not used', l.forcedIssue, 'sized on the automatic pick instead', ' warn')}{arr}</>}
         {l.considered?.length > 1 && <>
@@ -294,7 +304,27 @@ export default function EstimatePage({ state, dispatch, zone }) {
           `${fmt(w.maxPowerW * w.keep)} W · ${n} output${n === 1 ? '' : 's'}${w.maxFvV ? ` · ${fmt(w.maxFvV * w.keep)} V each` : ''}`,
           `${l.name} · rated ${w.maxPowerW} W${w.maxFvV ? `, ${w.maxFvV} V` : ''}`)}
         {arr}
-        {w.runList ? <>
+        {w.packing ? fork('Packed largest first: each fitting goes on the first output with room for its volts and watts',
+          w.packing.drivers.flatMap((d) => d.outs).map((o) => {
+            const { fvCap, wCap } = w.packing;
+            const sum = (k, unit) => `${o.items.length > 1 ? `${o.items.map((it) => fmt(it[k])).join(' + ')} = ` : ''}${fmt(o[k])} ${unit}`;
+            const { least } = o;
+            const roomV = fvCap != null ? fvCap - o.fv : Infinity;
+            const roomW = wCap - o.w;
+            const why = least.fv > roomV ? `${fmt(least.fv)} V` : least.w > roomW ? `${fmt(least.w)} W` : null;
+            return {
+              key: `${o.driver}.${o.output}`, taken: true, cls: ' run',
+              label: `Driver ${o.driver}${n > 1 ? `, output ${o.output}` : ''}${o.run ? ` · ${o.run}` : ''}`,
+              body: <>
+                <div>{o.items.map((it) => `${it.pt ?? '-'}${it.q < 1 ? ` (${fmt(it.q)})` : ''}`).join(' + ')}</div>
+                {fvCap != null && o.fv > 0 && <div>{sum('fv', 'V')} of {fmt(fvCap)} V</div>}
+                <div>{sum('w', 'W')} of {fmt(wCap)} W</div>
+              </>,
+              note: why
+                ? `${fmt(roomV === Infinity ? null : roomV) ?? '-'} V, ${fmt(roomW)} W left - the smallest fitting here (${least.pt ?? '-'}) needs ${why}`
+                : 'room left, but every fitting is placed',
+            };
+          })) : w.runList ? <>
           {fork('Each group on its own outputs', w.runList.map((r) => ({
             key: r.label, taken: true, cls: ' run',
             label: r.label || '-',
@@ -306,7 +336,8 @@ export default function EstimatePage({ state, dispatch, zone }) {
             { key: 'o', taken: byOutputs >= w.byWatts, cls: ' bind', label: 'By outputs',
               body: <>{l.outputs} ÷ {n}{l.outputs % n ? ' ↑' : ''} = <b>{byOutputs}</b></> },
             { key: 'w', taken: w.byWatts > byOutputs, cls: ' bind', label: 'By driver watts',
-              body: <>{fmt(w.totalW)} W ÷ {fmt(w.maxPowerW * w.keep)} W ↑ = <b>{w.byWatts}</b></> },
+              body: <>{fmt(l.qty)} ÷ {w.perDriverW}{l.qty % w.perDriverW ? ' ↑' : ''} = <b>{w.byWatts}</b></>,
+              note: `${w.perDriverW} whole fittings per driver: ${fmt(w.maxPowerW * w.keep)} W ÷ ${fmt(w.wPer)} W` },
           ])}
         </> : fork('Per driver, the tightest limit', [
           w.perNodeFv != null && { key: 'fV', taken: l.limit === 'fV', cls: ' bind', label: 'Per output by voltage',
@@ -319,10 +350,13 @@ export default function EstimatePage({ state, dispatch, zone }) {
             body: <>{fmt(w.maxPowerW * w.keep)} W ÷ {fmt(w.wPer)} W = <b>{w.perDriverW}</b></> },
         ].filter(Boolean))}
         {arr}
-        {step('Drivers', w.runList
+        {step('Drivers', w.runList || w.packed
           ? <><b>{l.count}</b> × {l.typeRef}</>
           : <>{fmt(l.qty)} ÷ {l.perDriver}{l.qty % l.perDriver ? ' ↑' : ''} = <b>{l.count}</b></>,
-        w.runList ? `${w.runs} groups kept on separate outputs` : `${l.perDriver} per driver`, ' result')}
+        w.packing ? (n > 1
+          ? w.packing.drivers.map((d, i) => `driver ${i + 1}: ${d.outs.length} of ${n} outputs, ${fmt(d.w)} of ${fmt(w.packing.dCap)} W`).join(' · ')
+          : `one output each, within ${fmt(w.packing.dCap)} W`)
+          : w.runList ? `${w.runs} groups kept on separate outputs` : `${l.perDriver} per driver`, ' result')}
         <div className="est-usage">
           <div className="est-bar"><i style={{ width: `${Math.min(100, pct)}%` }} /></div>
           <span>{fmt(l.loadW)} W of {fmt(cap)} W usable · {pct}% loaded</span>
@@ -392,6 +426,8 @@ export default function EstimatePage({ state, dispatch, zone }) {
         {totals.byType.map(([t, n]) => <span key={t} className="est-chip"><b>{n}</b> × {t}</span>)}
       </div>
 
+      <Bom counts={totals.byType} inventory={model.inventory} />
+
       <div className="est-actions">
         <button className="btn btn-sm btn-outline-secondary" onClick={exportCsv}>Export CSV</button>
         <button className="btn btn-sm btn-primary" onClick={() => setPatchOpen(true)}
@@ -420,7 +456,7 @@ export default function EstimatePage({ state, dispatch, zone }) {
       {/* Each of these makes the estimate looser, and the count higher. Turning
           them all off gives the tightest possible answer, which is rarely the
           one to price at tender. */}
-      <aside className="est-assume">
+      <aside className="est-assume" data-debug-id="estimate-options">
         <div className="est-c-label">Keep separate</div>
         <table className="est-grid">
           <thead><tr><th /><th>per driver</th><th>per output</th></tr></thead>
@@ -509,7 +545,7 @@ export default function EstimatePage({ state, dispatch, zone }) {
               const k = `${z.zone}|${l.key}`;
               const isOpen = open.has(k);
               return (
-                <div key={l.key} className={`est-line${isOpen ? ' open' : ''}`}>
+                <div key={l.key} className={`est-line${isOpen ? ' open' : ''}`} data-debug-id="estimate-line" data-code={l.typeRef}>
                   <div className="dp-ref est-line-head" role="button" aria-expanded={isOpen} onClick={() => toggle(setOpen, k)}>
                     <span className="est-caret">{isOpen ? '▾' : '▸'}</span>
                     <span className="dp-ref-id">{l.count} × {l.typeRef}</span>
@@ -526,15 +562,29 @@ export default function EstimatePage({ state, dispatch, zone }) {
                     )}
                     <span className="dp-ref-use">{l.groupQty?.map(([g]) => g || '-').join(', ') || l.controlGroup || '-'}</span>
                     <span className="est-nrows">{l.rows.length} row{l.rows.length === 1 ? '' : 's'}</span>
+                    <KebabMenu title="Line actions" items={[{
+                      label: 'Change driver type', icon: 'swap_horiz',
+                      onClick: () => { setForcing(k); if (!isOpen) toggle(setOpen, k); },
+                    }]} />
                   </div>
                   {isOpen && (
                     <div className="est-body">
-                      <ForceType k={k} l={l} />
+                      {(forcing === k || state.forcedTypes[k]) && <ForceType k={k} l={l} />}
                       <RowTable refs={l.rows} />
-                      <div className="est-howto" role="button" onClick={() => toggle(setWorking, k)}>
-                        {working.has(k) ? '▾' : '▸'} How {l.count} was worked out
+                      <div className="est-howto" role="button" onClick={() => setWorking(k)}>
+                        ▸ How {l.count} was worked out
                       </div>
-                      {working.has(k) && <Working l={l} zone={z.zone} />}
+                      {working === k && (
+                        <div className="nt-backdrop" onClick={(e) => e.target === e.currentTarget && setWorking(null)}>
+                          <div className="fd-dialog est-working-dialog" role="dialog" aria-label="How the count was worked out">
+                            <div className="fd-head">
+                              <b>How {l.count} × {l.typeRef} was worked out</b>
+                              <button className="btn btn-sm btn-link ms-auto p-0" onClick={() => setWorking(null)}>close</button>
+                            </div>
+                            <Working l={l} zone={z.zone} />
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -544,7 +594,7 @@ export default function EstimatePage({ state, dispatch, zone }) {
               const k = `${z.zone}|${u.key}`;
               const isOpen = open.has(k);
               return (
-                <div key={u.key} className={`est-line${isOpen ? ' open' : ''}`}>
+                <div key={u.key} className={`est-line${isOpen ? ' open' : ''}`} data-debug-id="estimate-unmatched">
                   <div className="dp-ref is-off est-line-head" role="button" aria-expanded={isOpen} onClick={() => toggle(setOpen, k)}>
                     <span className="est-caret">{isOpen ? '▾' : '▸'}</span>
                     <span className="dp-ref-id">{amount(u.qty, u.rows)}</span>

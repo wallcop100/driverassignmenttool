@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { newId, reportsToMarkdown } from '../src/bugReports.js';
+import { dropSent, loadReports, newId, reportsToMarkdown } from '../src/bugReports.js';
 
 test('ids are 6 unambiguous characters and unique among saved ones', () => {
   const taken = new Set();
@@ -45,7 +45,7 @@ const local = {
   id: 'ABCDEF', at: '2026-10-27T10:00:00.000Z', note: 'wrong fit', version: '0.1.0',
   app: { screen: 'zone', zone: 'Z1', counts: { drivers: 1 } },
   dom: { element: 'td “Bedroom 3”', areas: ['tray'], dialogs: [], row: 'L-1 | Bedroom 3, Smith residence | 12.5 W', refs: ['L-1'], code: '' },
-  trail: [{ at: '2026-10-27T09:59:00.000Z', screen: 'zone', label: 'button “Bedroom 3”' }],
+  trail: [{ at: '2026-10-27T09:59:00.000Z', screen: 'zone', label: 'button “Bedroom 3”', areas: ['tray'] }],
   viewport: '1×2',
 };
 
@@ -80,7 +80,7 @@ test('a sent report never carries on-screen free text, CSV contents or extra con
   const text = JSON.stringify(r);
   for (const leak of ['Bedroom', 'Smith', 'Kitchen', 'secret', 'element']) assert.ok(!text.includes(leak), leak);
   assert.deepEqual(r.context, { systemSetId: 109833, hubRef: 'P-1', hubLabel: 'HUB A' });
-  assert.deepEqual(r.trail, [{ at: '2026-10-27T09:59:00.000Z', screen: 'zone' }]);
+  assert.deepEqual(r.trail, [{ at: '2026-10-27T09:59:00.000Z', screen: 'zone', areas: ['tray'] }]);   // the label is screen text
   assert.equal(r.id, 'ABCDEF');
   assert.equal(r.kind, 'bug');
   assert.equal(r.row.ref, 'L-1');
@@ -106,4 +106,12 @@ test('a patch report sends what the patch would change', () => {
   assert.deepEqual(remoteReport({ ...local, patch }, {}).patch, patch);
   const estimate = { typeRef: 'ET-1', count: 2, working: { perDriverW: 4 } };
   assert.deepEqual(remoteReport({ ...local, estimate }, {}).estimate, estimate);
+});
+
+test('reports the old reporter already sent are dropped once; the rest are kept', () => {
+  const m = new Map([['bugReports', JSON.stringify([{ id: 'AAAAAA', sent: true }, { id: 'BBBBBB' }])]]);
+  globalThis.localStorage = { getItem: (k) => m.get(k) ?? null, setItem: (k, v) => m.set(k, v) };
+  dropSent();
+  assert.deepEqual(loadReports(), [{ id: 'BBBBBB' }]);
+  delete globalThis.localStorage;
 });

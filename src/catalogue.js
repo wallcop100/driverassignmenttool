@@ -180,12 +180,100 @@ export const PARTS = [
 // part's key as a substring. Nothing here is anchored or exact.
 const norm = (s) => String(s ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
 
+// The shared catalogue (report AUSTHZ): parts people added through the companion,
+// beside PARTS and never in place of one. Empty on Pages. A name PARTS already
+// has is an amendment - offered beside the datasheet, never matched instead of it.
+// Rows come from other people, so only the known fields are kept, and a part
+// matches a type name containing its name or one of its aliases.
+// shortcut: module state rather than a parameter on 36 call sites; App re-renders on a change.
+const SHARED_NUM = ['maxPowerW', 'minA', 'maxA', 'outputV', 'maxFvV', 'nodeMaxLoadW', 'nodeCurrentA', 'outputs', 'addresses'];
+let shared = { all: PARTS, amends: new Map() };
+const subs = new Set();
+
+export function setSharedParts(rows) {
+  const known = new Set(PARTS.map((p) => p.name));
+  const added = [];
+  const amends = new Map();
+  for (const r of Array.isArray(rows) ? rows : []) {
+    if (typeof r?.name !== 'string' || !['CC', 'CV'].includes(r.powerType)) continue;
+    const keys = [r.name, ...(Array.isArray(r.aliases) ? r.aliases : [])].map(norm).filter((k) => k.length >= 4);
+    const p = {
+      name: r.name, powerType: r.powerType,
+      kind: ['driver', 'dcdc', 'supply'].includes(r.kind) ? r.kind : 'driver',
+      ...(typeof r.code === 'string' && { code: r.code }),
+      ...(typeof r.controlType === 'string' && { controlType: r.controlType }),
+      ...Object.fromEntries(SHARED_NUM.filter((k) => Number.isFinite(r[k])).map((k) => [k, r[k]])),
+      aliases: keys, discontinued: r.discontinued === true,
+      shared: r.tier === 'confirmed' ? 'confirmed' : 'observed',
+      re: { test: (hay) => keys.some((k) => hay.includes(k)) },
+      ...(Array.isArray(r.windows) && { windows: r.windows.filter((w) => Number.isFinite(w?.a) && Number.isFinite(w?.w)) }),
+      // the case off the datasheet, the supply a DC/DC driver runs on, and the
+      // junction boxes it brings: shared so the layout can draw it
+      ...(Array.isArray(r.sizeMm) && r.sizeMm.length === 3 && r.sizeMm.every((v) => Number.isFinite(v) && v > 0)
+        && { sizeMm: r.sizeMm }),
+      ...(Number.isInteger(r.jboxes) && r.jboxes >= 0 && r.jboxes <= 8 && { jboxes: r.jboxes }),
+      ...(typeof r.psu === 'string' && { psu: r.psu }),
+      ...(typeof r.rev === 'string' && { rev: r.rev }),
+      votes: r.votes && typeof r.votes === 'object' ? r.votes : null,
+      own: r.own === true,
+    };
+    if (known.has(p.name)) amends.set(p.name, p); else if (keys.length) added.push(p);
+  }
+  shared = { all: added.length ? [...PARTS, ...added] : PARTS, amends };
+  subs.forEach((f) => f());
+}
+
+// How far a shared part can be trusted, PS&R's rule (certainty.js): the sender's
+// own is one yes, a second person's makes it agreed, and a newer "no" asks again.
+// null for a datasheet part. Only 'unchecked' is asked about or held back.
+export function checkOf(p) {
+  if (!p?.shared) return null;
+  const v = p.votes ?? {};
+  if (p.shared === 'confirmed' || v.verdict === 'confirmed') return 'confirmed';
+  if (v.openNo) return 'unchecked';
+  if (p.own) return 'yours';
+  return v.yes >= 2 && v.origins >= 2 ? 'agreed' : 'unchecked';
+}
+
+// A size, supply or box count to use for a part: its own, else what people sent
+// for a datasheet part that lacks one. Never an unchecked one - it fills nothing.
+export function checked(p, key) {
+  if (p?.[key] != null) return checkOf(p) === 'unchecked' ? null : p[key];
+  const a = p && shared.amends.get(p.name);
+  return a?.[key] != null && checkOf(a) !== 'unchecked' ? a[key] : null;
+}
+
+/** True when the size `checked` gives came from a person, not the spec page. */
+export const sharedSize = (p) => checked(p, 'sizeMm') != null && (!!p.shared || p.sizeMm == null);
+
+/** The supply a DC/DC driver is shared with, if it names a part we know. */
+export const sharedSupply = (p) => {
+  const name = checked(p, 'psu');
+  return name ? shared.all.find((s) => s.kind === 'supply' && s.name === name) ?? null : null;
+};
+
+// A CC part rated per current (TCI's MP 32 is 19W/54fV at 350mA, 32W/46fV at
+// 700mA): its ratings at the current the design uses.
+// shortcut: exact currents only, no interpolation between windows; upgrade if a datasheet gives a curve.
+export function atCurrent(spec, a) {
+  const w = a != null && spec?.windows?.find((x) => Math.abs(x.a - a) < 0.001);
+  return w ? { ...spec, maxPowerW: w.w, maxFvV: w.fv ?? spec.maxFvV } : spec;
+}
+
+/** Every part a picker offers: the datasheets, then the shared additions. */
+export const allParts = () => shared.all;
+/** What people have sent for a datasheet part, or undefined. Never applied by itself. */
+export const sharedAmendment = (name) => shared.amends.get(name);
+/** For useSyncExternalStore: subscribe, and the snapshot that changes with the shared set. */
+export const onSharedParts = (f) => { subs.add(f); return () => subs.delete(f); };
+export const sharedSnapshot = () => shared;
+
 // Every part whose pattern appears in the text, plus a supply derived from the
 // Meanwell part number when one isn't in the catalogue by name.
 export function matchParts(elementTypeName) {
   const hay = norm(elementTypeName);
   if (!hay) return [];
-  const hits = PARTS.filter((p) => p.re.test(hay));
+  const hits = shared.all.filter((p) => p.re.test(hay));
   if (!hits.some((p) => p.kind === 'supply')) {
     const d = deriveSupply(hay);
     if (d) hits.push(d);
@@ -231,6 +319,10 @@ export function resolveSpec(elementTypeName) {
 
 // The effective spec for a DC/DC driver on a given supply. Either half alone is
 // returned as-is; only a dcdc driver takes a supply's rail and cap.
+// A DC/DC driver whose supply is chosen elsewhere, or is a central one (MNBJ6W):
+// the type is the driver alone, and the supply's watts are left for the user.
+export const NO_SUPPLY = 'none';
+
 export function combine(driver, supply) {
   if (!driver) return supply ? { ...supply, driver: null, supply } : null;
   if (driver.kind !== 'dcdc' || !supply) return { ...driver, supply: null };
@@ -259,4 +351,36 @@ export function reachableW(spec, currentA) {
     return Math.min(spec.maxPowerW ?? Infinity, currentA * spec.maxFvV * (spec.outputs ?? 1));
   }
   return spec.supply ? spec.maxPowerW : null;
+}
+
+// A shared part's ratings as rows, and where they disagree with its datasheet.
+const g = (n) => (Number.isInteger(n) ? n : +n.toFixed(2));
+
+// The ratings as the part states them, so the check is against something you can see.
+export const partRows = (p) => [
+  ['Type', `${p.powerType}${p.kind === 'supply' ? ' supply' : ''}`],
+  ['MaxPower(W)', p.maxPowerW],
+  ['Current', p.minA == null ? null : p.minA === p.maxA ? `${g(p.minA)}A` : `${g(p.minA)}–${g(p.maxA)}A`],
+  ['OutputVoltage(V)', p.outputV],
+  ['Max fV', p.maxFvV],
+  ['Outputs', p.outputs],
+  ['Addresses', p.addresses],
+  ['ControlType', p.controlType],
+  ['Per current', p.windows?.length
+    ? p.windows.map((w) => `${g(w.a * 1000)}mA ${g(w.w)}W${w.fv != null ? `/${g(w.fv)}fV` : ''}`).join(' · ') : null],
+  ['Size (mm)', p.sizeMm?.map(g).join(' × ')],
+  ['Junction boxes', p.jboxes],
+  ['Usual supply', p.psu],
+].filter(([, v]) => v != null && v !== '');
+
+// Where a shared claim disagrees with the datasheet part it amends, by row - evidence for the
+// person asked to check it. The user's own design is not compared here: that is a suggestion (PresetEditor).
+export function conflicts(part) {
+  const out = {};
+  const base = PARTS.find((b) => b.name === part.name);
+  if (base) {
+    const was = Object.fromEntries(partRows(base));
+    for (const [k, v] of partRows(part)) if (was[k] != null && String(was[k]) !== String(v)) out[k] = `datasheet: ${was[k]}`;
+  }
+  return out;
 }

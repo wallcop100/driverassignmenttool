@@ -2,9 +2,9 @@
 // module, so this runs under plain `node --test` with no DOM.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { resolveSpec } from '../src/engine.js';
+import { checkOf, resolveSpec, setSharedParts } from '../src/engine.js';
 import {
-  canFill, canReplace, currentOptions, faults, fixPreset, ratingsOf,
+  autoFillable, canFill, canReplace, currentOptions, disagreeing, faults, fixPreset, ratingsOf,
 } from '../src/typeFaults.js';
 
 const SOLO = resolveSpec('EldoLED SOLODrive 360/A at 1050mA');
@@ -31,9 +31,12 @@ test('a wattage the spec page disagrees with is attributed, not asserted', () =>
   assert.equal(faults(type({ maxPowerW: 30 }), SOLO).length, 0);
 });
 
-test('a preset is a proposal, so the DesignDB row is what gets judged', () => {
-  const t = { ...type({ maxPowerW: 30 }), designDB: type() };
-  assert.equal(faults(t, SOLO).length, 1, 'still flags the 185W underneath');
+test('a pending fix clears the flags it answers, but not its own blanks', () => {
+  const blank = type({ maxPowerW: null, powerType: null, currentA: null });
+  assert.equal(faults({ ...type({ maxPowerW: 30 }), preset: true, designDB: blank }, SOLO).length, 0);
+  assert.equal(faults({ ...type({ maxPowerW: 100 }), preset: true, designDB: blank }, SOLO).length, 0,
+    'a chosen wattage off the spec page is the user\'s answer, not a fault');
+  assert.equal(faults({ ...type({ maxPowerW: null }), preset: true, designDB: blank }, SOLO).length, 1);
 });
 
 test('fill adds only what is missing; replace overwrites what disagrees', () => {
@@ -72,4 +75,39 @@ test('choosing a current corrects the Name and never the Ref', () => {
 test('ratingsOf reads the side of the type it is given', () => {
   assert.equal(ratingsOf(type()), '185W · 1.05A');
   assert.equal(ratingsOf({ maxPowerW: 180, outputVoltageV: 24, nodeMaxFvV: 55 }), '180W · 24V · 55fV/out');
+});
+
+test('a shared part fills blanks, never overwrites, and says where it came from', () => {
+  const shared = { ...SOLO, shared: 'observed' };
+  assert.match(faults(type(), shared)[0][0], /shared catalogue says 30W/);
+  assert.equal(canReplace(type(), shared), false);
+  assert.equal(fixPreset(type({ maxPowerW: null }), shared, 'fill').origin, 'shared');
+  assert.equal(fixPreset(type(), SOLO, 'fill').origin, 'datasheet');
+});
+
+test('a shared part is checked by a second person before it fills anything, and is judged per current', () => {
+  const mp32 = {
+    name: 'TCI MP 32 HV K2', powerType: 'CC', maxPowerW: 32, minA: 0.35, maxA: 0.7, maxFvV: 46, rev: 'r1',
+    windows: [{ a: 0.35, w: 19, fv: 54 }, { a: 0.7, w: 32, fv: 46 }],
+  };
+  const t = { typeRef: 'ET-CCR-D-350-1CH-01', name: 'TCI MP 32 HV K2 - 350mA', powerType: 'CC', maxPowerW: 19,
+    currentA: 0.35, nodes: [{ name: 'OP.1' }] };
+  const one = { yes: 1, no: 0, origins: 1, openNo: false, verdict: null };
+  try {
+    setSharedParts([{ ...mp32, votes: one }]);
+    const spec = resolveSpec(t.name);
+    assert.equal(checkOf(spec), 'unchecked');
+    assert.equal(autoFillable([{ ...t, maxPowerW: null }], resolveSpec).asks[0].why, 'shared part, not yet checked');
+    assert.equal(faults(t, spec).length, 0, '19W is right at 350mA, though the headline is 32W');
+    assert.equal(fixPreset({ ...t, maxPowerW: null }, spec, 'fill', 0.35).nodeMaxFvV, 54);
+    setSharedParts([{ ...mp32, votes: { ...one, yes: 2, origins: 2 } }]);
+    assert.equal(checkOf(resolveSpec(t.name)), 'agreed');
+    assert.equal(autoFillable([{ ...t, maxPowerW: null }], resolveSpec).ready.length, 1);
+    assert.deepEqual(disagreeing([{ ...t, maxPowerW: 40 }], resolveSpec).map((x) => x.typeRef), [t.typeRef]);
+    setSharedParts([{ ...mp32, own: true, votes: { ...one, yes: 2, no: 1, origins: 3, openNo: true } }]);
+    assert.equal(checkOf(resolveSpec(t.name)), 'unchecked', 'a newer no asks again, even of the sender');
+    assert.deepEqual(disagreeing([{ ...t, maxPowerW: 40 }], resolveSpec), [], 'an unchecked part is not evidence');
+  } finally {
+    setSharedParts([]);
+  }
 });

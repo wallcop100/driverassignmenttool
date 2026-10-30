@@ -133,3 +133,76 @@ test('a CV pair gets the ref its rail implies', () => {
     'ET-CVR-D-24-2CH-01',   // the ref this pairing actually has in live data
   );
 });
+
+// The shared catalogue (AUSTHZ): parts from other people, beside the datasheets.
+test('a shared part is matched and marked, but never in place of a datasheet', async () => {
+  const { setSharedParts, allParts, sharedAmendment } = await import('../src/catalogue.js');
+  try {
+    setSharedParts([
+      { name: 'Acme Drive 100', aliases: ['ACD100'], powerType: 'CC', maxPowerW: 100, minA: 0.35, maxA: 1.05, tier: 'observed' },
+      { name: 'EldoLED SoloDrive 360/A', powerType: 'CC', maxPowerW: 33, tier: 'observed' },  // an amendment
+      { name: 'Grabs everything', aliases: ['solo'], powerType: 'CC', maxPowerW: 1 },
+      { name: 'No power type', maxPowerW: 5 }, null, 'junk',
+      { name: 'Bad numbers', powerType: 'CV', maxPowerW: 'lots', re: '.*' },
+    ]);
+    const acme = resolveSpec('Acme ACD100 at 700mA');
+    assert.equal(acme.name, 'Acme Drive 100');
+    assert.equal(acme.shared, 'observed');
+    // the datasheet comes first, so a greedy alias cannot take a known part
+    assert.equal(resolveSpec('EldoLED SoloDrive 360/A').maxPowerW, 30);
+    assert.equal(sharedAmendment('EldoLED SoloDrive 360/A').maxPowerW, 33);
+    assert.equal(allParts().filter((p) => p.name === 'EldoLED SoloDrive 360/A').length, 1);
+    assert.ok(!allParts().some((p) => p.name === 'No power type'));
+    const bad = allParts().find((p) => p.name === 'Bad numbers');
+    assert.equal(bad.maxPowerW, undefined, 'only finite numbers are kept');
+    assert.equal(typeof bad.re.test, 'function', 'a sent pattern is never used');
+  } finally {
+    setSharedParts([]);
+  }
+  assert.equal(matchPart('Acme ACD100'), null);
+  assert.equal(allParts(), PARTS);
+});
+
+// Size, boxes and a DC/DC driver's supply are shared too, and fill nothing until checked.
+test('a checked shared size, box count and supply fill a datasheet gap; an unchecked one does not', async () => {
+  const { setSharedParts, checked, sharedSupply } = await import('../src/catalogue.js');
+  const lin = PARTS.find((p) => p.name === 'EldoLED LinearDrive 720D');
+  const agreed = { yes: 2, origins: 2 };
+  const amend = { name: lin.name, powerType: 'CV', kind: 'dcdc', rev: 'r1',
+    sizeMm: [280, 30, 21], jboxes: 2, psu: 'Meanwell HLG-185-24' };
+  try {
+    setSharedParts([{ ...amend, votes: { yes: 1, origins: 1 } }]);
+    assert.equal(checked(lin, 'sizeMm'), null, 'one person is not enough');
+    assert.equal(sharedSupply(lin), null);
+    setSharedParts([{ ...amend, votes: agreed }]);
+    assert.deepEqual(checked(lin, 'sizeMm'), [280, 30, 21]);
+    assert.equal(checked(lin, 'jboxes'), 2);
+    assert.equal(sharedSupply(lin).name, 'Meanwell HLG-185-24');
+    // the layout draws it as suggested, beside the supply's datasheet size
+    const { partsFor } = await import('../src/drivers/recipe.js');
+    const r = partsFor({ wrapper: { name: 'EldoLED LinearDrive 720D & Meanwell HLG-185-24' }, resolveSpec });
+    assert.deepEqual(r.parts.map((x) => x.sizeOrigin), ['shared', 'datasheet']);
+    // and Fill in all pairs it with the agreed supply instead of asking
+    const { autoFillable, fillFromSpec } = await import('../src/typeFaults.js');
+    const auto = autoFillable([{ typeRef: 'ET-X', name: 'EldoLED LinearDrive 720D' }], resolveSpec);
+    assert.equal(auto.ready[0].spec.supply.name, 'Meanwell HLG-185-24');
+    assert.equal(fillFromSpec(auto.ready[0]).origin, 'shared');
+    const hlg = PARTS.find((p) => p.name === 'Meanwell HLG-185-24');
+    setSharedParts([{ name: hlg.name, powerType: 'CV', kind: 'supply', sizeMm: [1, 1, 1], votes: agreed }]);
+    assert.deepEqual(checked(hlg, 'sizeMm'), hlg.sizeMm, 'never over the datasheet');
+    setSharedParts([{ ...amend, votes: agreed, sizeMm: [1, 2], jboxes: 99, psu: 'Not a supply' }]);
+    assert.equal(checked(lin, 'sizeMm'), null);
+    assert.equal(checked(lin, 'jboxes'), null);
+    assert.equal(sharedSupply(lin), null, 'only a supply we know');
+  } finally {
+    setSharedParts([]);
+  }
+});
+
+test('a shared claim that disagrees with its datasheet says which rows', async () => {
+  const { conflicts } = await import('../src/catalogue.js');
+  const base = PARTS.find((p) => p.kind !== 'supply' && p.maxPowerW != null);
+  assert.deepEqual(Object.keys(conflicts({ ...base, maxPowerW: base.maxPowerW + 50 })), ['MaxPower(W)']);
+  assert.deepEqual(conflicts({ ...base }), {});
+  assert.deepEqual(conflicts({ ...base, name: 'Acme 1', maxPowerW: 60 }), {});
+});

@@ -1,10 +1,11 @@
-// In-app bug reporter, pure logic. Reports live in localStorage; the UI is
-// components/BugReporter.jsx.
+// What a DAT bug report holds. The reporter itself (pip, note, codes, send-or-keep) is
+// companion-kit's, shared with PS&R; reports live in localStorage `bugReports`.
+import { newId } from 'companion-kit';
 import { APP_CHANNEL, APP_VERSION, BUILD_COMMIT, BUILD_NAME } from './build.js';
 
+export { newId, openReport } from 'companion-kit';
+
 const KEY = 'bugReports';
-const MODE_KEY = 'bugMode';
-const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';   // no 0/O, 1/I
 const REF_RE = /\b(?:ET|E|L|P|R)[-\d][\w-]*\b/g;        // driver types, drivers, links, positions, assessment rows
 
 const read = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
@@ -14,16 +15,8 @@ export const loadReports = () => {
   try { const a = JSON.parse(read(KEY) || '[]'); return Array.isArray(a) ? a : []; } catch { return []; }
 };
 export const saveReports = (list) => write(KEY, JSON.stringify(list));
-export const loadMode = () => read(MODE_KEY) === '1';
-export const saveMode = (on) => write(MODE_KEY, on ? '1' : '0');
-
-export function newId(taken) {
-  for (;;) {
-    let id = '';
-    for (let i = 0; i < 6; i += 1) id += ALPHABET[Math.floor(Math.random() * ALPHABET.length)];
-    if (!taken.has(id)) return id;
-  }
-}
+// The old reporter kept sent reports marked `sent`; the kit keeps only what is still to send.
+export const dropSent = () => { const list = loadReports(); if (list.some((r) => r.sent)) saveReports(list.filter((r) => !r.sent)); };
 
 const clip = (t, n = 60) => { const s = String(t ?? '').replace(/\s+/g, ' ').trim(); return s.length > n ? `${s.slice(0, n - 1)}…` : s; };
 
@@ -33,16 +26,23 @@ export function describeElement(el) {
   return clip(`${el.getAttribute('role') || el.tagName.toLowerCase()} “${clip(label)}”`);
 }
 
-export function domContext(target) {
+const areasOf = (target) => {
   const areas = [];
   for (let e = target; e && e.getAttribute && areas.length < 6; e = e.parentElement) {
     const a = e.getAttribute('data-debug-id') || e.getAttribute('data-testid');
     if (a) areas.push(a);
   }
+  return areas;
+};
+
+export function domContext(target) {
+  const areas = areasOf(target);
   const tr = target?.closest?.('tr');
   const row = tr ? [...tr.cells].slice(0, 10).map((c) => clip(c.textContent, 40)).join(' | ') : '';
   const code = target?.closest?.('[data-code]')?.getAttribute('data-code') || '';
-  const dialogs = [...document.querySelectorAll('.modal.show .modal-title')].map((n) => clip(n.textContent));
+  // the app's own dialogs are role=dialog with a fixed aria-label, not Bootstrap modals
+  const dialogs = [...document.querySelectorAll('.modal.show .modal-title, [role=dialog][aria-label]:not([data-bug-reporter])')]
+    .map((n) => clip(n.getAttribute('aria-label') || n.textContent));
   // code first: it names exactly what was flagged, and flaggedRow takes the first ref it knows
   const refs = [...new Set(`${code} ${target?.textContent ?? ''} ${row}`.match(REF_RE) || [])].slice(0, 10);
   return { element: describeElement(target), areas, dialogs, row, refs, code };
@@ -52,14 +52,9 @@ export function domContext(target) {
 export const trail = [];
 export function noteClick(e, screen) {
   if (e.target?.closest?.('[data-bug-reporter]')) return;
-  trail.push({ at: new Date().toISOString(), screen, label: describeElement(e.target) });
+  trail.push({ at: new Date().toISOString(), screen, label: describeElement(e.target), areas: areasOf(e.target) });
   if (trail.length > 10) trail.shift();
 }
-
-/** Open the note on `target` without report mode (the "Report an issue" items).
- *  `extra` is merged into the report, e.g. { patch } from the Review modal. */
-export const openReport = (target, extra) =>
-  window.dispatchEvent(new CustomEvent('bug:open', { detail: { target, extra } }));
 
 export function buildReport({ note, kind, target, withWhere, app, taken, id }) {
   const r = {
@@ -144,7 +139,7 @@ export function remoteReport(r, data = {}) {
     context: pick(data.context, CONTEXT),
     ...(r.app ? { app: pick(r.app, ['screen', 'zone', 'counts']) } : {}),
     ...(r.dom ? { dom: pick(r.dom, ['areas', 'dialogs', 'refs', 'code']) } : {}),
-    ...(r.trail ? { trail: r.trail.map((t) => pick(t, ['at', 'screen'])) } : {}),
+    ...(r.trail ? { trail: r.trail.map((t) => pick(t, ['at', 'screen', 'areas'])) } : {}),
     ...(r.viewport ? { viewport: r.viewport } : {}),
     ...(row ? { row } : {}),
     ...(r.patch ? { patch: r.patch } : {}),

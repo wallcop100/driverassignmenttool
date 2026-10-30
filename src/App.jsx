@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useReducer, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useReducer, useRef, useState, useSyncExternalStore } from 'react';
 import * as api from './api.js';
 import { DomainProvider } from './core/domain.js';
 import driversDomain from './drivers/domain.js';
@@ -6,10 +6,11 @@ import HubLayoutLab from './components/HubLayoutLab.jsx';
 import PanelLayout from './lcp/PanelLayout.jsx';
 import TypesPage from './components/TypesPage.jsx';
 import ErrorBoundary from './components/ErrorBoundary.jsx';
-import BugReporter from './components/BugReporter.jsx';
+import { BugReporter, useOpened } from 'companion-kit';
 import { APP_CHANNEL, BUILD_NAME } from './build.js';
-import { remoteReport } from './bugReports.js';
+import { buildReport, domContext, noteClick, remoteReport, reportsToMarkdown } from './bugReports.js';
 import { useCompanion } from './companion.js';
+import { onSharedParts, setSharedParts, sharedSnapshot } from './catalogue.js';
 import EstimatePage from './components/EstimatePage.jsx';
 import ImportScreen from './components/ImportScreen.jsx';
 import Landing from './components/Landing.jsx';
@@ -21,6 +22,8 @@ import { clearSession, loadPrefs, loadSession, loadTypeExtras, loadTypes, savePr
 import { changeCount, diffRows, initialState, intersectionSuggestions, reducer } from './state.js';
 
 const embedded = embed.isEmbedded();
+// The host's data failing to parse is shown as a crash, so it gets the one-click report.
+const Fatal = ({ message }) => { throw new Error(message); };
 // A lab surface is asked for by name in the URL and linked from nowhere. Read
 // once at module load, so nothing in the app can navigate into one by accident.
 // Asked for by name, either in the URL or by the page that embeds the build.
@@ -45,6 +48,18 @@ export default function App({ domain = driversDomain }) {
   const [behind, setBehind] = useState(false);   // offer a reload on the notice
   const [fatal, setFatal] = useState(null);
   const companion = useCompanion();
+  // The shared catalogue, once per tab; a change to it re-renders every picker and match.
+  useSyncExternalStore(onSharedParts, sharedSnapshot);
+  useEffect(() => { companion?.parts?.list().then((r) => r && setSharedParts(r.parts)); }, [companion]);
+  useOpened(companion);
+  // the trail a report carries: its areas are sent, which the kit's own trail does not record
+  const pageRef = useRef(state.view.page);
+  pageRef.current = state.view.page;
+  useEffect(() => {
+    const click = (e) => noteClick(e, pageRef.current);
+    document.addEventListener('click', click, true);
+    return () => document.removeEventListener('click', click, true);
+  }, []);
 
   // Standalone keeps the ask-first banner. Embedded resumes silently - the frame
   // is flaky by nature, so coming back to your own work is the expected outcome,
@@ -218,13 +233,15 @@ export default function App({ domain = driversDomain }) {
   }, [lab, model]);
 
   let screen;
-  if (!model && embedded) {
+  if (!model && embedded && fatal) {
+    screen = <Fatal message={fatal} />;
+  } else if (!model && embedded) {
     // A silent blank iframe is the worst failure mode - it looks identical to a
     // broken host. Always say which of the two we are.
     screen = (
       <div className="container d-flex justify-content-center align-items-center min-vh-100">
-        <div className={`alert ${fatal ? 'alert-danger' : 'alert-secondary'} text-center mb-0`}>
-          {fatal ?? 'Waiting for the host to send this hub’s data…'}
+        <div className="alert alert-secondary text-center mb-0">
+          Waiting for the host to send this hub’s data…
         </div>
       </div>
     );
@@ -260,8 +277,10 @@ export default function App({ domain = driversDomain }) {
     screen = <Landing state={state} dispatch={dispatch} />;
   }
   // What a SENT report may look up its row in (bugReports.js remoteReport picks from it).
+  // a parse that failed never reached INIT, so the host's own context is all a crash has
+  const context = state.context ?? payload.current?.context ?? null;
   const reportData = () => ({
-    model, assignments, addedDrivers, flags: state.flags, context: state.context,
+    model, assignments, addedDrivers, flags: state.flags, context,
     mode: embedded ? `embed:${domain.id}` : 'standalone', overlay: payload.current?.overlay,
   });
 
@@ -285,7 +304,7 @@ export default function App({ domain = driversDomain }) {
       )}
       {/* the screen as the person sees it: a lab keeps the view on 'landing',
           which would send whoever reads the report to the wrong place */}
-      <ErrorBoundary context={state.context}
+      <ErrorBoundary context={context}
         where={lab && state.view.page === 'landing' ? `lab:${lab}` : state.view.page}
         send={companion?.report && ((r) => companion.report(remoteReport(r, reportData())))}>
         {screen}
@@ -296,12 +315,20 @@ export default function App({ domain = driversDomain }) {
       <span className={`build-badge${APP_CHANNEL === 'dev' ? ' is-dev' : ''}`} data-testid="build-badge">
         {APP_CHANNEL === 'dev' ? 'DEV · ' : ''}{BUILD_NAME}
       </span>
-      <BugReporter screen={state.view.page} getData={reportData}
-        getApp={() => ({
-          zone: state.view.zone,
-          counts: model ? { drivers: model.drivers.length, links: model.links.length,
-            requirements: (model.requirements || []).length, assigned: Object.keys(assignments).length } : undefined,
-        })} />
+      <BugReporter screen={state.view.page} toMarkdown={reportsToMarkdown}
+        send={companion?.report} toRemote={(r) => remoteReport(r, reportData())}
+        build={({ note, kind, target, capture, id, extra }) => ({
+          ...buildReport({ note, kind, target, withWhere: capture, id, app: {
+            screen: state.view.page, zone: state.view.zone,
+            counts: model ? { drivers: model.drivers.length, links: model.links.length,
+              requirements: (model.requirements || []).length, assigned: Object.keys(assignments).length } : undefined,
+          } }),
+          ...extra,
+        })}
+        where={(target, via) => {
+          const d = domContext(target);
+          return [state.view.page, d.dialogs.at(-1), d.areas[0], via ? `last clicked ${d.element}` : d.element].filter(Boolean).join(' · ');
+        }} />
       {state.demo && model && <Tutorial dispatch={dispatch} view={state.view} />}
     </LabelContext.Provider>
     </DomainProvider>

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { resolveSpec } from '../engine.js';
+import { checked, resolveSpec, sharedSize } from '../engine.js';
 import * as api from '../api.js';
 import { effectiveDrivers, hubElements, outRef } from '../state.js';
 import * as hl from '../hubLayout.js';
@@ -29,15 +29,7 @@ import HubTray from './HubTray.jsx';
 
 const JBOX = (n) => ({ kind: 'jbox', label: 'JUNCTION BOX', size: [80, 35, 40], ref: `jb${n}` });
 
-// How many junction boxes a driver brings before anybody edits it. A constant
-// voltage run is broken out at a box per output, so a 4-output CV driver arrives
-// with 4. Constant current is a home run per output straight to the fitting, so
-// it brings none.
-export function defaultJboxes(spec, type) {
-  const power = spec?.powerType ?? type?.powerType ?? null;
-  if (power !== 'CV') return 0;
-  return spec?.outputs ?? type?.nodes?.length ?? type?.outputs ?? 1;
-}
+export const { defaultJboxes } = recipe;
 
 const composite = (parts) => (parts.some((p) => p.kind === 'driver' && p.size)
   ? hl.composite(parts.filter((p) => p.size)) : null);
@@ -86,7 +78,8 @@ function moduleFor(driver, ctx = {}) {
       }
       const built = recipe.compose(r.parts, n);
       const origin = r.source === 'edited' ? 'edited'
-        : (r.source === 'spaces' || r.source === 'element') ? 'db' : 'datasheet';
+        : (r.source === 'spaces' || r.source === 'element') ? 'db'
+          : r.parts.some((p) => p.sizeOrigin === 'shared') ? 'shared' : 'datasheet';
       return {
         ...base,
         recipe: { ...r, scope: typed ? 'element' : 'type' },
@@ -102,12 +95,13 @@ function moduleFor(driver, ctx = {}) {
   const label = feed ? 'Feed Provision' : part?.code ?? part?.name ?? driver.typeRef;
   const sheet = feed
     ? [{ kind: 'feed', label, size: hl.FEED_SIZE, full: `${driver.typeRef}, no size stated` }]
-    : [{ kind: 'driver', label, size: part?.sizeMm ?? null, full: part?.name ?? driver.typeRef }];
-  const { size: stated, origin } = hl.resolveSize({
+    : [{ kind: 'driver', label, size: checked(part, 'sizeMm'), full: part?.name ?? driver.typeRef }];
+  const { size: stated, origin: found } = hl.resolveSize({
     edited: sizes.edited?.[driver.typeRef]?.size,
     db: sizes.db?.[driver.typeRef],
     datasheet: feed ? hl.FEED_SIZE : sheet[0].size,
   });
+  const origin = found === 'datasheet' && !feed && sharedSize(part) ? 'shared' : found;
   const isStated = origin === 'edited' || origin === 'db';
   const body = isStated
     ? [{ kind: feed ? 'feed' : 'driver', label, size: stated,
@@ -136,6 +130,7 @@ const bayDefaults = () => ({
 const LINE = {
   db: { stroke: draw.STROKE },
   datasheet: { stroke: '#64748b', strokeDasharray: '3 2' },
+  shared: { stroke: '#a78bfa', strokeDasharray: '3 2' },
   edited: { stroke: '#b7791f', strokeDasharray: '6 3' },
 };
 
@@ -267,15 +262,32 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
       // Drivers broken out of a quantity stand just after the row they came from,
       // in a bay or in the tray; anything else new waits in the tray.
       const have = new Set([...bays.flat(), ...tray].map((i) => i.ref));
+      // A pasted driver stands just after the one it was copied from.
       for (const d of drivers.filter((x) => x.zone === h && !have.has(x.ref))) {
-        const home = (d.split && [...bays, tray].find((b) => b.some((i) => i.ref === d.split))) || tray;
+        const pi = d.split ? -1 : pasting.current.findIndex((x) => x.zone === h && x.typeRef === d.typeRef);
+        const anchor = d.split ?? (pi >= 0 ? pasting.current.splice(pi, 1)[0].src : null);
+        const home = (anchor && [...bays, tray].find((b) => b.some((i) => i.ref === anchor))) || tray;
         let at = -1;
-        home.forEach((i, n) => { if (d.split && (i.ref === d.split || drivers.find((x) => x.ref === i.ref)?.split === d.split)) at = n; });
+        home.forEach((i, n) => { if (anchor && (i.ref === anchor || drivers.find((x) => x.ref === i.ref)?.split === anchor)) at = n; });
         home.splice(at < 0 ? home.length : at + 1, 0, stackFor(d));
       }
       return [h, { ...v, bays, tray }];
     })));
   }, [ctx, drivers, brokenFrom]);
+
+  // Del puts the selection back in the tray; Ctrl+C / Ctrl+V add another driver
+  // of each copied type to this hub (VMNW7Y). Heard on the window, like the arrows.
+  const clip = useRef([]);
+  const pasting = useRef([]);    // { src, typeRef, zone } waiting for its new driver
+  const shortcutRef = useRef(null);
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.target.closest?.('input, select, textarea, [contenteditable]')) return;
+      shortcutRef.current?.(e);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   // the editor and the snap chip close on a click outside them
   useEffect(() => {
@@ -537,7 +549,7 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
   // A feed with no size is drawn at a placeholder, not a datasheet figure, so it
   // is never offered to the patch: somebody has to type the real one.
   const notInDb = setTypes.filter((m) => m.size
-    && (m.sizedBy === 'edited' || (m.sizedBy === 'datasheet' && m.kind !== 'feed')));
+    && (m.sizedBy === 'edited' || m.sizedBy === 'shared' || (m.sizedBy === 'datasheet' && m.kind !== 'feed')));
   const inPatch = notInDb.filter((m) => !skip.includes(m.typeRef));
 
   // Each piece's enclosure Ref lives on its first bay; enclosures the DB holds that
@@ -554,6 +566,28 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
     : (c.includes(ref) && c.length === 1 ? [] : [ref])));
 
   const tray = cur.tray ?? [];
+
+  shortcutRef.current = (e) => {
+    const k = e.key.toLowerCase();
+    const mod = e.ctrlKey || e.metaKey;
+    if ((e.key === 'Delete' || e.key === 'Backspace') && sel.length) {
+      e.preventDefault();
+      const out = cur.bays.flat().filter((i) => sel.includes(i.ref));
+      if (out.length) edit({ bays: cur.bays.map((b) => b.filter((i) => !sel.includes(i.ref))), tray: [...tray, ...out] });
+      setSel([]);
+    } else if (mod && k === 'c' && sel.length && !window.getSelection()?.toString()) {
+      clip.current = [...sel];
+      setNotice(`Copied ${sel.length === 1 ? outRef(sel[0]) : `${sel.length} drivers`}. Ctrl+V adds another of the same type to this hub.`);
+    } else if (mod && k === 'v' && clip.current.length) {
+      e.preventDefault();
+      for (const ref of clip.current) {
+        const d = drivers.find((x) => x.ref === ref);
+        if (!d) continue;
+        pasting.current.push({ src: ref, typeRef: d.typeRef, zone: hub });
+        dispatch({ type: 'ADD_DRIVER', typeRef: d.typeRef, zone: hub });
+      }
+    }
+  };
 
   // Which bay, and where in it, a point on screen falls. Worked out from the point
   // itself, so a drop lands where it is released whether or not the drawing saw
@@ -938,6 +972,7 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
         })()}
         {count('db') > 0 && <span>{count('db')} sized in the DB</span>}
         {count('datasheet') > 0 && <span><Origin kind="datasheet" what="These sizes" />{count('datasheet')}</span>}
+        {count('shared') > 0 && <span><Origin kind="shared" what="These sizes" />{count('shared')}</span>}
         {count('edited') > 0 && <span><Origin kind="edited" what="These sizes" />{count('edited')}</span>}
         {tbcCount > 0 && <span><Origin kind="tbc" what="These Elements" />{tbcCount}</span>}
         {types.filter((m) => m.sizedBy === 'missing').map((m) => (
@@ -947,7 +982,7 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
             <Origin kind="missing" what={m.typeRef} /> {m.typeRef}
           </button>
         ))}
-        <span className="text-secondary">Hover a block for its pencil, hover a bay to resize it.</span>
+        <span className="text-secondary">Hover a block for its pencil, hover a bay to resize it. Shift-click selects several; Del takes them out, Ctrl+C then Ctrl+V adds more of the same.</span>
       </div>
 
       <div className="hub-body">
@@ -1145,7 +1180,7 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
                                 <title>
                                   {sub.kind === 'jbox'
                                     ? `Junction box allowance${p.jbStored ? ', stated on the Element' : ', not in the DB'}`
-                                    : `${sub.full ?? sub.label}${p.sizedBy === 'datasheet' ? ' (not in the DB)'
+                                    : `${sub.full ?? sub.label}${['datasheet', 'shared'].includes(p.sizedBy) ? ' (not in the DB)'
                                       : p.sizedBy === 'edited' ? ' (set here, not in the DB yet)' : ''}${tbc ? ', TBC' : ''}`}
                                 </title>
                               </g>

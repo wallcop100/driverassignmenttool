@@ -86,9 +86,14 @@ export const drivers = makeDomain({
     api.setZoneAlias(hubRef && hubLabel && hubRef !== hubLabel ? { [hubRef]: hubLabel } : {});
     api.setDriverExtras({ compositions: msg.compositions, elements: msg.elements });
     if (!msg.links?.trim() && !msg.assessment?.trim()) return api.parseEmpty(msg.focusZone, types);
-    return msg.assessment && !msg.links?.trim()
-      ? api.parseEstimate(msg.assessment, types)
-      : api.parseText(msg.form, msg.links, types, msg.assessment);
+    try {
+      return msg.assessment && !msg.links?.trim()
+        ? api.parseEstimate(msg.assessment, types)
+        : api.parseText(msg.form, msg.links, types, msg.assessment);
+    } catch (e) {
+      // the host posts data, not a file - "CSV" sent people looking for one (report FTGR6Z)
+      throw new Error(e.message.replace(/\b([\w ]+?) CSV\b/g, '$1 data from DataJoin'));
+    }
   },
 
   validate: (model, assignments, added, opts) => api.validate(assignments, added, opts),

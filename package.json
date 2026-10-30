@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "bootstrap": "^5.3.3",
+    "companion-kit": "https://api.github.com/repos/wallcop100/companionkit/tarball/4872ca0ea2afb08f833e56abdd871a382776f39a",
     "material-icons": "^1.13.12",
     "papaparse": "^5.4.1",
     "react": "^18.3.1",

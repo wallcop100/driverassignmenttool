@@ -2,7 +2,7 @@
 // states against the datasheet the type's Name matched. No JSX and no React, so
 // `node --test` can cover the judgement itself rather than only the screens
 // built on it.
-import { currentFromName, currentFromRef } from './engine.js';
+import { atCurrent, checkOf, combine, currentFromName, currentFromRef, sharedSupply } from './engine.js';
 
 export const fmt = (n) => {
   if (n == null || n === '') return null;
@@ -19,20 +19,23 @@ export const fmt = (n) => {
 // on a free-text name, so a mismatch might be the match's fault rather than the
 // data's: attribute the number to the page instead of asserting it. Each entry
 // is [what the card shows, the full sentence on hover].
-export function faults(type, spec) {
-  // Judge the design's own numbers. A preset is a proposal, and flagging it
-  // would be flagging the user's own unsaved answer back at them.
-  const t = type.designDB ?? type;
+export function faults(t, spec) {
+  // A pending fix is what the patch will write, so a type filled in is no longer
+  // "to check" (report B3TPLM). Its blanks are still flagged; its disagreements
+  // with the spec page are not - that would flag the user's own answer back at them.
+  const judgeSpec = !t.preset;
+  spec = atCurrent(spec, t.currentA);
+  const page = spec?.shared ? 'shared catalogue' : 'spec page';
   const out = [];
   if (t.maxPowerW == null) {
     out.push(['no MaxPower(W) - nothing to size against',
       'Without a max power this type cannot be checked or sized against.']);
-  } else if (spec?.maxPowerW != null && Math.abs(t.maxPowerW - spec.maxPowerW) > 0.01) {
+  } else if (judgeSpec && spec?.maxPowerW != null && Math.abs(t.maxPowerW - spec.maxPowerW) > 0.01) {
     const times = t.maxPowerW / spec.maxPowerW;
-    out.push([`${t.maxPowerW}W here · spec page says ${fmt(spec.maxPowerW)}W`,
-      `This type states ${t.maxPowerW}W. The ${spec.name} spec page says ${fmt(spec.maxPowerW)}W`
+    out.push([`${t.maxPowerW}W here · ${page} says ${fmt(spec.maxPowerW)}W`,
+      `This type states ${t.maxPowerW}W. The ${spec.name} ${page} says ${fmt(spec.maxPowerW)}W`
       + `${times >= 1.5 ? ` - ${fmt(times)}× higher, so checks against it would pass an overload` : ''}. `
-      + `If this is not a ${spec.name}, the name is what matched it.`]);
+      + `If this is not a ${spec.name}, the name is what matched it.`, 'disagrees']);
   }
   if (t.powerType == null) {
     out.push(['no CC/CV - matches no cable', 'With no declared CC/CV type this driver matches nothing.']);
@@ -41,13 +44,20 @@ export function faults(type, spec) {
       'With CurrentRange empty the driver has no declared current, so it matches no cable.']);
   } else if (t.powerType === 'CV' && t.outputVoltageV == null) {
     out.push(['no OutputVoltage(V)', 'Without an output voltage the CV check cannot run.']);
-  } else if (t.powerType === 'CC' && t.currentA != null && spec?.minA != null
+  } else if (judgeSpec && t.powerType === 'CC' && t.currentA != null && spec?.minA != null
     && (t.currentA < spec.minA || t.currentA > spec.maxA)) {
-    out.push([`${t.currentA}A · spec page range is ${spec.minA}–${spec.maxA}A`,
-      `${t.currentA}A is outside the ${spec.minA}–${spec.maxA}A the ${spec.name} spec page gives.`]);
+    out.push([`${t.currentA}A · ${page} range is ${spec.minA}–${spec.maxA}A`,
+      `${t.currentA}A is outside the ${spec.minA}–${spec.maxA}A the ${spec.name} ${page} gives.`, 'disagrees']);
   }
   return out;
 }
+
+// Types whose stated ratings a trusted spec disagrees with - a datasheet, or a
+// shared part a second person has checked. An unchecked one is not evidence.
+export const disagreeing = (types, resolveSpec) => types.filter((t) => {
+  const spec = resolveSpec(t.name || t.typeRef);
+  return spec && ![spec.driver ?? spec, spec.supply].some((p) => checkOf(p) === 'unchecked') && faults(t, spec).some((f) => f[2] === 'disagrees');
+});
 
 // One line of ratings, from whichever side of a type is being shown.
 export const ratingsOf = (t) => [
@@ -55,12 +65,6 @@ export const ratingsOf = (t) => [
   t.currentA != null ? `${fmt(t.currentA)}A` : t.outputVoltageV != null ? `${fmt(t.outputVoltageV)}V` : null,
   (t.nodeMaxFvV ?? t.nodes?.[0]?.maxFvV) != null ? `${fmt(t.nodeMaxFvV ?? t.nodes[0].maxFvV)}fV/out` : null,
 ].filter(Boolean).join(' · ');
-
-// A type can be in a dozen hubs; a card must not stretch to name them all.
-export const zoneList = (zones) => {
-  const z = [...zones].sort();
-  return z.length > 2 ? `${z[0]} +${z.length - 1}` : z.join(', ');
-};
 
 // The current the design picked out of the datasheet's range. It says so twice - 
 // in the ref and in the name - and when those disagree neither is authoritative,
@@ -81,6 +85,9 @@ export function currentOptions(t, spec) {
 
 const NAME_MA_G = /\d{2,4}\s*mA/i;
 
+// Whether a spec, or the supply half of a pair, came from the shared catalogue.
+export const fromShared = (spec) => !!(spec?.shared || spec?.supply?.shared || spec?.pairedShared);
+
 // The preset a fix would produce. `mode` is 'fill' - add only what the design
 // states nothing for - or 'replace', which also overwrites what disagrees.
 // Both go through SET_PRESET, so the result is pending and reviewable either way.
@@ -89,6 +96,7 @@ export function fixPreset(t, spec, mode, currentA) {
   const d = t.designDB ?? t;
   const take = (mine, theirs) => (mode === 'replace' ? theirs ?? mine : mine ?? theirs);
   const a = currentA ?? currentOptions(t, spec)[0]?.a ?? null;
+  spec = atCurrent(spec, a);
   // Aligning the name to the chosen current is safe; aligning the ref is not.
   const name = a != null && currentFromName(t.name) != null && currentFromName(t.name) !== a
     ? String(t.name).replace(NAME_MA_G, `${Math.round(a * 1000)}mA`)
@@ -106,7 +114,7 @@ export function fixPreset(t, spec, mode, currentA) {
     controlType: take(d.controlType, spec.controlType),
     nodeNames: d.nodes?.map((n) => n.name) ?? null,
     invented: false,
-    origin: 'datasheet',
+    origin: fromShared(spec) ? 'shared' : 'datasheet',
   };
 }
 
@@ -116,7 +124,8 @@ export const canFill = (t, spec) => !!spec && (t.maxPowerW == null || t.powerTyp
   || (spec.powerType === 'CC' && t.currentA == null)
   || (t.nodes?.[0]?.maxFvV == null && spec.maxFvV != null));
 
-export const canReplace = (t, spec) => !!spec && spec.maxPowerW != null && t.maxPowerW != null
+// A shared part only ever fills blanks: it never overwrites what the design states.
+export const canReplace = (t, spec) => !!spec && !fromShared(spec) && spec.maxPowerW != null && t.maxPowerW != null
   && Math.abs(t.maxPowerW - spec.maxPowerW) > 0.01;
 
 // Everything the datasheet can settle without asking. A type's Name matches a
@@ -130,8 +139,11 @@ export function autoFillable(inventory, resolveSpec) {
   const ready = [];
   const asks = [];
   for (const t of inventory ?? []) {
-    const spec = resolveSpec(t.name || t.typeRef);
+    let spec = resolveSpec(t.name || t.typeRef);
     const part = spec?.driver ?? spec ?? null;
+    // no supply in the Name: the one people agreed this driver is usually paired with
+    const usual = part?.kind === 'dcdc' && !spec.supply ? sharedSupply(part) : null;
+    if (usual) spec = { ...combine(part, usual), pairedShared: true };
     if (!part) { asks.push({ t, spec, why: 'no datasheet match' }); continue; }
     // A supply named on its own IS the driver - an unswitched PSU feeding a tape
     // run directly, one output, ControlType Local, which is how page 140180
@@ -139,6 +151,11 @@ export function autoFillable(inventory, resolveSpec) {
     // half of a pair, and resolveSpec has already combined the two.
     // a DC/DC driver with no supply named is a pair we cannot complete
     if (part.kind === 'dcdc' && !spec.supply) { asks.push({ t, spec, why: 'which supply?' }); continue; }
+    // one person's word: the next person checks it before it fills anything
+    if ([part, spec.supply].some((p) => checkOf(p) === 'unchecked')) {
+      asks.push({ t, spec, why: 'shared part, not yet checked' });
+      continue;
+    }
     let currentA = null;
     if (spec.powerType === 'CC') {
       const opts = currentOptions(t, spec);
@@ -161,6 +178,7 @@ export function autoFillable(inventory, resolveSpec) {
 // The preset autoFillable's `ready` entry becomes. Ratings from the datasheet,
 // the Ref and the node names left exactly as the design has them.
 export function fillFromSpec({ t, spec, currentA }) {
+  spec = atCurrent(spec, currentA);
   return {
     typeRef: t.typeRef,
     name: t.name || spec.name,
@@ -176,6 +194,6 @@ export function fillFromSpec({ t, spec, currentA }) {
     controlType: spec.controlType ?? null,
     nodeNames: spec.nodeNames ?? null,
     invented: false,
-    origin: 'datasheet',
+    origin: fromShared(spec) ? 'shared' : 'datasheet',
   };
 }

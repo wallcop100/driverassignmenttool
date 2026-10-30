@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import * as api from '../api.js';
-import { bannedNodes, driverTypes, fixNodeName, needsSetup, resolveSpec, statedAttributes } from '../engine.js';
+import { bannedNodes, driverTypes, filledHere, fixNodeName, needsSetup, resolveSpec, statedAttributes } from '../engine.js';
 import { effectiveDrivers } from '../state.js';
 import { canFill, canReplace, currentOptions, faults, fixPreset, fmt } from '../typeFaults.js';
 import FaultDialog from './FaultDialog.jsx';
@@ -39,6 +39,7 @@ export default function TypesPage({ state, dispatch, zone }) {
   const inUse = useMemo(() => driverTypes(model), [model]);
   const unset = inUse.filter((t) => statedAttributes(t) === 0).length;
   const onboarding = needsSetup(model);
+  const pending = filledHere(model, presets);
 
   // ':' is banned inside a node name. Correcting it is a rename, so it is safe
   // to do for the whole job at once - and it has to be, because a node written
@@ -93,10 +94,11 @@ export default function TypesPage({ state, dispatch, zone }) {
 
   const flagged = cards.filter((c) => c.f.length).length;
   const closeEdit = () => { setEditKey(null); setDraft(null); };
-  // Arriving from the space layout, every way out of here goes back to it.
-  const back = state.view?.from === 'layout' && zone
+  // Every way out goes back where you came from: the page that sent you, else
+  // the space layout, else the hub (report 6QSCLN).
+  const back = state.view?.back ?? (state.view?.from === 'layout' && zone
     ? { page: 'layout', zone }
-    : (zone ? { page: 'zone', zone } : { page: 'landing' });
+    : (zone ? { page: 'zone', zone } : { page: 'landing' }));
   const zoneCables = zone ? model.links.filter((l) => l.zone === zone && l.powerType).length : 0;
 
   return (
@@ -104,7 +106,7 @@ export default function TypesPage({ state, dispatch, zone }) {
       <div className="dp-head">
         <button className="btn btn-sm btn-outline-secondary d-flex align-items-center"
           onClick={() => dispatch({ type: 'SET_VIEW', view: back })}>
-          <span className="material-icons small-icon">arrow_back</span> {zone ?? 'Zones'}
+          <span className="material-icons small-icon">arrow_back</span> {back.zone ?? 'Zones'}
         </button>
         <h5 className="mb-0">{zone ? `Add a driver to ${zone}` : 'Driver types'}</h5>
         {/* Where the list came from. Embedded, the host posts the whole project's
@@ -156,9 +158,12 @@ export default function TypesPage({ state, dispatch, zone }) {
           <div>
             <b>
               {onboarding
-                ? `None of this project’s ${inUse.length} driver types have their attributes filled in`
-                : `${unset} of ${inUse.length} driver types still have nothing filled in`}
+                ? `None of this project’s ${inUse.length} driver types have their attributes filled in the DesignDB`
+                : `${unset} of ${inUse.length} driver types still have no attributes filled in`}
             </b>
+            {pending > 0 && (
+              <div className="small">{pending} filled in here, waiting on the patch to reach the DesignDB.</div>
+            )}
             <div className="text-secondary small">
               {onboarding
                 ? 'Most fill in from their datasheet in one press. The patch adds the columns if the workbook predates them.'
@@ -194,7 +199,7 @@ export default function TypesPage({ state, dispatch, zone }) {
 
       <div className="tp-grid">
         {cards.map(({ t, spec, f }) => (
-          <TypeRow key={t.typeRef} t={t} spec={spec} f={f} usage={usage.get(t.typeRef)}
+          <TypeRow key={t.typeRef} t={t} spec={spec} f={f}
             zone={zone} back={back} dispatch={dispatch} presets={presets} inventory={model.inventory}
             editing={editKey === t.typeRef} draft={draft} setDraft={setDraft}
             openEdit={() => { setEditKey(t.typeRef); setDraft(draftFrom(t)); setMenu(null); }}
@@ -235,7 +240,7 @@ export default function TypesPage({ state, dispatch, zone }) {
 }
 
 function TypeRow(props) {
-  const { t, spec, f, usage, zone, back, dispatch, presets, inventory, editing, draft, setDraft,
+  const { t, spec, f, zone, back, dispatch, presets, inventory, editing, draft, setDraft,
     openEdit, closeEdit, menuOpen, toggleMenu, closeMenu, onWarn, inHub } = props;
   const [qty, setQty] = useState(1);
   const opts = currentOptions(t, spec);
@@ -247,7 +252,7 @@ function TypeRow(props) {
   };
 
   return (
-    <TypeCard t={t} faults={f} usage={usage} onWarn={onWarn}
+    <TypeCard t={t} faults={f} onWarn={onWarn}
       className={`${editing ? 'is-editing' : ''} ${inHub ? 'is-here' : ''}`}
       below={editing ? (
         <PresetEditor draft={draft} setDraft={setDraft} inventory={inventory}

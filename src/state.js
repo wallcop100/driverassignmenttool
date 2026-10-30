@@ -120,6 +120,7 @@ export function reducer(state, action) {
         tbc: action.tbc ?? {},
         recipes: action.recipes ?? {},
         jboxes: action.jboxes ?? {},
+        ownLine: action.ownLine ?? [],
         layouts: action.layouts ?? {},
         // an estimate has no cables to assign, so it never lands on a zone
         view: action.view ?? (action.model.mode === 'estimate'
@@ -380,7 +381,8 @@ export function reducer(state, action) {
         recipes: { ...(action.saved.recipes ?? {}), ...(action.recipes ?? {}) },
         jboxes: { ...(action.saved.jboxes ?? {}), ...(action.jboxes ?? {}) },
         forcedTypes: action.saved.forcedTypes ?? {},
-        ownLine: action.saved.ownLine ?? [],
+        // the set's, like the type extras above - the hub's own copy is only a fallback
+        ownLine: action.ownLine ?? action.saved.ownLine ?? [],
         layouts: action.saved.layouts ?? {},
         context: state.context, // host context outlives a resume
         // action.view pins where to land. Embedded that is the hub the host
