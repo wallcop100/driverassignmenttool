@@ -163,3 +163,7 @@ node docs/hub-layout-shots.mjs
   `HubLayoutLab.jsx`. `ADD_DRIVER` only creates the Elements, and the placement effect takes the
   bay and index from `landing`. Without that, the drivers fall into Not placed. Bounding Lines and
   the BoM panel are viewer prefs (`prefs.bounds`, `prefs.showBom`), not per-bay layout (2026-10-30).
+- **A drag out of the Add drivers drawer listens on `window`, not on `.hub-lab`.** The drawer sinks
+  and turns off pointer events as the drag starts, so the cursor can land outside `.hub-lab` and its
+  mouseleave would cancel the drag. That is what broke it in #25. The listener hook sits above the
+  `if (!cur) return` and reaches `onDrop` through `dropRef` (2026-10-30).
