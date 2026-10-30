@@ -418,7 +418,14 @@ body { background: #f6f8fb; }
 .fld-foot { display: flex; align-items: center; gap: 8px; margin-top: 14px; }
 .fld-foot-note { font-size: 11px; color: #94a3b8; }
 /* the shared catalogue (AUSTHZ): what people sent, told apart from a spec page */
-.fld-ds.is-shared { color: #7c3aed; }
+.fld-ds.is-shared { color: #7c3aed; display: inline-flex; align-items: center; gap: 4px; }
+.fld-ds.is-shared .material-icons { font-size: 12px; text-decoration: none; }
+.sw-sug { margin-left: 8px; color: #7c3aed; display: inline-flex; align-items: center; gap: 3px; text-transform: none; letter-spacing: 0; }
+.sw-sug .material-icons { font-size: 13px; }
+.fld-sug { display: inline-flex; align-items: center; gap: 4px; }
+.sug-flag { border: 0; background: none; padding: 0; line-height: 1; color: #94a3b8; }
+.sug-flag:hover { color: #7c3aed; }
+.sug-flag .material-icons { font-size: 13px; color: inherit; }
 .share-part { margin-top: 10px; border-top: 1px dashed #dbe3ee; padding-top: 8px; }
 .share-range { display: flex; align-items: center; gap: 4px; }
 
@@ -1191,3 +1198,6 @@ body { background: #f6f8fb; }
 .shared-check table { font-size: 12px; margin: 6px 0; }
 .shared-check th { color: #6c757d; font-weight: normal; width: 110px; }
 .shared-check .sc-foot { display: flex; align-items: center; gap: 6px; }
+.shared-check .sc-warn { display: flex; align-items: center; gap: 6px; margin-top: 6px; color: #b45309; font-weight: 600; }
+.shared-check tr.is-off td { color: #b45309; }
+.shared-check .sc-off { font-weight: 600; }

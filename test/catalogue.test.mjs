@@ -198,3 +198,11 @@ test('a checked shared size, box count and supply fill a datasheet gap; an unche
     setSharedParts([]);
   }
 });
+
+test('a shared claim that disagrees with its datasheet says which rows', async () => {
+  const { conflicts } = await import('../src/catalogue.js');
+  const base = PARTS.find((p) => p.kind !== 'supply' && p.maxPowerW != null);
+  assert.deepEqual(Object.keys(conflicts({ ...base, maxPowerW: base.maxPowerW + 50 })), ['MaxPower(W)']);
+  assert.deepEqual(conflicts({ ...base }), {});
+  assert.deepEqual(conflicts({ ...base, name: 'Acme 1', maxPowerW: 60 }), {});
+});

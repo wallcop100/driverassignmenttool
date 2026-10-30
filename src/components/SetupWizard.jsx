@@ -1,7 +1,7 @@
 import { useMemo, useState, useSyncExternalStore } from 'react';
 import { NO_SUPPLY, allParts, atCurrent, checkOf, combine, resolveSpec, sharedSupply } from '../engine.js';
 import { onSharedParts, sharedSnapshot } from '../catalogue.js';
-import SharedCheck from './SharedCheck.jsx';
+import SharedCheck, { ReportSuggestion } from './SharedCheck.jsx';
 import PresetEditor, { draftFrom, draftFromPart, toPreset } from './PresetEditor.jsx';
 import { autoFillable, currentOptions, fillFromSpec, fmt, fromShared } from '../typeFaults.js';
 
@@ -69,6 +69,8 @@ export default function SetupWizard({ model, presets, dispatch, onClose, only })
   const unchecked = [part, needsPsu ? psu : null].filter((p) => checkOf(p) === 'unchecked');
   const ready = !!spec && (!needsPsu || psu || picked.psu === NO_SUPPLY) && (!needsCurrent || Number(currentMa) > 0);
 
+  // a shared part is a suggestion once two people agree, and a question until then
+  const tag = (p) => (!p.shared ? '' : checkOf(p) === 'unchecked' ? ' - to check' : ' - suggested');
   const set = (patch) => setChoice({ ...choice, [key]: { ...picked, ...patch } });
 
   // What the tool would write for this type: the datasheet's values, the node
@@ -148,7 +150,7 @@ export default function SetupWizard({ model, presets, dispatch, onClose, only })
                   onChange={(e) => set({ part: e.target.value, psu: '', currentA: '' })}>
                   <option value="">Not one of these…</option>
                   {parts.filter((p) => p.kind !== 'supply').map((p) => (
-                    <option key={p.name} value={p.name}>{p.name}</option>
+                    <option key={p.name} value={p.name}>{p.name}{tag(p)}</option>
                   ))}
                 </select>
                 {step.part && !picked.part && (
@@ -164,7 +166,7 @@ export default function SetupWizard({ model, presets, dispatch, onClose, only })
                     <option value="">Choose…</option>
                     <option value={NO_SUPPLY}>None - supplied elsewhere</option>
                     {parts.filter((p) => p.kind === 'supply').map((p) => (
-                      <option key={p.name} value={p.name}>{p.name}</option>
+                      <option key={p.name} value={p.name}>{p.name}{tag(p)}</option>
                     ))}
                   </select>
                   <span className="fld-ds">it sets the voltage and caps the watts</span>
@@ -184,11 +186,20 @@ export default function SetupWizard({ model, presets, dispatch, onClose, only })
                 </label>
               )}
 
-              {unchecked.map((p) => <SharedCheck key={p.name} part={p} />)}
+              {unchecked.map((p) => (
+                <SharedCheck key={p.name} part={p} />
+              ))}
 
               {ready ? (
                 <div className="sw-preview">
-                  <div className="fld-sec">This writes</div>
+                  <div className="fld-sec">This writes
+                    {fromShared(spec) && !unchecked.length && (
+                      <span className="sw-sug" title="Not from a spec page: other projects use these values, agreed by two people">
+                        <span className="material-icons">auto_awesome</span>Suggested
+                        <ReportSuggestion what={part.name} />
+                      </span>
+                    )}
+                  </div>
                   <table className="table table-sm mb-0">
                     <tbody>
                       {[
