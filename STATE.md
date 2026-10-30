@@ -26,9 +26,7 @@ names and badge. `dat-autodeploy.timer` keeps Connected on Pages' build. The hos
 
 ## Log
 
-### 2026-10-30 (TZUNGU)
-#22 (c53dbec) to `dev`: "Suggest a correction" in the type editor is a purple companion card, not a blue link and bare form. Swept for the same miss: suggested parts get the sparkle in the New type list; two tooltips said "shared". TZUNGU resolved. Not on prod until the next ship.
-
+- 2026-10-30: #22 (c53dbec) to `dev`: "Suggest a correction" in the type editor is a purple companion card, not a blue link and bare form. Swept for the same miss: suggested parts get the sparkle in the New type list; two tooltips said "shared". TZUNGU resolved. Not on prod until the next ship.
 - 2026-10-30: shipped `dev` to `main` (#21, 584f49d "Rose Deer"), carrying #14–#20. Autodeploy reported `ok: prod 584f49d`, and the live page's build-commit meta matches.
 - 2026-10-30: #20 merged to `dev` (eaabc08), fixing WLN3JW (BoM on the assessment and in the hub header; `bom()` in recipe.js), RRKMER (type cards wrap the name; usage line removed) and ASJ33S (Add stays in the card). The uncommitted BoM work in this checkout went into #20 and is kept as a stash. All 10 DAT reports are resolved; each fix reaches prod with the next ship from `dev` to `main`.
 - 2026-10-30: #18 merged to `dev`. #19 (`shared-check-card`) merged to `dev`: it splits shared parts the PS&R way. A suggestion is an agreed value shown inline under the field as "✨ Suggested: X" (Material `auto_awesome`) with a flag button that files a bug report anchored on it. The Driver attributes wizard marks parts "suggested" / "to check" and its "This writes" header shows Suggested + flag once the part is checked. An unchecked value is never offered: it is only asked about in the purple card, which compares it with its datasheet ("These look wrong") and asks "Are these ratings right for X?". The word "shared" and the source link are gone. `conflicts()` is in catalogue.js and tested. Verified in Playwright against a mocked catalogue.
