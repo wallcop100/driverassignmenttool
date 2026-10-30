@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import * as api from '../api.js';
 import { compareEstimate, ESTIMATE_WARNING, isOwnLine, resolveSpec, zoneViews } from '../engine.js';
 import { effectiveDrivers } from '../state.js';
+import Bom from './Bom.jsx';
 import { openReport } from '../bugReports.js';
 import KebabMenu from './KebabMenu.jsx';
 import Tooltip from './Tooltip.jsx';
@@ -424,6 +425,8 @@ export default function EstimatePage({ state, dispatch, zone }) {
         <div className="est-big">{totals.drivers}<small>driver{totals.drivers === 1 ? '' : 's'}</small></div>
         {totals.byType.map(([t, n]) => <span key={t} className="est-chip"><b>{n}</b> × {t}</span>)}
       </div>
+
+      <Bom counts={totals.byType} inventory={model.inventory} />
 
       <div className="est-actions">
         <button className="btn btn-sm btn-outline-secondary" onClick={exportCsv}>Export CSV</button>

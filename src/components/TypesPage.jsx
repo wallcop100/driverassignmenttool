@@ -199,7 +199,7 @@ export default function TypesPage({ state, dispatch, zone }) {
 
       <div className="tp-grid">
         {cards.map(({ t, spec, f }) => (
-          <TypeRow key={t.typeRef} t={t} spec={spec} f={f} usage={usage.get(t.typeRef)}
+          <TypeRow key={t.typeRef} t={t} spec={spec} f={f}
             zone={zone} back={back} dispatch={dispatch} presets={presets} inventory={model.inventory}
             editing={editKey === t.typeRef} draft={draft} setDraft={setDraft}
             openEdit={() => { setEditKey(t.typeRef); setDraft(draftFrom(t)); setMenu(null); }}
@@ -240,7 +240,7 @@ export default function TypesPage({ state, dispatch, zone }) {
 }
 
 function TypeRow(props) {
-  const { t, spec, f, usage, zone, back, dispatch, presets, inventory, editing, draft, setDraft,
+  const { t, spec, f, zone, back, dispatch, presets, inventory, editing, draft, setDraft,
     openEdit, closeEdit, menuOpen, toggleMenu, closeMenu, onWarn, inHub } = props;
   const [qty, setQty] = useState(1);
   const opts = currentOptions(t, spec);
@@ -252,7 +252,7 @@ function TypeRow(props) {
   };
 
   return (
-    <TypeCard t={t} faults={f} usage={usage} onWarn={onWarn}
+    <TypeCard t={t} faults={f} onWarn={onWarn}
       className={`${editing ? 'is-editing' : ''} ${inHub ? 'is-here' : ''}`}
       below={editing ? (
         <PresetEditor draft={draft} setDraft={setDraft} inventory={inventory}
