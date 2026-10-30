@@ -1162,12 +1162,6 @@ body { background: #f6f8fb; }
 }
 
 
-.bug-pip { position: fixed; top: 6px; left: 50%; transform: translateX(-50%); z-index: 2000; display: flex; align-items: center; gap: 2px; }
-.bug-menu { position: absolute; top: 100%; right: 0; background: var(--bs-body-bg, #fff); border: 1px solid #ccc; border-radius: 6px; display: flex; flex-direction: column; min-width: 180px; }
-.bug-menu button { background: none; border: 0; text-align: left; padding: .35rem .7rem; }
-.bug-menu button:hover:not(:disabled) { background: rgba(0,0,0,.06); }
-.bug-note { position: fixed; z-index: 2001; background: var(--bs-body-bg, #fff); border: 1px solid #999; border-radius: 6px; padding: .5rem; box-shadow: 0 4px 16px rgba(0,0,0,.3); }
-.bug-feature { background: #7c3aed; color: #fff; }
 .build-badge { position: fixed; bottom: 4px; right: 8px; z-index: 2000; pointer-events: none; font-size: 11px; color: #6c757d; }
 .build-badge.is-dev { color: #dc3545; font-weight: 600; }
 

@@ -4,6 +4,7 @@
 // Self-hosted, the same build finds it and reports are sent instead.
 //
 //   reports   POST companion/reports - one report (bugReports.js buildRemoteReport shape)
+//   opened    POST companion/opened - once per tab session (companion-kit useOpened), no body
 //   parts     GET|POST companion/parts - the shared driver catalogue (catalogue.js setSharedParts)
 //
 // Not at `./api/`: that is the embed entry for DJ 101681. Every call is relative to
@@ -36,6 +37,8 @@ function build(base, features) {
     report: features.has('reports') ? (r) => quiet(getJson(`${base}reports`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(r),
     })) : null,
+    /** Count this open (usage on projects.wallcop.org). */
+    opened: features.has('opened') ? () => quiet(getJson(`${base}opened`, { method: 'POST' })) : null,
     /** The shared catalogue: list() -> { parts } | null; add(part) -> { parts } | { error }. */
     parts: features.has('parts') ? {
       list: () => quiet(getJson(`${base}parts`)),

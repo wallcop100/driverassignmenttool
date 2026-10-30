@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { newId, reportsToMarkdown } from '../src/bugReports.js';
+import { dropSent, loadReports, newId, reportsToMarkdown } from '../src/bugReports.js';
 
 test('ids are 6 unambiguous characters and unique among saved ones', () => {
   const taken = new Set();
@@ -106,4 +106,12 @@ test('a patch report sends what the patch would change', () => {
   assert.deepEqual(remoteReport({ ...local, patch }, {}).patch, patch);
   const estimate = { typeRef: 'ET-1', count: 2, working: { perDriverW: 4 } };
   assert.deepEqual(remoteReport({ ...local, estimate }, {}).estimate, estimate);
+});
+
+test('reports the old reporter already sent are dropped once; the rest are kept', () => {
+  const m = new Map([['bugReports', JSON.stringify([{ id: 'AAAAAA', sent: true }, { id: 'BBBBBB' }])]]);
+  globalThis.localStorage = { getItem: (k) => m.get(k) ?? null, setItem: (k, v) => m.set(k, v) };
+  dropSent();
+  assert.deepEqual(loadReports(), [{ id: 'BBBBBB' }]);
+  delete globalThis.localStorage;
 });
