@@ -1,6 +1,6 @@
 # driverassignmenttool — state
 
-Updated: 2026-10-29
+Updated: 2026-10-30
 
 <!-- Now / Next / Blocked are rewritten in place and never grow. Finish something, delete the
      line. Only Log appends. Format: /srv/projects/FORMAT.md -->
@@ -16,19 +16,33 @@ names and badge. `dat-autodeploy.timer` keeps Connected on Pages' build. The hos
 ## Next
 
 1. n8n overlay sync (plan §7): not built; needs the read/save gateway actions in datajoin first.
-2. AUSTHZ shared driver parts: the app side is in `dev` (#15, #16 → 8235fb8). Deploy datajoin
-   (`dat-parts`) and dat_bridge (`shared-parts`) before shipping `dev` to `main`. Resolve AUSTHZ,
+2. AUSTHZ shared driver parts: the app side is in `dev` (#15, #16, #17 → 307b9c9). datajoin is live
+   with it (#22, #23 → 6c13c5a, deployed 2026-10-29 12:05). dat_bridge `shared-parts` still has to be
+   deployed before shipping `dev` to `main`. Resolve AUSTHZ,
    WNUC6N, MBVCAZ, MBTBA2 and SSCMMX once on prod. Then have Erik
    run datajoin `oneoff/dat-research-2026-10-28/seed.py dev`, check on drivers-dev, then `prod`.
 3. Ship `dev` to `main`, then resolve the 7 reports fixed in #14.
 
 ## Blocked / needs Erik
 
-Nothing.
 
 ## Log
 
+- 2026-10-30: #18 merged to `dev`. #19 (`shared-check-card`) merged to `dev`: it splits shared parts the PS&R way. A suggestion is an agreed value shown inline under the field as "✨ Suggested: X" (Material `auto_awesome`) with a flag button that files a bug report anchored on it. The Driver attributes wizard marks parts "suggested" / "to check" and its "This writes" header shows Suggested + flag once the part is checked. An unchecked value is never offered: it is only asked about in the purple card, which compares it with its datasheet ("These look wrong") and asks "Are these ratings right for X?". The word "shared" and the source link are gone. `conflicts()` is in catalogue.js and tested. Verified in Playwright against a mocked catalogue.
+## 2026-10-30
+
+- PR #18 to `dev`: the bug reporter is now companion-kit 1.1.1 (api.github.com tarball + `.npmrc` token), with the once-per-tab opened ping. Tests and build pass; checked in a browser against a mocked companion. CI green once Erik set the `COMPANION_KIT_TOKEN` repo secret.
+
 ## 2026-10-29
+
+ASJ33S: on "Add a driver to HUB-X" the Add button spilled out of narrow cards. Two causes: the
+button padding sat on the wrapper span, and the usage text could not shrink. Now the usage text
+truncates first, with the full list in its title. Checked at 1920 px and at the 280 px minimum card
+width. WLN3JW: a "Bill of materials" (`Bom.jsx` over `recipe.bom()`) lists each type's driver part,
+its supply and the default junction boxes (`defaultJboxes`, moved into `recipe.js`). On the
+assessment it counts the estimate; in a hub's assignment header it is a dropdown counting the hub's
+drivers, without feed provisions. Junction boxes edited per module in the layout are not counted.
+Not committed.
 
 - VMNW7Y: the hub layout hears Del (selection back to the tray, a layout undo step) and Ctrl+C /
   Ctrl+V (an ADD_DRIVER per copied type, placed just after the original through `pasting` in the
@@ -45,7 +59,7 @@ Nothing.
   `mcp` module (`scratchpad/run_dat.py`), because docker and venv are unavailable here. The share
   form was checked in the browser against a mocked companion: the POST carries
   `sizeMm`/`jboxes`/`psu`.
-  Branch `fix/vmnw7y-mnbj6w`, not committed.
+  Merged to `dev` as #17 (307b9c9). The datajoin side is #23 (6c13c5a), autodeployed.
 
 ## 2026-10-28
 
