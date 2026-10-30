@@ -6,9 +6,9 @@ import HubLayoutLab from './components/HubLayoutLab.jsx';
 import PanelLayout from './lcp/PanelLayout.jsx';
 import TypesPage from './components/TypesPage.jsx';
 import ErrorBoundary from './components/ErrorBoundary.jsx';
-import BugReporter from './components/BugReporter.jsx';
+import { BugReporter, useOpened } from 'companion-kit';
 import { APP_CHANNEL, BUILD_NAME } from './build.js';
-import { remoteReport } from './bugReports.js';
+import { buildReport, domContext, noteClick, remoteReport, reportsToMarkdown } from './bugReports.js';
 import { useCompanion } from './companion.js';
 import { onSharedParts, setSharedParts, sharedSnapshot } from './catalogue.js';
 import EstimatePage from './components/EstimatePage.jsx';
@@ -51,6 +51,15 @@ export default function App({ domain = driversDomain }) {
   // The shared catalogue, once per tab; a change to it re-renders every picker and match.
   useSyncExternalStore(onSharedParts, sharedSnapshot);
   useEffect(() => { companion?.parts?.list().then((r) => r && setSharedParts(r.parts)); }, [companion]);
+  useOpened(companion);
+  // the trail a report carries: its areas are sent, which the kit's own trail does not record
+  const pageRef = useRef(state.view.page);
+  pageRef.current = state.view.page;
+  useEffect(() => {
+    const click = (e) => noteClick(e, pageRef.current);
+    document.addEventListener('click', click, true);
+    return () => document.removeEventListener('click', click, true);
+  }, []);
 
   // Standalone keeps the ask-first banner. Embedded resumes silently - the frame
   // is flaky by nature, so coming back to your own work is the expected outcome,
@@ -306,12 +315,20 @@ export default function App({ domain = driversDomain }) {
       <span className={`build-badge${APP_CHANNEL === 'dev' ? ' is-dev' : ''}`} data-testid="build-badge">
         {APP_CHANNEL === 'dev' ? 'DEV · ' : ''}{BUILD_NAME}
       </span>
-      <BugReporter screen={state.view.page} getData={reportData}
-        getApp={() => ({
-          zone: state.view.zone,
-          counts: model ? { drivers: model.drivers.length, links: model.links.length,
-            requirements: (model.requirements || []).length, assigned: Object.keys(assignments).length } : undefined,
-        })} />
+      <BugReporter screen={state.view.page} toMarkdown={reportsToMarkdown}
+        send={companion?.report} toRemote={(r) => remoteReport(r, reportData())}
+        build={({ note, kind, target, capture, id, extra }) => ({
+          ...buildReport({ note, kind, target, withWhere: capture, id, app: {
+            screen: state.view.page, zone: state.view.zone,
+            counts: model ? { drivers: model.drivers.length, links: model.links.length,
+              requirements: (model.requirements || []).length, assigned: Object.keys(assignments).length } : undefined,
+          } }),
+          ...extra,
+        })}
+        where={(target, via) => {
+          const d = domContext(target);
+          return [state.view.page, d.dialogs.at(-1), d.areas[0], via ? `last clicked ${d.element}` : d.element].filter(Boolean).join(' · ');
+        }} />
       {state.demo && model && <Tutorial dispatch={dispatch} view={state.view} />}
     </LabelContext.Provider>
     </DomainProvider>
