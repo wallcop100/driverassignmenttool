@@ -205,6 +205,7 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
   const [drawer, setDrawer] = useState(false);    // the Add drivers drawer
   const [find, setFind] = useState('');
   const [qtys, setQtys] = useState({});           // typeRef -> how many + adds
+  const [pt, setPt] = useState(null);             // the cursor, while a drawer type is dragged
   const [adding, setAdding] = useState(false);    // the New type dialog
   const [nudgeAt, setNudgeAt] = useState(null);   // { b, axis } the arrow keys move
   const [notice, setNotice] = useState(null);
@@ -324,7 +325,11 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
     };
   }, [editing, bar]);
 
-  // the companion's pip rides up with the drawer instead of hiding under it
+  // the companion's pip sits on the Add drivers tab, and rides up with the drawer
+  useEffect(() => {
+    document.body.classList.add('hub-page');
+    return () => document.body.classList.remove('hub-page');
+  }, []);
   useEffect(() => {
     if (!drawer) return undefined;
     document.body.style.setProperty('--drawer-h', `${drawerEl.current?.offsetHeight ?? 300}px`);
@@ -882,10 +887,15 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
     .filter((t) => !needle || `${t.typeRef} ${t.name ?? ''}`.toLowerCase().includes(needle))
     .sort((a, b) => here.has(b.typeRef) - here.has(a.typeRef));
   const addQty = (typeRef) => Math.max(1, Math.floor(+qtys[typeRef]) || 1);
+  const showSizes = state.prefs?.drawerSizes !== false;
+  // every card's footprint to one scale, so a big driver looks big beside a small one
+  const fit = 56 / Math.max(1, ...offer.flatMap((t) => sizeOf[t.typeRef] ?? []));
+  const ghost = drag?.add && pt && sizeOf[drag.add];
 
   return (
     <div className={`container-fluid py-3 hub-lab ${editing && inspector ? 'has-dock' : ''}`}
-      onMouseUp={onDrop} onMouseLeave={() => setDrag(null)}>
+      onMouseMove={(e) => { if (drag?.add) setPt([e.clientX, e.clientY]); }}
+      onMouseUp={(e) => { onDrop(e); setPt(null); }} onMouseLeave={() => { setDrag(null); setPt(null); }}>
       {/* one editor at a time, docked where it is always on screen */}
       {editing && inspector && (
         <aside className="hub-dock" aria-label="Editor">{inspector}</aside>
@@ -1018,9 +1028,6 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
           )}
         </span>
 
-        <button type="button" className="hub-tb is-add" onClick={() => setDrawer(true)} aria-expanded={drawer}>
-          <span className="material-icons">add</span>Add drivers
-        </button>
         <span className="flex-grow-1" />
         <button type="button" className="hub-tb is-icon" disabled={!hist.undo.length} onClick={undo} title="Undo">
           <span className="material-icons">undo</span>
@@ -1444,35 +1451,55 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
 
       {notice && <div key={notice} className="hub-notice" role="status">{notice}</div>}
 
-      <div ref={drawerEl} className={`hub-drawer ${drawer ? 'is-open' : ''}`} aria-hidden={!drawer}
-        inert={drawer ? undefined : ''}>
+      <button type="button" className={`hub-addtab ${drawer ? 'is-hidden' : ''}`} onClick={() => setDrawer(true)}
+        aria-expanded={drawer} tabIndex={drawer ? -1 : 0}>
+        <span className="material-icons">add</span>Add drivers
+      </button>
+      <div ref={drawerEl} className={`hub-drawer ${drawer ? 'is-open' : ''} ${drag?.add ? 'is-dragging' : ''}`}
+        aria-hidden={!drawer} inert={drawer ? undefined : ''}>
         <div className="hub-drawer-grab" />
         <div className="hub-drawer-head">
           <h6>Add drivers to {hub}</h6>
           <input className="form-control form-control-sm" placeholder="Search types" value={find}
             onChange={(e) => setFind(e.target.value)} aria-label="Search types" />
           <span className="text-secondary small">Drag into a bay, or + to put it in Not placed</span>
-          <button type="button" className="btn-close ms-auto" aria-label="Close" onClick={() => setDrawer(false)} />
+          <button type="button" className={`hub-tb is-icon ms-auto ${showSizes ? 'is-open' : ''}`} aria-pressed={showSizes}
+            title={showSizes ? 'Hide the size previews' : 'Show the size previews'}
+            onClick={() => dispatch({ type: 'SET_PREFS', prefs: { drawerSizes: !showSizes } })}>
+            <span className="material-icons">aspect_ratio</span>
+          </button>
+          <button type="button" className="btn-close" aria-label="Close" onClick={() => setDrawer(false)} />
         </div>
         <div className="hub-drawer-grid">
           {offer.map((t) => {
             const size = sizeOf[t.typeRef];
             return (
-              <div key={t.typeRef} className={`hub-tray-group ${here.has(t.typeRef) ? 'is-here' : ''}`}>
-                <div className="hub-tray-type" title={t.typeRef}>
-                  <span className="rv-ref">{t.typeRef}{here.has(t.typeRef) && <span className="hub-here"> · in this hub</span>}</span>
-                  {size && <span className="text-secondary">{Math.round(size[0])} × {Math.round(size[1])}</span>}
+              <div key={t.typeRef}
+                className={`hub-drawer-card ${here.has(t.typeRef) ? 'is-here' : ''} ${drag?.add === t.typeRef ? 'is-dragging' : ''}`}
+                title="Drag into a bay to place it"
+                onMouseDown={(e) => {
+                  if (e.target.closest('input, button')) return;
+                  e.preventDefault();
+                  setSel([]);
+                  setPt([e.clientX, e.clientY]);
+                  setDrag({ add: t.typeRef, qty: addQty(t.typeRef), refs: [], overBay: null, atIndex: 0 });
+                }}>
+                {showSizes && (
+                  <div className="hub-drawer-fp">
+                    {size
+                      ? <div className="hub-drawer-box" style={{ width: Math.max(4, size[0] * fit), height: Math.max(4, size[1] * fit) }} />
+                      : <span className="material-icons text-secondary" title="No size yet">help_outline</span>}
+                  </div>
+                )}
+                <div className="hub-drawer-info">
+                  <div className="rv-ref">{t.typeRef}</div>
+                  <div className="hub-drawer-name">{t.name || t.typeRef}</div>
+                  <div className="text-secondary">
+                    {size ? `${Math.round(size[0])} × ${Math.round(size[1])} mm` : 'no size yet'}
+                    {here.has(t.typeRef) && <span className="hub-here"> · in this hub</span>}
+                  </div>
                 </div>
-                <div className="hub-tray-item"
-                  title="Drag into a bay to place it"
-                  onMouseDown={(e) => {
-                    if (e.target.closest('input, button')) return;
-                    e.preventDefault();
-                    setSel([]);
-                    setDrag({ add: t.typeRef, qty: addQty(t.typeRef), refs: [], overBay: null, atIndex: 0 });
-                  }}>
-                  <span className="material-icons hub-tray-grip">drag_indicator</span>
-                  <span className="hub-tray-ref" title={t.name || t.typeRef}>{t.name || t.typeRef}</span>
+                <div className="hub-drawer-act">
                   <input type="number" min="1" className="form-control form-control-sm hub-drawer-qty"
                     aria-label={`How many ${t.typeRef}`} value={qtys[t.typeRef] ?? 1}
                     onChange={(e) => setQtys((q) => ({ ...q, [t.typeRef]: e.target.value }))} />
@@ -1484,11 +1511,18 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
               </div>
             );
           })}
-          <button type="button" className="hub-tray-group is-new" onClick={() => setAdding(true)}>
+          <button type="button" className="hub-drawer-card is-new" onClick={() => setAdding(true)}>
             <span className="material-icons">add_circle_outline</span> New type…
           </button>
         </div>
       </div>
+      {/* what's being dragged out of the drawer, at the drawing's own scale */}
+      {drag?.add && pt && (
+        <div className={`hub-drag-ghost ${drag.overBay != null ? 'is-over' : ''}`}
+          style={{ left: pt[0], top: pt[1], ...(ghost ? { width: px(ghost[0]), height: px(ghost[1]) } : {}) }}>
+          <span>{drag.add}{drag.qty > 1 ? ` ×${drag.qty}` : ''}</span>
+        </div>
+      )}
       {adding && (
         <NewTypeDialog zone={hub} inventory={model.inventory} dispatch={dispatch}
           onClose={() => setAdding(false)} />
