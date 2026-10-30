@@ -440,6 +440,19 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
     return { undo: [...h.undo, cur], redo: h.redo.slice(0, -1) };
   });
 
+  // a drawer drag follows the whole window: the drawer sinks out from under the
+  // cursor as it starts, which leaves the page and would otherwise drop it
+  const dropRef = useRef(null);
+  const pulling = drag?.add;
+  useEffect(() => {
+    if (!pulling) return undefined;
+    const move = (e) => setPt([e.clientX, e.clientY]);
+    const up = (e) => { dropRef.current(e); setPt(null); };
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+    return () => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); };
+  }, [pulling]);
+
   if (!cur) return <div className="container py-4 text-secondary">No hubs in this data.</div>;
 
   const opt = (b) => cur.opts[b] ?? bayDefaults();
@@ -677,6 +690,8 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
     setDrag(null);
   };
 
+  dropRef.current = onDrop;
+
   // junction boxes are the Element's, so they go through the set's state and the patch
   const setJboxes = (refs, n) => refs.forEach((ref) => dispatch({ type: 'SET_JBOXES', ref, count: n }));
 
@@ -895,8 +910,7 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
 
   return (
     <div className={`container-fluid py-3 hub-lab ${editing && inspector ? 'has-dock' : ''}`}
-      onMouseMove={(e) => { if (drag?.add) setPt([e.clientX, e.clientY]); }}
-      onMouseUp={(e) => { onDrop(e); setPt(null); }} onMouseLeave={() => { setDrag(null); setPt(null); }}>
+      onMouseUp={(e) => { if (!drag?.add) onDrop(e); }} onMouseLeave={() => { if (!drag?.add) setDrag(null); }}>
       {/* one editor at a time, docked where it is always on screen */}
       {editing && inspector && (
         <aside className="hub-dock" aria-label="Editor">{inspector}</aside>
