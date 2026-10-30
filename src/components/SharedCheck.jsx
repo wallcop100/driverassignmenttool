@@ -15,14 +15,14 @@ const remember = (rev, v) => {
   try { localStorage.setItem(KEY, JSON.stringify({ ...said(), [rev]: v })); } catch { /* private window */ }
 };
 
-export default function SharedCheck({ part, recorded }) {
+export default function SharedCheck({ part }) {
   const companion = useCompanion();
   const [answered, setAnswered] = useState(null);
   const [error, setError] = useState(null);
   if (checkOf(part) !== 'unchecked' || !part.rev) return null;
   const mine = answered ?? said()[part.rev];
   const v = part.votes ?? {};
-  const off = conflicts(part, recorded);
+  const off = conflicts(part);
   const wrong = Object.keys(off).length > 0;
 
   const vote = async (choice) => {
@@ -38,21 +38,18 @@ export default function SharedCheck({ part, recorded }) {
     <div className="companion-card shared-check" data-testid="shared-check">
       <div className="sc-head">
         <span className="material-icons" style={{ fontSize: 15 }}>fact_check</span>
-        Suggested ratings for {part.name}
+        Are these ratings right for {part.name}?
       </div>
       {wrong && !mine && (
         <div className="sc-warn" data-testid="shared-check-off">
           <span className="material-icons" style={{ fontSize: 15 }}>warning_amber</span>
-          These look wrong: {Object.keys(off).join(', ')} {Object.keys(off).length === 1 ? 'does' : 'do'} not match what is already recorded.
+          These look wrong: {Object.keys(off).join(', ')} {Object.keys(off).length === 1 ? 'does' : 'do'} not match its datasheet.
         </div>
       )}
       <table className="table table-sm mb-1">
-        <thead><tr><th /><th>Suggested</th></tr></thead>
+        <thead><tr><th /><th>Sent by someone using this tool</th></tr></thead>
         <tbody>
-          <tr><th>From</th><td>
-            someone using this tool
-            {v.no ? <span className="text-muted"> · {v.no} said it is wrong</span> : null}
-          </td></tr>
+          {v.no ? <tr><th>Others</th><td>{v.no} said it is wrong</td></tr> : null}
           {partRows(part).map(([k, val]) => <tr key={k} className={off[k] ? 'is-off' : undefined}><th>{k}</th><td>
             {val}{off[k] && <span className="sc-off"> · {off[k]}</span>}
           </td></tr>)}
@@ -63,8 +60,8 @@ export default function SharedCheck({ part, recorded }) {
           {mine
             ? (mine === 'confirmed' ? 'Thanks.' : 'Noted - fill these in by hand if they are wrong.')
             : wrong
-              ? 'Are the suggested values right? Check them against the datasheet first.'
-              : 'Are the suggested values right? Nothing fills in from them until a second person agrees.'}
+              ? 'Please double check this against the datasheet now - your answer decides whether other projects use it.'
+              : 'Please double check this now - nothing fills in from it until a second person agrees.'}
         </span>
         {!mine && companion?.parts?.vote && (
           <>

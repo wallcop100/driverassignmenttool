@@ -199,14 +199,10 @@ test('a checked shared size, box count and supply fill a datasheet gap; an unche
   }
 });
 
-test('a shared claim that disagrees with the datasheet or the type says which rows', async () => {
+test('a shared claim that disagrees with its datasheet says which rows', async () => {
   const { conflicts } = await import('../src/catalogue.js');
-  const base = PARTS.find((p) => p.kind !== 'supply' && p.maxPowerW != null && p.minA != null);
-  const claim = { ...base, maxPowerW: base.maxPowerW + 50 };
-  assert.deepEqual(Object.keys(conflicts(claim, null)), ['MaxPower(W)']);
-  const fresh = { ...base, name: 'Acme 1', maxPowerW: 60 };
-  assert.deepEqual(conflicts(fresh, null), {});
-  assert.ok(conflicts(fresh, { maxPowerW: '75' })['MaxPower(W)']);
-  assert.ok(conflicts(fresh, { currentA: base.maxA + 1 }).Current);
-  assert.deepEqual(conflicts(fresh, { maxPowerW: '60', currentA: '' }), {});
+  const base = PARTS.find((p) => p.kind !== 'supply' && p.maxPowerW != null);
+  assert.deepEqual(Object.keys(conflicts({ ...base, maxPowerW: base.maxPowerW + 50 })), ['MaxPower(W)']);
+  assert.deepEqual(conflicts({ ...base }), {});
+  assert.deepEqual(conflicts({ ...base, name: 'Acme 1', maxPowerW: 60 }), {});
 });

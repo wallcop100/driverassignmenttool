@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { allParts, atCurrent, checked, combine, nextTypeRef, reachableW, resolveSpec, setSharedParts, sharedAmendment } from '../engine.js';
+import { allParts, atCurrent, checkOf, checked, combine, nextTypeRef, reachableW, resolveSpec, setSharedParts, sharedAmendment } from '../engine.js';
 import { useCompanion } from '../companion.js';
 import SharedCheck from './SharedCheck.jsx';
 
@@ -121,11 +121,13 @@ export default function PresetEditor({ draft, setDraft, inventory, onSave, onCan
 
   // What people have sent for this datasheet part, offered beside the page and
   // never in its place (report AUSTHZ). A part that is itself shared says so.
+  // An unchecked one is asked about (SharedCheck), never offered: a suggestion is only what the companion is sure of.
   const amend = sharedAmendment((part?.driver ?? part)?.name);
+  const sure = checkOf(amend) !== 'unchecked' ? amend : null;
   const said = {
-    maxPowerW: amend?.maxPowerW, outputVoltageV: amend?.outputV, outputs: amend?.outputs,
-    addresses: amend?.addresses, nodeMaxFvV: amend?.maxFvV, nodeMaxLoadW: amend?.nodeMaxLoadW,
-    nodeCurrentA: amend?.nodeCurrentA,
+    maxPowerW: sure?.maxPowerW, outputVoltageV: sure?.outputV, outputs: sure?.outputs,
+    addresses: sure?.addresses, nodeMaxFvV: sure?.maxFvV, nodeMaxLoadW: sure?.nodeMaxLoadW,
+    nodeCurrentA: sure?.nodeCurrentA,
   };
   const from = part?.shared ? 'shared' : 'spec page';
 
@@ -147,15 +149,15 @@ export default function PresetEditor({ draft, setDraft, inventory, onSave, onCan
             placeholder="-" onChange={(e) => set({ [k]: e.target.value })} />
         )}
         {(off || blank) && (
-          <button type="button" className="fld-ds" onClick={() => set({ [k]: want })}
+          <button type="button" className={`fld-ds${part.shared ? ' is-shared' : ''}`} onClick={() => set({ [k]: want })}
             title={`Take ${g(want)} from the ${part.name} ${from}`}>
-            {off ? `${from}: ${g(want)}` : `use ${g(want)}`}
+            {part.shared && <span className="companion-dot" />}{off ? `${from}: ${g(want)}` : `use ${g(want)}`}
           </button>
         )}
         {altOff && (
           <button type="button" className="fld-ds is-shared" onClick={() => set({ [k]: alt })}
-            title={`Sent for the ${amend.name} by someone using this tool - not from its spec page`}>
-            shared: {g(alt)}
+            title={`Use ${g(alt)} - what other projects use for the ${amend.name}, agreed by two people`}>
+            <span className="companion-dot" />other projects: {g(alt)}
           </button>
         )}
       </label>
@@ -183,7 +185,7 @@ export default function PresetEditor({ draft, setDraft, inventory, onSave, onCan
     <div className="preset-editor">
       {/* an amendment is checked here too: its size, boxes and supply fill the layout once agreed */}
       {[part?.driver ?? part, part?.supply, amend].filter(Boolean).map((p, n) => (
-        <SharedCheck key={`${n}${p.name}`} part={p} recorded={p.kind === 'supply' ? null : draft} />
+        <SharedCheck key={`${n}${p.name}`} part={p} />
       ))}
       {draft.invented ? (
         <div className="spec-pick">

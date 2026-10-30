@@ -353,7 +353,7 @@ export function reachableW(spec, currentA) {
   return spec.supply ? spec.maxPowerW : null;
 }
 
-// A shared part's ratings as rows, and where they disagree with what is already recorded.
+// A shared part's ratings as rows, and where they disagree with its datasheet.
 const g = (n) => (Number.isInteger(n) ? n : +n.toFixed(2));
 
 // The ratings as the part states them, so the check is against something you can see.
@@ -373,22 +373,14 @@ export const partRows = (p) => [
   ['Usual supply', p.psu],
 ].filter(([, v]) => v != null && v !== '');
 
-// Where the claim disagrees with what is already recorded - the datasheet part it amends, and the
-// type it is offered for - by row. A disagreement is said, not left for the reader to spot.
-const num = (v) => (v == null || v === '' || !Number.isFinite(Number(v)) ? null : Number(v));
-export function conflicts(part, recorded) {
+// Where a shared claim disagrees with the datasheet part it amends, by row - evidence for the
+// person asked to check it. The user's own design is not compared here: that is a suggestion (PresetEditor).
+export function conflicts(part) {
   const out = {};
   const base = PARTS.find((b) => b.name === part.name);
   if (base) {
     const was = Object.fromEntries(partRows(base));
     for (const [k, v] of partRows(part)) if (was[k] != null && String(was[k]) !== String(v)) out[k] = `datasheet: ${was[k]}`;
-  }
-  if (recorded) {
-    const w = num(recorded.maxPowerW); const a = num(recorded.currentA); const fv = num(recorded.nodeMaxFvV);
-    if (recorded.powerType && recorded.powerType !== part.powerType) out.Type ??= `this type: ${recorded.powerType}`;
-    if (w != null && part.maxPowerW != null && w !== part.maxPowerW) out['MaxPower(W)'] ??= `this type: ${g(w)}`;
-    if (a != null && part.minA != null && (a < part.minA || a > part.maxA)) out.Current ??= `this type runs at ${g(a)}A`;
-    if (fv != null && part.maxFvV != null && fv !== part.maxFvV) out['Max fV'] ??= `this type: ${g(fv)}`;
   }
   return out;
 }

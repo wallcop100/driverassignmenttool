@@ -185,7 +185,7 @@ export default function SetupWizard({ model, presets, dispatch, onClose, only })
               )}
 
               {unchecked.map((p) => (
-                <SharedCheck key={p.name} part={p} recorded={p === part && needsCurrent ? { currentA: Number(currentMa) / 1000 || null } : null} />
+                <SharedCheck key={p.name} part={p} />
               ))}
 
               {ready ? (
