@@ -159,3 +159,7 @@ node docs/hub-layout-shots.mjs
   `src/catalogue.js`. Reading `part.sizeMm` directly would draw an unchecked size, or miss an agreed
   amendment that fills a datasheet part's gap. An amendment never overrides a value the datasheet has.
   A shared size reports its origin as `shared` ("suggested"), and the patch treats it like a datasheet size (2026-10-29).
+- **A driver dropped from the Add drivers drawer lands through the `landing` ref** in
+  `HubLayoutLab.jsx`. `ADD_DRIVER` only creates the Elements, and the placement effect takes the
+  bay and index from `landing`. Without that, the drivers fall into Not placed. Bounding Lines and
+  the BoM panel are viewer prefs (`prefs.bounds`, `prefs.showBom`), not per-bay layout (2026-10-30).

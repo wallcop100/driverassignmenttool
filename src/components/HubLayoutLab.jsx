@@ -13,6 +13,7 @@ import PartEditor from './PartEditor.jsx';
 import ResizeIcon from './ResizeIcon.jsx';
 import Bom from './Bom.jsx';
 import HubTray from './HubTray.jsx';
+import NewTypeDialog from './NewTypeDialog.jsx';
 
 // Composing one PSU hub, drawn the way 5642600A draws it: equipment as plain
 // labelled blocks with the drivers rounded, cable trunking hatched, Feed
@@ -124,7 +125,7 @@ function moduleFor(driver, ctx = {}) {
 const feedFirst = (items) => [...items.filter((i) => i.kind === 'feed'), ...items.filter((i) => i.kind !== 'feed')];
 
 const bayDefaults = () => ({
-  width: null, height: null, bounds: false, target: { w: '', h: '' }, separate: false, ref: '',
+  width: null, height: null, target: { w: '', h: '' }, separate: false, ref: '',
 });
 
 // The outline says where a block's size came from.
@@ -200,13 +201,19 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
   const [resize, setResize] = useState(null);     // a bay edge being pulled
   const [exact, setExact] = useState(null);       // a dimension being typed in place
   const [shake, setShake] = useState(null);       // a bay refusing a height below its contents
-  const [snapOpen, setSnapOpen] = useState(false);
+  const [bar, setBar] = useState(null);          // which toolbar menu is open
+  const [drawer, setDrawer] = useState(false);    // the Add drivers drawer
+  const [find, setFind] = useState('');
+  const [qtys, setQtys] = useState({});           // typeRef -> how many + adds
+  const [adding, setAdding] = useState(false);    // the New type dialog
   const [nudgeAt, setNudgeAt] = useState(null);   // { b, axis } the arrow keys move
   const [notice, setNotice] = useState(null);
   const svgEls = useRef({});
   const sheetGeo = useRef({});   // each sheet's bays and offsets, for finding a drop
   const trayEl = useRef(null);
   const menuEl = useRef(null);
+  const drawerEl = useRef(null);
+  const landing = useRef([]);    // { zone, typeRef, bay, at, n } a drawer drop waiting for its drivers
   const resizeRef = useRef(null);
   resizeRef.current = resize;
   const px = (n) => n * scale;
@@ -263,8 +270,16 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
       // Drivers broken out of a quantity stand just after the row they came from,
       // in a bay or in the tray; anything else new waits in the tray.
       const have = new Set([...bays.flat(), ...tray].map((i) => i.ref));
-      // A pasted driver stands just after the one it was copied from.
+      // A pasted driver stands just after the one it was copied from, and one
+      // dragged out of the drawer where it was dropped.
       for (const d of drivers.filter((x) => x.zone === h && !have.has(x.ref))) {
+        const li = d.split ? -1 : landing.current.findIndex((x) => x.zone === h && x.typeRef === d.typeRef);
+        if (li >= 0 && bays[landing.current[li].bay]) {
+          const l = landing.current[li];
+          bays[l.bay].splice(l.at++, 0, stackFor(d));
+          if (--l.n <= 0) landing.current.splice(li, 1);
+          continue;
+        }
         const pi = d.split ? -1 : pasting.current.findIndex((x) => x.zone === h && x.typeRef === d.typeRef);
         const anchor = d.split ?? (pi >= 0 ? pasting.current.splice(pi, 1)[0].src : null);
         const home = (anchor && [...bays, tray].find((b) => b.some((i) => i.ref === anchor))) || tray;
@@ -290,16 +305,16 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  // the editor and the snap chip close on a click outside them
+  // the editor and the toolbar menus close on a click outside them
   useEffect(() => {
-    if (!editing && !snapOpen) return undefined;
+    if (!editing && !bar) return undefined;
     // The editor is docked, so clicking the drawing or scrolling leaves it open:
     // only its own close, Escape, or another pencil changes it.
-    const onDoc = (e) => { if (!e.target.closest?.('.hub-snap')) setSnapOpen(false); };
+    const onDoc = (e) => { if (!e.target.closest?.('.hub-menuwrap')) setBar(null); };
     const onKey = (e) => {
       if (e.key !== 'Escape' || e.target.closest?.('input, select, textarea')) return;
       setEditing(null);
-      setSnapOpen(false);
+      setBar(null);
     };
     document.addEventListener('mousedown', onDoc);
     window.addEventListener('keydown', onKey);
@@ -307,7 +322,15 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
       document.removeEventListener('mousedown', onDoc);
       window.removeEventListener('keydown', onKey);
     };
-  }, [editing, snapOpen]);
+  }, [editing, bar]);
+
+  // the companion's pip rides up with the drawer instead of hiding under it
+  useEffect(() => {
+    if (!drawer) return undefined;
+    document.body.style.setProperty('--drawer-h', `${drawerEl.current?.offsetHeight ?? 300}px`);
+    document.body.classList.add('drawer-open');
+    return () => document.body.classList.remove('drawer-open');
+  }, [drawer]);
 
   // a bay menu closes when you click anywhere outside it
   useEffect(() => {
@@ -625,7 +648,11 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
     const onTray = !!(drag && e && t && e.clientX >= t.left && e.clientX <= t.right && e.clientY >= t.top && e.clientY <= t.bottom);
     const hit = drag && e && !onTray ? hitBay(e.clientX, e.clientY) : null;
     const d = drag && { ...drag, overTray: onTray, overBay: hit ? hit.overBay : null, atIndex: hit ? hit.atIndex : 0 };
-    if (d?.fromTray && d.overBay != null) {
+    if (d?.add) {
+      // a type out of the drawer: new drivers, into the bay or the tray
+      if (d.overBay != null) landing.current.push({ zone: hub, typeRef: d.add, bay: d.overBay, at: d.atIndex, n: d.qty });
+      if (d.overBay != null || onTray) dispatch({ type: 'ADD_DRIVER', typeRef: d.add, zone: hub, quantity: d.qty });
+    } else if (d?.fromTray && d.overBay != null) {
       const refs = d.refs ?? [d.ref];
       const items = tray.filter((i) => refs.includes(i.ref));
       if (items.length) {
@@ -836,6 +863,26 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
     </g>
   );
 
+  const menuButton = (id, icon, label) => (
+    <button type="button" className={`hub-tb ${bar === id ? 'is-open' : ''}`} aria-expanded={bar === id}
+      onClick={() => setBar((o) => (o === id ? null : id))}>
+      <span className="material-icons">{icon}</span>{label}<span className="material-icons caret">expand_more</span>
+    </button>
+  );
+
+  // one entity picked: its junction boxes are its own (an Element's spaces)
+  const one = sel.length === 1 ? [...cur.bays.flat(), ...tray].find((i) => i.ref === sel[0]) : null;
+  const inBays = cur.bays.flat().filter((i) => sel.includes(i.ref));
+
+  // the drawer: every type in the set, this hub's first
+  const here = new Set(types.map((m) => m.typeRef));
+  const sizeOf = Object.fromEntries(setTypes.map((m) => [m.typeRef, m.size]));
+  const needle = find.trim().toLowerCase();
+  const offer = (model.inventory ?? [])
+    .filter((t) => !needle || `${t.typeRef} ${t.name ?? ''}`.toLowerCase().includes(needle))
+    .sort((a, b) => here.has(b.typeRef) - here.has(a.typeRef));
+  const addQty = (typeRef) => Math.max(1, Math.floor(+qtys[typeRef]) || 1);
+
   return (
     <div className={`container-fluid py-3 hub-lab ${editing && inspector ? 'has-dock' : ''}`}
       onMouseUp={onDrop} onMouseLeave={() => setDrag(null)}>
@@ -843,11 +890,10 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
       {editing && inspector && (
         <aside className="hub-dock" aria-label="Editor">{inspector}</aside>
       )}
-      <div className="dp-head">
+      <div className="hub-bar">
         {onBack && (
-          <button className="btn btn-sm btn-outline-secondary d-flex align-items-center"
-            onClick={onBack} title="Back to assigning this hub">
-            <span className="material-icons small-icon">arrow_back</span> Assign
+          <button type="button" className="hub-tb" onClick={onBack} title="Back to assigning this hub">
+            <span className="material-icons">arrow_back</span>Assign
           </button>
         )}
         <select className="form-select form-select-sm" style={{ width: 'auto' }} value={hub}
@@ -856,124 +902,136 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
           }}>
           {hubs.map((z) => <option key={z} value={z}>{z}</option>)}
         </select>
-        <h5 className="mb-0 hub-dim">{ext.w} × {ext.h} × {hl.DEPTH_MM}mm</h5>
-        <span className="hub-zoom" title="Zoom">
-          <button onClick={() => setScale((z) => Math.max(ZOOM_MIN, +(z - 0.1).toFixed(2)))} aria-label="Zoom out">-</button>
-          <span>{Math.round((scale / 0.36) * 100)}%</span>
-          <button onClick={() => setScale((z) => Math.min(ZOOM_MAX, +(z + 0.1).toFixed(2)))} aria-label="Zoom in">+</button>
-        </span>
-        <span className="hub-snap">
-          <button type="button" className="hub-snap-chip" onClick={() => setSnapOpen((o) => !o)}
-            aria-expanded={snapOpen} title="Resize grid">
-            snap {snap}mm <span className="material-icons small-icon">expand_more</span>
-          </button>
-          {snapOpen && (
-            <div className="hub-snap-pop">
-              <div className="hub-snap-presets">
-                {SNAP_PRESETS.map((v) => (
-                  <button type="button" key={v} className={v === snap ? 'is-on' : ''}
-                    onClick={() => dispatch({ type: 'SET_PREFS', prefs: { snapMm: v } })}>{v}</button>
-                ))}
-                <label className="hub-snap-custom">
-                  <input type="number" min="0.5" step="0.5" value={snap}
-                    onChange={(e) => +e.target.value > 0 && dispatch({ type: 'SET_PREFS', prefs: { snapMm: +e.target.value } })} />mm
-                </label>
+        <span className="hub-dim">{ext.w} × {ext.h} × {hl.DEPTH_MM}mm</span>
+        {cur.fromDb && <span className="hub-fromdb" title="Opened from the bays and placements the DB holds">from the DB</span>}
+        <span className="hub-sep" />
+
+        <span className="hub-menuwrap">
+          {menuButton('view', 'visibility', 'View')}
+          {bar === 'view' && (
+            <div className="hub-menu">
+              <div className="hub-mi">
+                <span className="material-icons">zoom_in</span><span className="grow">Zoom</span>
+                <span className="hub-step">
+                  <button type="button" onClick={() => setScale((z) => Math.max(ZOOM_MIN, +(z - 0.1).toFixed(2)))} aria-label="Zoom out">−</button>
+                  <span>{Math.round((scale / 0.36) * 100)}%</span>
+                  <button type="button" onClick={() => setScale((z) => Math.min(ZOOM_MAX, +(z + 0.1).toFixed(2)))} aria-label="Zoom in">+</button>
+                </span>
               </div>
-              <div className="text-secondary small">Alt for 1mm, Shift for {snap * 5}mm, arrow keys nudge.</div>
+              <div className="hub-mi" title={`Alt for 1mm, Shift for ${snap * 5}mm, arrow keys nudge`}>
+                <span className="material-icons">grid_4x4</span><span className="grow">Snap</span>
+                <span className="hub-snap-presets">
+                  {SNAP_PRESETS.map((v) => (
+                    <button type="button" key={v} className={v === snap ? 'is-on' : ''}
+                      onClick={() => dispatch({ type: 'SET_PREFS', prefs: { snapMm: v } })}>{v}</button>
+                  ))}
+                  <label className="hub-snap-custom">
+                    <input type="number" min="0.5" step="0.5" value={snap} aria-label="Snap in mm"
+                      onChange={(e) => +e.target.value > 0 && dispatch({ type: 'SET_PREFS', prefs: { snapMm: +e.target.value } })} />mm
+                  </label>
+                </span>
+              </div>
+              <div className="hub-mdiv" />
+              {/* display only: the patch never writes them */}
+              <button type="button" className={`hub-mi hub-toggle is-bounds ${state.prefs?.bounds ? 'is-on' : ''}`}
+                aria-pressed={!!state.prefs?.bounds}
+                onClick={() => dispatch({ type: 'SET_PREFS', prefs: { bounds: !state.prefs?.bounds } })}>
+                <span className="material-icons">{state.prefs?.bounds ? 'border_all' : 'border_clear'}</span>Bounding Lines
+              </button>
+              <button type="button" className={`hub-mi hub-toggle ${state.prefs?.showBom ? 'is-on' : ''}`}
+                aria-pressed={!!state.prefs?.showBom}
+                onClick={() => dispatch({ type: 'SET_PREFS', prefs: { showBom: !state.prefs?.showBom } })}>
+                <span className="material-icons">receipt_long</span>Bill of Materials
+              </button>
             </div>
           )}
         </span>
-        <div className="hub-controls">
-          <span className="hub-bays">
-            bays
-            <button disabled={cur.bays.length <= 1} onClick={removeBay}>−</button>
-            {cur.bays.length}
-            <button onClick={addBay}>+</button>
-          </span>
-          <label className="hub-check" title="One ET-PSU-ENC Element per piece of joinery, with its drivers inside. Off: pieces are recorded as space groups on the hub row.">
-          <input type="checkbox" checked={!!cur.enclosures} onChange={() => edit({ enclosures: !cur.enclosures })} /> Enclosure Elements
-        </label>
-        {dropEnclosures.length > 0 && (
-          <span className="hub-verdict is-over" title="Their drivers are moved back onto the hub first">
-            patch marks {dropEnclosures.length} enclosure{dropEnclosures.length === 1 ? '' : 's'} IsDeleted
-          </span>
-        )}
-        <button className="btn btn-sm btn-link p-0" title="Add a driver to this hub, then come back here"
-          onClick={() => dispatch({ type: 'SET_VIEW', view: { page: 'drivers', zone: hub, from: 'layout' } })}>
-          Add drivers
-        </button>
-        <button className="btn btn-sm btn-link p-0" title="One empty bay, everything back in the tray"
-          onClick={() => {
-            edit({ bays: [[]], opts: [bayDefaults()], tray: feedFirst([...cur.bays.flat(), ...tray]), enclosures: false });
-            setNotice('Blank slate: one empty bay, everything in the tray. Undo puts it back.');
-          }}>
-          Start blank
-        </button>
-        <button className="btn btn-sm btn-link p-0" onClick={() => {
-            // everything, the tray included
-            const all = cur.bays.map((b, i) => (i === 0 ? [...b, ...tray] : b));
-            edit({ bays: hl.rebalance(all).map(feedFirst), tray: [] });
-          }}>
-            Auto-arrange
-          </button>
-          {sel.length > 0 && (
-            <>
-              <span className="hub-bays">
-                junction boxes
-                {/* one per output on CV and none on CC to start, reduced from there */}
-                <button onClick={() => setJboxes(sel, null)} title="Back to one per output on CV, none on CC">auto</button>
-                {[0, 1, 2, 3, 4].map((n) => (
-                  <button key={n} onClick={() => setJboxes(sel, n)}>{n}</button>
-                ))}
-              </span>
-              <button className="btn btn-sm btn-outline-secondary"
-                onClick={() => edit({ bays: sel.reduce((bs, r) => hl.rotate(bs, r), cur.bays) })}
-                title="Stand it on its side, as HUB-A does across its top zone">
-                Rotate 90°
-              </button>
-              {sel.map((r) => cur.bays.flat().find((i) => i.ref === r)).filter((i) => i?.qty > 1).map((i) => (
-              <button key={i.ref} className="btn btn-sm btn-outline-primary" onClick={() => breakApart(i.ref)}>
-                Break apart {outRef(i.ref)} ×{i.qty}
-              </button>
-            ))}
-            <button className="btn btn-sm btn-outline-primary" onClick={splitSelected}>
-                Split {sel.length} into a new bay
-              </button>
-            </>
-          )}
-        </div>
-        {notice && <span className="hub-notice" role="status">{notice}</span>}
-        {cur.fromDb && <span className="hub-fromdb" title="Opened from the bays and placements the DB holds">from the DB</span>}
-        <span className="ms-auto d-flex align-items-center gap-2">
-          <Bom counts={bomCounts} inventory={model.inventory ?? []} className="is-drop" />
-          {notInDb.length > 0 && (
-            <details className="hub-inpatch">
-              <summary>{inPatch.length} of {notInDb.length} types in the set not in the DB go in the patch</summary>
-              <div className="hub-inpatch-list">
-                {notInDb.map((m) => (
-                  <label key={m.typeRef}>
-                    <input type="checkbox" checked={!skip.includes(m.typeRef)}
-                      onChange={() => setSkip((s) => (s.includes(m.typeRef)
-                        ? s.filter((x) => x !== m.typeRef) : [...s, m.typeRef]))} />
-                    <span className="rv-ref">{m.typeRef}</span>
-                    <span className="text-secondary">{m.recipe ? `${m.recipe.parts.length} parts` : formatParams({ size: m.size })}</span>
-                    <Origin kind={m.sizedBy} what={m.typeRef} />
-                  </label>
-                ))}
+
+        <span className="hub-menuwrap">
+          {menuButton('layout', 'view_column', 'Layout')}
+          {bar === 'layout' && (
+            <div className="hub-menu">
+              <div className="hub-mi">
+                <span className="material-icons">view_week</span><span className="grow">Bays</span>
+                <span className="hub-step">
+                  <button type="button" disabled={cur.bays.length <= 1} onClick={removeBay} aria-label="One bay fewer">−</button>
+                  <span>{cur.bays.length}</span>
+                  <button type="button" onClick={addBay} aria-label="One more bay">+</button>
+                </span>
               </div>
-            </details>
+              <button type="button" className="hub-mi" onClick={() => {
+                // everything, the tray included
+                const all = cur.bays.map((b, i) => (i === 0 ? [...b, ...tray] : b));
+                edit({ bays: hl.rebalance(all).map(feedFirst), tray: [] });
+                setBar(null);
+              }}>
+                <span className="material-icons">auto_awesome</span><span className="grow">Auto-arrange</span>
+                <span className="hint">tray included</span>
+              </button>
+              <div className="hub-mdiv" />
+              <button type="button" className="hub-mi" onClick={() => {
+                edit({ bays: [[]], opts: [bayDefaults()], tray: feedFirst([...cur.bays.flat(), ...tray]), enclosures: false });
+                setNotice('Blank slate: one empty bay, everything in the tray. Undo puts it back.');
+                setBar(null);
+              }}>
+                <span className="material-icons">restart_alt</span><span className="grow">Start blank</span>
+                <span className="hint">undo puts it back</span>
+              </button>
+            </div>
           )}
-          <button className="btn btn-sm btn-outline-secondary" disabled={!hist.undo.length} onClick={undo}
-            title="Undo"><span className="material-icons small-icon align-middle">undo</span></button>
-          <button className="btn btn-sm btn-outline-secondary" disabled={!hist.redo.length} onClick={redo}
-            title="Redo"><span className="material-icons small-icon align-middle">redo</span></button>
-          <button className="btn btn-sm btn-primary" onClick={copyPatch}
-            title="Copy an ExcelScript patch: bays, positions, separated bays, parts, junction boxes, sizes not in the DB and TBC flags">
-            <span className="material-icons small-icon align-middle">{copied ? 'check' : 'content_copy'}</span>
-            {copied ? ' Copied' : ' Copy patch'}
-          </button>
-          <span className="badge text-bg-warning">lab</span>
         </span>
+
+        <span className="hub-menuwrap">
+          {menuButton('patch', 'tune', 'Patch')}
+          {bar === 'patch' && (
+            <div className="hub-menu is-wide">
+              <label className="hub-mi" title="One ET-PSU-ENC Element per piece of joinery, with its drivers inside. Off: pieces are recorded as space groups on the hub row.">
+                <input type="checkbox" className="form-check-input m-0" checked={!!cur.enclosures}
+                  onChange={() => edit({ enclosures: !cur.enclosures })} />
+                <span className="grow">Enclosure Elements</span><span className="hint">ET-PSU-ENC per piece</span>
+              </label>
+              {dropEnclosures.length > 0 && (
+                <div className="hub-mi hint" title="Their drivers are moved back onto the hub first">
+                  The patch marks {dropEnclosures.length} enclosure{dropEnclosures.length === 1 ? '' : 's'} IsDeleted.
+                </div>
+              )}
+              {notInDb.length > 0 && (
+                <>
+                  <div className="hub-mdiv" />
+                  <div className="hub-mh">Sizes the DB doesn&apos;t have yet · {inPatch.length} of {notInDb.length}</div>
+                  <div className="hub-mi hint pt-0">
+                    These types are in the DB but have no dimensions. The patch writes the sizes ticked here.
+                  </div>
+                  {notInDb.map((m) => (
+                    <label key={m.typeRef} className="hub-mi">
+                      <input type="checkbox" className="form-check-input m-0" checked={!skip.includes(m.typeRef)}
+                        onChange={() => setSkip((s) => (s.includes(m.typeRef)
+                          ? s.filter((x) => x !== m.typeRef) : [...s, m.typeRef]))} />
+                      <span className="grow rv-ref">{m.typeRef}</span>
+                      <span className="hint">{m.recipe ? `${m.recipe.parts.length} parts` : formatParams({ size: m.size })}</span>
+                      <Origin kind={m.sizedBy} what={m.typeRef} />
+                    </label>
+                  ))}
+                </>
+              )}
+            </div>
+          )}
+        </span>
+
+        <button type="button" className="hub-tb is-add" onClick={() => setDrawer(true)} aria-expanded={drawer}>
+          <span className="material-icons">add</span>Add drivers
+        </button>
+        <span className="flex-grow-1" />
+        <button type="button" className="hub-tb is-icon" disabled={!hist.undo.length} onClick={undo} title="Undo">
+          <span className="material-icons">undo</span>
+        </button>
+        <button type="button" className="hub-tb is-icon" disabled={!hist.redo.length} onClick={redo} title="Redo">
+          <span className="material-icons">redo</span>
+        </button>
+        <button type="button" className="hub-tb is-solid" onClick={copyPatch}
+          title="Copy an ExcelScript patch: bays, positions, separated bays, parts, junction boxes, sizes not in the DB and TBC flags">
+          <span className="material-icons">{copied ? 'check' : 'content_copy'}</span>{copied ? 'Copied' : 'Copy patch'}
+        </button>
       </div>
 
       {/* what in this hub is the DB's, and what the tool is standing in for */}
@@ -1004,6 +1062,10 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
       </div>
 
       <div className="hub-body">
+      {state.prefs?.showBom && (
+        <Bom counts={bomCounts} inventory={model.inventory ?? []} title={hub}
+          onClose={() => dispatch({ type: 'SET_PREFS', prefs: { showBom: false } })} />
+      )}
       <HubTray items={tray} dragging={drag} trayRef={trayEl}
         selected={sel} onToggle={(ref) => toggle(ref, true)}
         onPick={(ref) => {
@@ -1015,6 +1077,46 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
         onHover={(over) => setDrag((d) => (d && !d.fromTray ? { ...d, overTray: over, overBay: over ? null : d.overBay } : d))}
         onBreakApart={breakApart} />
       <div className="hub-sheets">
+        {sel.length > 0 && (
+          <div className="hub-selbar">
+            <div className="hub-selpill" role="toolbar" aria-label="Selection">
+              <span>{one
+                ? <><b>{outRef(one.ref)}</b> <span className="hub-selname">{typesLib[one.typeRef]?.name || one.typeRef}</span></>
+                : `${sel.length} selected`}</span>
+              {one && one.kind !== 'feed' && (
+                <span className="pb" title="Junction boxes on this Element. Auto is one per output on CV, none on CC.">
+                  <span className="material-icons">cable</span>Junction boxes
+                  <span className="jb">
+                    <button type="button" className={one.jbStored ? '' : 'is-on'} onClick={() => setJboxes(sel, null)}>auto</button>
+                    {[0, 1, 2, 3, 4].map((n) => (
+                      <button type="button" key={n} className={one.jbStored && one.jboxes === n ? 'is-on' : ''}
+                        onClick={() => setJboxes(sel, n)}>{n}</button>
+                    ))}
+                  </span>
+                </span>
+              )}
+              {inBays.length > 0 && (
+                <>
+                  <button type="button" className="pb" title="Stand it on its side, as HUB-A does across its top zone"
+                    onClick={() => edit({ bays: sel.reduce((bs, r) => hl.rotate(bs, r), cur.bays) })}>
+                    <span className="material-icons">rotate_90_degrees_ccw</span>Rotate
+                  </button>
+                  <button type="button" className="pb" onClick={splitSelected}>
+                    <span className="material-icons">call_split</span>Split into a new bay
+                  </button>
+                </>
+              )}
+              {inBays.filter((i) => i.qty > 1).map((i) => (
+                <button type="button" key={i.ref} className="pb" onClick={() => breakApart(i.ref)}>
+                  <span className="material-icons">call_split</span>Break apart{sel.length > 1 ? ` ${outRef(i.ref)}` : ''} ×{i.qty}
+                </button>
+              ))}
+              <button type="button" className="pb is-x" title="Clear the selection" onClick={() => setSel([])}>
+                <span className="material-icons">close</span>
+              </button>
+            </div>
+          </div>
+        )}
         {hl.sheets(cur.bays.length, separate).map((sheet, si) => {
           // Joined bays are one cabinet with a divider: they share the gap
           // between them, so the centre is 50 and not 100.
@@ -1091,8 +1193,6 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
                             <input type="number" placeholder="h" value={o.target.h}
                               onChange={(e) => setOpt(b, { target: { ...o.target, h: e.target.value } })} />
                           </label>
-                          <label><input type="checkbox" checked={o.bounds}
-                            onChange={() => setOpt(b, { bounds: !o.bounds })} /> Bounding lines</label>
                           <label title="Its own sheet, its own dimensions and its own Element. Still the same hub.">
                             <input type="checkbox" checked={o.separate}
                               onChange={() => setOpt(b, { separate: !o.separate })} /> Separate
@@ -1232,7 +1332,7 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
                     );
                   })}
 
-                  {placed.filter((p) => opt(sheet.slots[p.slot]).bounds).map((p) => {
+                  {(state.prefs?.bounds ? placed : []).map((p) => {
                     const y = H - px(p.y) - px(p.size[1]);
                     const x = px(p.x);
                     const cx = px(p.clear?.x ?? hl.CLEAR_X);
@@ -1341,6 +1441,58 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
         })}
       </div>
       </div>
+
+      {notice && <div key={notice} className="hub-notice" role="status">{notice}</div>}
+
+      <div ref={drawerEl} className={`hub-drawer ${drawer ? 'is-open' : ''}`} aria-hidden={!drawer}
+        inert={drawer ? undefined : ''}>
+        <div className="hub-drawer-grab" />
+        <div className="hub-drawer-head">
+          <h6>Add drivers to {hub}</h6>
+          <input className="form-control form-control-sm" placeholder="Search types" value={find}
+            onChange={(e) => setFind(e.target.value)} aria-label="Search types" />
+          <span className="text-secondary small">Drag into a bay, or + to put it in Not placed</span>
+          <button type="button" className="btn-close ms-auto" aria-label="Close" onClick={() => setDrawer(false)} />
+        </div>
+        <div className="hub-drawer-grid">
+          {offer.map((t) => {
+            const size = sizeOf[t.typeRef];
+            return (
+              <div key={t.typeRef} className={`hub-tray-group ${here.has(t.typeRef) ? 'is-here' : ''}`}>
+                <div className="hub-tray-type" title={t.typeRef}>
+                  <span className="rv-ref">{t.typeRef}{here.has(t.typeRef) && <span className="hub-here"> · in this hub</span>}</span>
+                  {size && <span className="text-secondary">{Math.round(size[0])} × {Math.round(size[1])}</span>}
+                </div>
+                <div className="hub-tray-item"
+                  title="Drag into a bay to place it"
+                  onMouseDown={(e) => {
+                    if (e.target.closest('input, button')) return;
+                    e.preventDefault();
+                    setSel([]);
+                    setDrag({ add: t.typeRef, qty: addQty(t.typeRef), refs: [], overBay: null, atIndex: 0 });
+                  }}>
+                  <span className="material-icons hub-tray-grip">drag_indicator</span>
+                  <span className="hub-tray-ref" title={t.name || t.typeRef}>{t.name || t.typeRef}</span>
+                  <input type="number" min="1" className="form-control form-control-sm hub-drawer-qty"
+                    aria-label={`How many ${t.typeRef}`} value={qtys[t.typeRef] ?? 1}
+                    onChange={(e) => setQtys((q) => ({ ...q, [t.typeRef]: e.target.value }))} />
+                  <button type="button" className="hub-drawer-plus" title="Put it in Not placed"
+                    onClick={() => dispatch({ type: 'ADD_DRIVER', typeRef: t.typeRef, zone: hub, quantity: addQty(t.typeRef) })}>
+                    <span className="material-icons">add</span>
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+          <button type="button" className="hub-tray-group is-new" onClick={() => setAdding(true)}>
+            <span className="material-icons">add_circle_outline</span> New type…
+          </button>
+        </div>
+      </div>
+      {adding && (
+        <NewTypeDialog zone={hub} inventory={model.inventory} dispatch={dispatch}
+          onClose={() => setAdding(false)} />
+      )}
     </div>
   );
 }
