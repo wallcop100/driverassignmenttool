@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { NO_SUPPLY, allParts, combine, nextTypeRef, sharedSupply } from '../engine.js';
+import { NO_SUPPLY, allParts, checkOf, combine, nextTypeRef, sharedSupply } from '../engine.js';
 import PresetEditor, { draftFromPart, toPreset } from './PresetEditor.jsx';
 import { fmt } from '../typeFaults.js';
 
@@ -151,7 +151,9 @@ export default function NewTypeDialog({ zone, inventory, dispatch, onClose, onCr
             <button key={p.name} className={`nt-part ${chosen === p.name ? 'is-on' : ''}`}
               onClick={() => { setChosen(p.name); setAdvanced(null); if (sharedSupply(p)) setPsu(sharedSupply(p).name); }}>
               <span className={`type-power is-${p.powerType.toLowerCase()}`}>{p.powerType}</span>
-              <span className="nt-part-name">{p.name}</span>
+              <span className="nt-part-name">{p.name}{p.shared && (
+                <span className="material-icons nt-part-sug" title={`Suggested by someone using this tool${checkOf(p) === 'unchecked' ? ' - to check' : ''}`}>auto_awesome</span>
+              )}</span>
               <span className="nt-part-spec">
                 {p.maxPowerW != null ? `${fmt(p.maxPowerW)}W` : 'W set by the supply'}
                 {p.powerType === 'CC' && p.minA != null
