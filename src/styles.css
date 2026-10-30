@@ -1277,7 +1277,11 @@ body.drawer-open .hub-notice { bottom: calc(var(--drawer-h, 300px) + 12px); }
   box-shadow: 0 -12px 40px rgba(15, 23, 42, .18); font-size: 12.5px;
 }
 .hub-drawer.is-open { transform: translate(-50%, 0); }
-.hub-drawer-grab { width: 44px; height: 5px; border-radius: 3px; background: #cbd5e1; margin: 0 auto 8px; }
+.hub-drawer-grab { margin: -8px auto 2px; padding: 8px 40px; width: max-content; cursor: grab; touch-action: none; }
+.hub-drawer-grab span { display: block; width: 44px; height: 5px; border-radius: 3px; background: #cbd5e1; }
+.hub-drawer-grab:hover span { background: #94a3b8; }
+.hub-drawer.is-pulled { transition: none; }
+.hub-drawer.is-pulled .hub-drawer-grab { cursor: grabbing; }
 .hub-drawer-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
 .hub-drawer-head h6 { margin: 0; font-weight: 600; }
 .hub-drawer-head input { max-width: 240px; }
@@ -1309,9 +1313,14 @@ body.drawer-open .hub-notice { bottom: calc(var(--drawer-h, 300px) + 12px); }
 .hub-drawer-card.is-new { justify-content: center; gap: 6px; min-height: 60px; border-style: dashed; color: #2563eb; cursor: pointer; }
 .hub-drag-ghost {
   position: fixed; z-index: 80; pointer-events: none; transform: translate(-50%, -50%);
+  transform-origin: 50% 0; animation: hub-swing .9s ease-out;
   min-width: 12px; min-height: 12px;
   border: 1.5px dashed #2563eb; border-radius: 3px; background: rgba(219, 234, 254, .75);
   font: 600 11px system-ui, sans-serif; color: #1e3a8a; box-shadow: 0 6px 18px rgba(15, 23, 42, .2);
+}
+/* pulled out of the drawer, it swings like something lifted off a hook */
+@keyframes hub-swing {
+  0% { rotate: 0deg; } 20% { rotate: -12deg; } 40% { rotate: 8deg; } 60% { rotate: -4deg; } 80% { rotate: 2deg; } 100% { rotate: 0deg; }
 }
 .hub-drag-ghost.is-over { border-style: solid; background: rgba(191, 219, 254, .85); }
 .hub-drag-ghost span {
@@ -1338,4 +1347,5 @@ body.drawer-open .ck-pip { bottom: calc(var(--drawer-h, 300px) + 8px); }
 @media (prefers-reduced-motion: reduce) {
   .hub-menu, .hub-selpill, .hub-notice { animation: none; }
   .hub-drawer, .ck-pip { transition: none; }
+  .hub-drag-ghost { animation: none; }
 }

@@ -206,6 +206,7 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
   const [find, setFind] = useState('');
   const [qtys, setQtys] = useState({});           // typeRef -> how many + adds
   const [pt, setPt] = useState(null);             // the cursor, while a drawer type is dragged
+  const [pull, setPull] = useState(null);         // the drawer's grab handle pulled down: [startY, dy]
   const [adding, setAdding] = useState(false);    // the New type dialog
   const [nudgeAt, setNudgeAt] = useState(null);   // { b, axis } the arrow keys move
   const [notice, setNotice] = useState(null);
@@ -887,7 +888,7 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
     .filter((t) => !needle || `${t.typeRef} ${t.name ?? ''}`.toLowerCase().includes(needle))
     .sort((a, b) => here.has(b.typeRef) - here.has(a.typeRef));
   const addQty = (typeRef) => Math.max(1, Math.floor(+qtys[typeRef]) || 1);
-  const showSizes = state.prefs?.drawerSizes !== false;
+  const showSizes = !!state.prefs?.drawerSizes;
   // every card's footprint to one scale, so a big driver looks big beside a small one
   const fit = 56 / Math.max(1, ...offer.flatMap((t) => sizeOf[t.typeRef] ?? []));
   const ghost = drag?.add && pt && sizeOf[drag.add];
@@ -1455,9 +1456,15 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
         aria-expanded={drawer} tabIndex={drawer ? -1 : 0}>
         <span className="material-icons">add</span>Add drivers
       </button>
-      <div ref={drawerEl} className={`hub-drawer ${drawer ? 'is-open' : ''} ${drag?.add ? 'is-dragging' : ''}`}
+      <div ref={drawerEl} className={`hub-drawer ${drawer ? 'is-open' : ''} ${drag?.add ? 'is-dragging' : ''} ${pull ? 'is-pulled' : ''}`}
+        style={pull ? { transform: `translate(-50%, ${pull[1]}px)` } : undefined}
         aria-hidden={!drawer} inert={drawer ? undefined : ''}>
-        <div className="hub-drawer-grab" />
+        {/* pull the handle down to put the drawer away */}
+        <div className="hub-drawer-grab" title="Drag down to close"
+          onPointerDown={(e) => { e.currentTarget.setPointerCapture(e.pointerId); setPull([e.clientY, 0]); }}
+          onPointerMove={(e) => { if (pull) setPull([pull[0], Math.max(0, e.clientY - pull[0])]); }}
+          onPointerUp={() => { if (pull?.[1] > 60) setDrawer(false); setPull(null); }}
+          onPointerCancel={() => setPull(null)}><span /></div>
         <div className="hub-drawer-head">
           <h6>Add drivers to {hub}</h6>
           <input className="form-control form-control-sm" placeholder="Search types" value={find}
