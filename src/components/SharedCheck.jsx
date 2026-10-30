@@ -38,15 +38,16 @@ export default function SharedCheck({ part, recorded }) {
     <div className="companion-card shared-check" data-testid="shared-check">
       <div className="sc-head">
         <span className="material-icons" style={{ fontSize: 15 }}>fact_check</span>
-        Check {part.name}
+        Suggested ratings for {part.name}
       </div>
       {wrong && !mine && (
         <div className="sc-warn" data-testid="shared-check-off">
           <span className="material-icons" style={{ fontSize: 15 }}>warning_amber</span>
-          These look wrong: {Object.keys(off).join(', ')} disagree{Object.keys(off).length === 1 ? 's' : ''} with what is already recorded.
+          These look wrong: {Object.keys(off).join(', ')} {Object.keys(off).length === 1 ? 'does' : 'do'} not match what is already recorded.
         </div>
       )}
       <table className="table table-sm mb-1">
+        <thead><tr><th /><th>Suggested</th></tr></thead>
         <tbody>
           <tr><th>From</th><td>
             someone using this tool
@@ -62,13 +63,13 @@ export default function SharedCheck({ part, recorded }) {
           {mine
             ? (mine === 'confirmed' ? 'Thanks.' : 'Noted - fill these in by hand if they are wrong.')
             : wrong
-              ? 'It disagrees with what is already recorded, so check it against the datasheet before saying it matches.'
-              : 'Not yet checked by a second person, so nothing fills in from it automatically. Does it match the datasheet?'}
+              ? 'Are the suggested values right? Check them against the datasheet first.'
+              : 'Are the suggested values right? Nothing fills in from them until a second person agrees.'}
         </span>
         {!mine && companion?.parts?.vote && (
           <>
-            <button type="button" className={`btn btn-sm ${wrong ? 'btn-outline-primary' : 'btn-info'}`} onClick={() => vote('confirmed')}>Yes, it matches</button>
-            <button type="button" className={`btn btn-sm ${wrong ? 'btn-info' : 'btn-outline-primary'}`} onClick={() => vote('rejected')}>{wrong ? "No, it's wrong" : 'No'}</button>
+            <button type="button" className={`btn btn-sm ${wrong ? 'btn-outline-primary' : 'btn-info'}`} onClick={() => vote('confirmed')}>Yes, they're right</button>
+            <button type="button" className={`btn btn-sm ${wrong ? 'btn-info' : 'btn-outline-primary'}`} onClick={() => vote('rejected')}>No, they're wrong</button>
             <button type="button" className="btn btn-sm btn-link p-0" onClick={() => vote('unsure')}>Not sure</button>
           </>
         )}
