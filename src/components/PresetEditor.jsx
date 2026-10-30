@@ -182,7 +182,9 @@ export default function PresetEditor({ draft, setDraft, inventory, onSave, onCan
   return (
     <div className="preset-editor">
       {/* an amendment is checked here too: its size, boxes and supply fill the layout once agreed */}
-      {[part?.driver ?? part, part?.supply, amend].filter(Boolean).map((p, n) => <SharedCheck key={`${n}${p.name}`} part={p} />)}
+      {[part?.driver ?? part, part?.supply, amend].filter(Boolean).map((p, n) => (
+        <SharedCheck key={`${n}${p.name}`} part={p} recorded={p.kind === 'supply' ? null : draft} />
+      ))}
       {draft.invented ? (
         <div className="spec-pick">
           <label>

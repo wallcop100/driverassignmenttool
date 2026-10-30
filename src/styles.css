@@ -1191,3 +1191,6 @@ body { background: #f6f8fb; }
 .shared-check table { font-size: 12px; margin: 6px 0; }
 .shared-check th { color: #6c757d; font-weight: normal; width: 110px; }
 .shared-check .sc-foot { display: flex; align-items: center; gap: 6px; }
+.shared-check .sc-warn { display: flex; align-items: center; gap: 6px; margin-top: 6px; color: #b45309; font-weight: 600; }
+.shared-check tr.is-off td { color: #b45309; }
+.shared-check .sc-off { font-weight: 600; }

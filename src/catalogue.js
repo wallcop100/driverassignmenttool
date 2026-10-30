@@ -207,8 +207,6 @@ export function setSharedParts(rows) {
       shared: r.tier === 'confirmed' ? 'confirmed' : 'observed',
       re: { test: (hay) => keys.some((k) => hay.includes(k)) },
       ...(Array.isArray(r.windows) && { windows: r.windows.filter((w) => Number.isFinite(w?.a) && Number.isFinite(w?.w)) }),
-      // a link, never free text: only an https URL from the research seed survives
-      ...(typeof r.source === 'string' && /^https:\/\/[^\s"<>]{1,290}$/.test(r.source) && { source: r.source }),
       // the case off the datasheet, the supply a DC/DC driver runs on, and the
       // junction boxes it brings: shared so the layout can draw it
       ...(Array.isArray(r.sizeMm) && r.sizeMm.length === 3 && r.sizeMm.every((v) => Number.isFinite(v) && v > 0)
@@ -353,4 +351,44 @@ export function reachableW(spec, currentA) {
     return Math.min(spec.maxPowerW ?? Infinity, currentA * spec.maxFvV * (spec.outputs ?? 1));
   }
   return spec.supply ? spec.maxPowerW : null;
+}
+
+// A shared part's ratings as rows, and where they disagree with what is already recorded.
+const g = (n) => (Number.isInteger(n) ? n : +n.toFixed(2));
+
+// The ratings as the part states them, so the check is against something you can see.
+export const partRows = (p) => [
+  ['Type', `${p.powerType}${p.kind === 'supply' ? ' supply' : ''}`],
+  ['MaxPower(W)', p.maxPowerW],
+  ['Current', p.minA == null ? null : p.minA === p.maxA ? `${g(p.minA)}A` : `${g(p.minA)}–${g(p.maxA)}A`],
+  ['OutputVoltage(V)', p.outputV],
+  ['Max fV', p.maxFvV],
+  ['Outputs', p.outputs],
+  ['Addresses', p.addresses],
+  ['ControlType', p.controlType],
+  ['Per current', p.windows?.length
+    ? p.windows.map((w) => `${g(w.a * 1000)}mA ${g(w.w)}W${w.fv != null ? `/${g(w.fv)}fV` : ''}`).join(' · ') : null],
+  ['Size (mm)', p.sizeMm?.map(g).join(' × ')],
+  ['Junction boxes', p.jboxes],
+  ['Usual supply', p.psu],
+].filter(([, v]) => v != null && v !== '');
+
+// Where the claim disagrees with what is already recorded - the datasheet part it amends, and the
+// type it is offered for - by row. A disagreement is said, not left for the reader to spot.
+const num = (v) => (v == null || v === '' || !Number.isFinite(Number(v)) ? null : Number(v));
+export function conflicts(part, recorded) {
+  const out = {};
+  const base = PARTS.find((b) => b.name === part.name);
+  if (base) {
+    const was = Object.fromEntries(partRows(base));
+    for (const [k, v] of partRows(part)) if (was[k] != null && String(was[k]) !== String(v)) out[k] = `datasheet: ${was[k]}`;
+  }
+  if (recorded) {
+    const w = num(recorded.maxPowerW); const a = num(recorded.currentA); const fv = num(recorded.nodeMaxFvV);
+    if (recorded.powerType && recorded.powerType !== part.powerType) out.Type ??= `this type: ${recorded.powerType}`;
+    if (w != null && part.maxPowerW != null && w !== part.maxPowerW) out['MaxPower(W)'] ??= `this type: ${g(w)}`;
+    if (a != null && part.minA != null && (a < part.minA || a > part.maxA)) out.Current ??= `this type runs at ${g(a)}A`;
+    if (fv != null && part.maxFvV != null && fv !== part.maxFvV) out['Max fV'] ??= `this type: ${g(fv)}`;
+  }
+  return out;
 }
