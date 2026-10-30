@@ -167,6 +167,40 @@ export function partsFor({ wrapper, children = [], types = {}, resolveSpec = () 
 
 // ---- junction boxes, as spaces on the driver Element --------------------------
 
+// How many junction boxes a driver brings before anybody edits it. A constant
+// voltage run is broken out at a box per output, so a 4-output CV driver arrives
+// with 4. Constant current is a home run per output straight to the fitting, so
+// it brings none.
+export function defaultJboxes(spec, type) {
+  const told = checked(spec?.driver ?? spec, 'jboxes');   // a checked shared count wins
+  if (told != null) return told;
+  const power = spec?.powerType ?? type?.powerType ?? null;
+  if (power !== 'CV') return 0;
+  return spec?.outputs ?? type?.nodes?.length ?? type?.outputs ?? 1;
+}
+
+// What a set of drivers is bought as: per type, its driver part and its supply,
+// and the junction boxes it brings. A type no datasheet matches is listed under
+// its own name, so nothing drops out of the count.
+export function bom(counts, inventory, resolveSpec) {
+  const rows = new Map();
+  const add = (kind, item, n) => {
+    if (!n) return;
+    const r = rows.get(`${kind}|${item}`) ?? { kind, item, qty: 0 };
+    r.qty += n;
+    rows.set(`${kind}|${item}`, r);
+  };
+  for (const [typeRef, n] of counts) {
+    const t = inventory.find((x) => x.typeRef === typeRef);
+    const spec = resolveSpec(t?.name || typeRef);
+    const part = spec?.driver ?? spec;
+    add(part ? 'driver' : 'unmatched', part?.name ?? (t?.name || typeRef), n);
+    if (spec?.supply) add('supply', spec.supply.name, n);
+    add('jbox', 'Junction box', n * defaultJboxes(spec, t));
+  }
+  return [...rows.values()];
+}
+
 // Stacked down the right of the parts beneath the supply, the way the drawings put them.
 export function jbSpaces(count, parts) {
   const low = parts.filter((p) => p.role !== 'PSU' && p.size);

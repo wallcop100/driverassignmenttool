@@ -66,12 +66,6 @@ export const ratingsOf = (t) => [
   (t.nodeMaxFvV ?? t.nodes?.[0]?.maxFvV) != null ? `${fmt(t.nodeMaxFvV ?? t.nodes[0].maxFvV)}fV/out` : null,
 ].filter(Boolean).join(' · ');
 
-// A type can be in a dozen hubs; a card must not stretch to name them all.
-export const zoneList = (zones) => {
-  const z = [...zones].sort();
-  return z.length > 2 ? `${z[0]} +${z.length - 1}` : z.join(', ');
-};
-
 // The current the design picked out of the datasheet's range. It says so twice - 
 // in the ref and in the name - and when those disagree neither is authoritative,
 // so both are offered and the choice corrects the name to match. The ref is left

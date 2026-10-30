@@ -1,4 +1,4 @@
-import { ratingsOf, zoneList } from '../typeFaults.js';
+import { ratingsOf } from '../typeFaults.js';
 import Origin from './Origin.jsx';
 
 // One driver ElementType, as a card. The same card on both surfaces: the picker
@@ -9,7 +9,7 @@ import Origin from './Origin.jsx';
 // highlighter through the numbers underneath, and the numbers are the point. The
 // mark is a rail and a button, and the button opens the whole explanation rather
 // than hiding it in a hover tooltip nobody can read at their own pace.
-export default function TypeCard({ t, faults, usage, onWarn, children, below, className = '' }) {
+export default function TypeCard({ t, faults, onWarn, children, below, className = '' }) {
   return (
     <div className={`tp-card ${faults.length ? 'is-off' : ''} ${className}`}>
       <div className="tp-card-top">
@@ -29,9 +29,6 @@ export default function TypeCard({ t, faults, usage, onWarn, children, below, cl
         </span>
       </div>
       <div className="tp-foot">
-        <span className="tp-use" title={usage ? [...usage.zones].sort().join(', ') : ''}>
-          {usage ? `${usage.count} × ${zoneList(usage.zones)}` : 'unused'}
-        </span>
         {faults.length > 0 && (
           <button type="button" className="tp-warn" onClick={onWarn}>
             <span className="material-icons">warning_amber</span>

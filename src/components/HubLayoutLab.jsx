@@ -29,17 +29,7 @@ import HubTray from './HubTray.jsx';
 
 const JBOX = (n) => ({ kind: 'jbox', label: 'JUNCTION BOX', size: [80, 35, 40], ref: `jb${n}` });
 
-// How many junction boxes a driver brings before anybody edits it. A constant
-// voltage run is broken out at a box per output, so a 4-output CV driver arrives
-// with 4. Constant current is a home run per output straight to the fitting, so
-// it brings none.
-export function defaultJboxes(spec, type) {
-  const told = checked(spec?.driver ?? spec, 'jboxes');   // a checked shared count wins
-  if (told != null) return told;
-  const power = spec?.powerType ?? type?.powerType ?? null;
-  if (power !== 'CV') return 0;
-  return spec?.outputs ?? type?.nodes?.length ?? type?.outputs ?? 1;
-}
+export const { defaultJboxes } = recipe;
 
 const composite = (parts) => (parts.some((p) => p.kind === 'driver' && p.size)
   ? hl.composite(parts.filter((p) => p.size)) : null);
