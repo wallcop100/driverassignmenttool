@@ -419,8 +419,9 @@ body { background: #f6f8fb; }
 .fld-foot-note { font-size: 11px; color: #94a3b8; }
 /* the shared catalogue (AUSTHZ): what people sent, told apart from a spec page */
 .fld-ds.is-shared { color: #7c3aed; display: inline-flex; align-items: center; gap: 4px; }
-/* PS&R's mark for one thing the companion is sure of; a .companion-card is a question, never both */
-.companion-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; background: #8b5cf6; box-shadow: 0 0 6px 1px rgba(139, 92, 246, 0.6); }
+.fld-ds.is-shared .material-icons { font-size: 12px; text-decoration: none; }
+.sw-sug { margin-left: 8px; color: #7c3aed; display: inline-flex; align-items: center; gap: 3px; text-transform: none; letter-spacing: 0; }
+.sw-sug .material-icons { font-size: 13px; }
 .share-part { margin-top: 10px; border-top: 1px dashed #dbe3ee; padding-top: 8px; }
 .share-range { display: flex; align-items: center; gap: 4px; }
 

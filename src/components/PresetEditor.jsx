@@ -129,7 +129,7 @@ export default function PresetEditor({ draft, setDraft, inventory, onSave, onCan
     addresses: sure?.addresses, nodeMaxFvV: sure?.maxFvV, nodeMaxLoadW: sure?.nodeMaxLoadW,
     nodeCurrentA: sure?.nodeCurrentA,
   };
-  const from = part?.shared ? 'shared' : 'spec page';
+  const from = part?.shared ? 'Suggested' : 'spec page';
 
   // One field: the schema's own column name above a box that looks like a box,
   // and - where the datasheet says otherwise - an offer you can take rather than
@@ -151,13 +151,13 @@ export default function PresetEditor({ draft, setDraft, inventory, onSave, onCan
         {(off || blank) && (
           <button type="button" className={`fld-ds${part.shared ? ' is-shared' : ''}`} onClick={() => set({ [k]: want })}
             title={`Take ${g(want)} from the ${part.name} ${from}`}>
-            {part.shared && <span className="companion-dot" />}{off ? `${from}: ${g(want)}` : `use ${g(want)}`}
+            {part.shared && <span className="material-icons">auto_awesome</span>}{off ? `${from}: ${g(want)}` : `use ${g(want)}`}
           </button>
         )}
         {altOff && (
           <button type="button" className="fld-ds is-shared" onClick={() => set({ [k]: alt })}
             title={`Use ${g(alt)} - what other projects use for the ${amend.name}, agreed by two people`}>
-            <span className="companion-dot" />other projects: {g(alt)}
+            <span className="material-icons">auto_awesome</span>Suggested: {g(alt)}
           </button>
         )}
       </label>
