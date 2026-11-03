@@ -61,6 +61,7 @@ export function rebuild(presets) {
 // A DesignDB workbook stands in for the type library; a type CSV, being from a
 // commit, wins over it when both are dropped.
 export async function parseAuto(files) {
+  source = null;
   const all = [...files];
   const texts = await Promise.all(all.filter((f) => !isWorkbook(f)).map((f) => f.text()));
   const found = { form: null, links: null, types: null, assessment: null };
@@ -110,10 +111,40 @@ function needsTypes(message) {
 
 // The type library arriving after the model was built - a DesignDB attached from
 // the app. Rebuilt as if it had been dropped with the CSVs.
-export async function attachDesignDb(file, presets) {
+export async function attachDesignDb(file, presets, handle = null) {
   raw.types = await readDesignDb(file);
   applied = null;
+  watchDesignDb(file, handle);
   return rebuild(presets);
+}
+
+// The workbook the types came from, so a save in Excel while the tool is open
+// can be offered as a refresh. A dropped file in Chromium brings a handle that
+// reads the file as it is now; a picked one is a snapshot.
+let source = null;
+export function watchDesignDb(file, handle = null) {
+  source = file ? { file, handle, at: file.lastModified } : null;
+}
+// Not now: ask again only on the next save (a snapshot can't tell saves apart, so it stops asking).
+export function skipDesignDbChange(change) {
+  if (source && change?.file) source.at = change.file.lastModified;
+  else source = null;
+}
+// null while unchanged; { file } to re-read, or { file: null } when the browser
+// can tell it changed but cannot read the new one (pick it again).
+export async function designDbChange() {
+  if (!source) return null;
+  try {
+    if (source.handle) {
+      const f = await source.handle.getFile();
+      return f.lastModified !== source.at ? { file: f, handle: source.handle } : null;
+    }
+    await source.file.slice(0, 1).arrayBuffer();
+    return null;
+  } catch (e) {
+    // shortcut: a snapshot File refusing to read is Chromium's only change signal without a handle; Firefox gives none
+    return !source.handle && e?.name === 'NotReadableError' ? { file: null } : null;
+  }
 }
 
 // Third mode: Positions rolled up by DJ 100053, no links and no drivers.
@@ -128,13 +159,12 @@ export async function estimate(opts, zone) {
   return engine.estimate(model, opts, zone);
 }
 
-export async function estimatePatchRows(opts, zone, patchOpts) {
-  return engine.estimatePatchRows(engine.estimate(model, opts, zone), patchOpts);
+// Other hubs of this branch+set, from their saved slots, each with its own
+// forced types - so one patch can carry several hubs (E7P24F).
+export async function estimateHubs(sessions, opts) {
+  return sessions.flatMap((s) => engine.estimate(s.model, { ...opts, forced: s.forcedTypes ?? {} }));
 }
 
-export async function generateEstimatePatch(opts, zone, patchOpts) {
-  return engine.generateEstimatePatch(engine.estimate(model, opts, zone), patchOpts);
-}
 
 // The demo carries all three modes at once, because a real job does: most hubs
 // designed, HUB-B1 cabled but with no drivers, and HUB-J still at tender.

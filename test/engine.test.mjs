@@ -1573,3 +1573,13 @@ test('assessment: DJ 100874 column names, zone is BestRef', () => {
   assert.deepEqual([local.zone, local.powerType], ['P50002', null]);
   assert.equal(mains.powerType, null);
 });
+
+test('estimate: a saved hub slot (JSON round-trip) still sizes, for the multi-hub patch', () => {
+  const csv = fs.readFileSync(path.join(dir, '..', 'src', 'demo', 'assessment.csv'), 'utf8');
+  const types = fs.readFileSync(path.join(dir, '..', 'src', 'demo', 'form.csv'), 'utf8');
+  const model = engine.buildEstimate(csv, types);
+  const live = engine.estimatePatchRows(engine.estimate(model, {}));
+  const saved = engine.estimatePatchRows(engine.estimate(JSON.parse(JSON.stringify(model)), {}));
+  assert.ok(live.length > 0);
+  assert.deepEqual(saved, live);
+});

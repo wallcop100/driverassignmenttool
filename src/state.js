@@ -443,8 +443,10 @@ export function reducer(state, action) {
 
     case 'FORCE_TYPE': {
       const forcedTypes = { ...state.forcedTypes };
-      if (action.typeRef) forcedTypes[action.key] = action.typeRef;
-      else delete forcedTypes[action.key];
+      for (const key of action.keys ?? [action.key]) {   // keys: every line of a PositionType at once
+        if (action.typeRef) forcedTypes[key] = action.typeRef;
+        else delete forcedTypes[key];
+      }
       return { ...state, forcedTypes };
     }
     case 'OWN_LINE': {
