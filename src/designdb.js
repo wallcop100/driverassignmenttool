@@ -55,6 +55,61 @@ export function typesCsvFromSheets({ ElementTypes = [], Elements = [], Positions
   return Papa.unparse({ fields: COLUMNS, data: rows.map((r) => COLUMNS.map((c) => r[c])) });
 }
 
+// The overlay's datc_ and date_ blocks (section 2d) from the workbook: the parts
+// of every wrapper type, and per hub its own row, separated bays and Elements, so
+// the space layout can be drawn from the DesignDB with no cables. The overlay is
+// told which PositionTypes are hubs; the workbook is not, so a hub is a Position
+// holding a driver Element (a type with outputs, or with parts of its own) or one
+// a fitting names as its secondary power. Keep in step with the overlay.
+const HUB_COLUMNS = ['Ref', 'Kind', 'ContextRef', 'Parameters', 'ContextParameters', 'Quantity', 'TypeRef', 'Name'];
+const isBay = (e) => s(e.TypeRef).startsWith('ET-PSU-ENC');
+
+export function hubsFromSheets({ ElementTypes = [], Elements = [], Positions = [] }) {
+  const all = Elements.filter(live);
+  const byRef = new Map(all.map((e) => [s(e.Ref), e]));
+  // like #Compositions, taken before the generated _EE rows are dropped
+  const comp = new Map();
+  for (const c of all) {
+    if (s(c.ContextType) !== 'Element' || !byRef.has(s(c.ContextRef))) continue;
+    const k = `${s(byRef.get(s(c.ContextRef)).TypeRef)}\t${s(c.TypeRef)}`;
+    const q = Number(c.Quantity) || 1;
+    const o = Number(c.SortOrder) || 0;
+    const was = comp.get(k);
+    comp.set(k, was ? [Math.max(was[0], q), Math.min(was[1], o)] : [q, o]);
+  }
+  const compositions = Papa.unparse({
+    fields: ['ParentTypeRef', 'ChildTypeRef', 'Quantity', 'SortOrder'],
+    data: [...comp].map(([k, [q, o]]) => [...k.split('\t'), q, o]),
+  });
+
+  const elements = all.filter((e) => !s(e.Ref).startsWith('_EE'));
+  const parents = new Set(elements.filter((c) => s(c.ContextType) === 'Element').map((c) => s(c.ContextRef)));
+  const outputs = new Set(ElementTypes.filter(live).filter((t) => /<|OP\./.test(s(t.Parameters))).map((t) => s(t.Ref)));
+  const inside = new Map();     // ContextRef -> Elements in it
+  for (const e of elements) {
+    const k = `${s(e.ContextType)}\t${s(e.ContextRef)}`;
+    if (!inside.has(k)) inside.set(k, []);
+    inside.get(k).push(e);
+  }
+  const positions = Positions.filter(live);
+  const named = new Set(positions.map((p) => s(p.Link_SecondaryPowerRef)).filter(Boolean));
+  const row = (e, Kind) => Object.fromEntries(HUB_COLUMNS.map((c) => [c, c === 'Kind' ? Kind : s(e[c])]));
+  const hubs = {};
+  for (const p of positions) {
+    const here = inside.get(`Position\t${s(p.Ref)}`) ?? [];
+    if (!named.has(s(p.Ref)) && !here.some((e) => outputs.has(s(e.TypeRef)) || parents.has(s(e.Ref)))) continue;
+    const bays = here.filter(isBay);
+    const rows = [
+      { Ref: s(p.Ref), Kind: 'hub', Parameters: s(p.Parameters) },
+      ...bays.map((e) => row(e, 'bay')),
+      ...here.filter((e) => !isBay(e)).map((e) => row(e, 'element')),
+      ...bays.flatMap((b) => inside.get(`Element\t${s(b.Ref)}`) ?? []).map((e) => row(e, 'element')),
+    ];
+    hubs[s(p.ExtRef) || s(p.Ref)] = Papa.unparse({ fields: HUB_COLUMNS, data: rows.map((r) => HUB_COLUMNS.map((c) => r[c] ?? '')) });
+  }
+  return { hubs, compositions };
+}
+
 // PositionType Ref -> UoM ('m', 'm2'), for an assessment exported without the UoM column
 export const positionUoms = (rows) => Object.fromEntries(rows.filter(live)
   .map((r) => [s(r.Ref), s(r.UoM)]).filter(([ref, u]) => ref && u));
@@ -69,8 +124,10 @@ export async function readDesignDb(file) {
     throw new Error(`${file.name} has no ElementTypes sheet - is it a DesignDB?`);
   }
   const rows = (n) => (wb.Sheets[n] ? XLSX.utils.sheet_to_json(wb.Sheets[n], { defval: '' }) : []);
+  const sheets = { ElementTypes: rows('ElementTypes'), Elements: rows('Elements'), Positions: rows('Positions') };
   return {
-    types: typesCsvFromSheets({ ElementTypes: rows('ElementTypes'), Elements: rows('Elements'), Positions: rows('Positions') }),
+    types: typesCsvFromSheets(sheets),
     uom: positionUoms(rows('PositionTypes')),
+    ...hubsFromSheets(sheets),
   };
 }

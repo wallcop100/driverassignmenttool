@@ -17,8 +17,9 @@ const FILES = [
 const FUNCTIONS = [
   { key: 'estimate', label: 'Secondary Power Assessment', icon: 'calculate',
     ready: (k) => k.has('assessment') && k.has('designdb'), uses: ['assessment', 'designdb'] },
-  { key: 'size', label: 'Hub Spacing', icon: 'straighten',
-    ready: (k) => k.has('links') && k.has('designdb'), uses: ['links', 'designdb', 'assessment'] },
+  // the DesignDB alone holds the hubs, their drivers and stored layouts; cables only add placement
+  { key: 'size', label: 'Hub Spacing', icon: 'straighten', ready: (k) => k.has('designdb'),
+    uses: (k) => (k.has('links') ? ['links', 'designdb', 'assessment'] : ['designdb']) },
   { key: 'assign', label: 'Driver Assignment', icon: 'cable',
     ready: (k) => k.has('links') && k.has('form'), uses: ['links', 'form', 'designdb', 'assessment'] },
 ];
@@ -70,11 +71,14 @@ export default function ImportScreen({ dispatch, saved, onResume, onDiscard }) {
     setBusy(true);
     setError(null);
     try {
-      const used = staged.filter((x) => fn.uses.includes(x.kind));
+      const uses = typeof fn.uses === 'function' ? fn.uses(have) : fn.uses;
+      const used = staged.filter((x) => uses.includes(x.kind));
       const model = await api.parseAuto(used.map((x) => x.file));
       const book = used.find((x) => isWorkbook(x.file));
       api.watchDesignDb(book?.file ?? null, book?.handle ?? null);
-      dispatch({ type: 'INIT', model });
+      // from the DesignDB alone there is nothing to assign, so it opens on the layout
+      const view = model.mode === 'empty' ? { page: 'layout', zone: model.zones[0] } : undefined;
+      dispatch({ type: 'INIT', model, view });
     } catch (e) {
       setError(e.message);
       setBusy(false);

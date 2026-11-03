@@ -498,12 +498,15 @@ export function buildEmpty(zone, typesText, presets) {
     const prior = inventory.get(t.typeRef) ?? null;
     inventory.set(t.typeRef, { ...t, designDB: prior, name: t.name || prior?.name || '' });
   }
+  // several zones: the hubs of a DesignDB opened alone, whose drivers come from its Elements
+  const many = Array.isArray(zone);
   return {
-    zones: [zone],
+    zones: many ? zone : [zone],
     drivers: [], links: [], baseline: {}, originalRows: [], fieldnames: DEFAULT_FIELDNAMES,
     requirements: [],
     mode: 'empty',
-    modeReason: 'nothing points at this hub yet - no drivers, cables or fittings',
+    modeReason: many ? 'the DesignDB alone - its hubs and drivers, no cables'
+      : 'nothing points at this hub yet - no drivers, cables or fittings',
     inventory: [...inventory.values()].sort((a, b) => a.typeRef.localeCompare(b.typeRef)),
   };
 }

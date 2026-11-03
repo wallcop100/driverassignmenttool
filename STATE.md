@@ -26,7 +26,14 @@ names and badge. `dat-autodeploy.timer` keeps Connected on Pages' build. The hos
 
 ## Log
 
-### 2026-11-03 — Emergency and feed marks (uncommitted)
+### 2026-11-03 — Hub Spacing from the DesignDB alone (uncommitted)
+- A dropped DesignDB on its own offers Hub Spacing. `hubsFromSheets` (designdb.js) ports the overlay's `datc_`/`date_` blocks (section 2d): compositions, plus per hub its row, bays and Elements. `api.hubRows(hub)` reads them per hub label.
+- A hub is a live Position holding a driver Element (a type with `<`/`OP.`, or one with parts), or one named in a `Link_SecondaryPowerRef`. The model is `buildEmpty(labels)` and opens on the layout.
+- Standalone, the patch now takes the hub's Position Ref from the workbook's hub row.
+- Checked in Playwright with the 5642 DesignDB: 27 hubs (11 PSU.HUB plus 16 LE1/LE2 local drivers). HUB-A draws 8 drivers with 2 feed provisions in the tray, and the patch writes `contextRef` P50001. 368 tests pass, build clean.
+- On resume, the workbook is read again through its saved handle when read permission is still granted, and the patch looks the hub Ref up at copy time. Without a handle (Firefox, or a picked file without one), the patch falls back to the label until the DesignDB is attached again.
+
+### 2026-11-03 — Emergency and feed marks (#36)
 - Emergency follows Erik's symbol_E.svg on Material's 24 grid: a teal (#08a8ac) triangle border, white inside, a black E, at 19px.
 - Feed is Erik's orange (#ff8200) five-point asterisk. Both are inline SVG (`MARK` in EstimatePage.jsx).
 

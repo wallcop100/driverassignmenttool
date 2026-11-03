@@ -1,7 +1,8 @@
 // DesignDB workbook -> type library CSV, as the overlay's section 0 would emit it.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { channels, typesCsvFromSheets, positionUoms } from '../src/designdb.js';
+import { channels, typesCsvFromSheets, positionUoms, hubsFromSheets } from '../src/designdb.js';
+import * as api from '../src/api.js';
 import * as engine from '../src/engine.js';
 
 test('channels follows the overlay CASE', () => {
@@ -40,4 +41,43 @@ test('positionUoms: live PositionTypes with a UoM only', () => {
   assert.deepEqual(positionUoms([
     { Ref: 'C01r', UoM: 'm' }, { Ref: 'B02w', UoM: '' }, { Ref: 'X', UoM: 'm', IsDeleted: 'Y' }, { Ref: 'P1', UoM: 'm2' },
   ]), { C01r: 'm', P1: 'm2' });
+});
+
+// Hub Spacing from the DesignDB alone: hubs by the safer rule, each with its rows.
+test('hubsFromSheets: a hub holds a driver or is named as secondary power', () => {
+  const { hubs, compositions } = hubsFromSheets({
+    ElementTypes: [{ Ref: 'ET-D', Parameters: '{<OP.1}' }, { Ref: 'ET-W' }, { Ref: 'ET-PSU' }, { Ref: 'ET-LAMP' }],
+    Positions: [
+      { Ref: 'H1', ExtRef: 'HUB-A', Parameters: '[[300mm,900mm,150mm]]<A.1[300mm,900mm,150mm,0,0,0]>' },
+      { Ref: 'H2' },                                         // holds a wrapper with no outputs of its own
+      { Ref: 'H3' },                                         // empty, but a fitting points at it
+      { Ref: 'F1', Link_SecondaryPowerRef: 'H3' },          // a fitting with a lamp Element: not a hub
+      { Ref: 'GONE', IsDeleted: 'Y' },
+    ],
+    Elements: [
+      { Ref: 'E1', TypeRef: 'ET-D', ContextType: 'Position', ContextRef: 'H1', ContextParameters: '[50mm,25mm,0mm]<A.1>' },
+      { Ref: 'E2', TypeRef: 'ET-D', ContextType: 'Position', ContextRef: 'H1', Quantity: 3 },
+      { Ref: 'E3', TypeRef: 'ET-W', ContextType: 'Position', ContextRef: 'H2' },
+      { Ref: 'E4', TypeRef: 'ET-PSU', ContextType: 'Element', ContextRef: 'E3', Quantity: 2, SortOrder: 1 },
+      { Ref: 'E5', TypeRef: 'ET-LAMP', ContextType: 'Position', ContextRef: 'F1' },
+      { Ref: 'E6', TypeRef: 'ET-D', ContextType: 'Position', ContextRef: 'GONE' },
+    ],
+  });
+  assert.deepEqual(Object.keys(hubs).sort(), ['H2', 'H3', 'HUB-A']);
+  assert.match(compositions, /ET-W,ET-PSU,2,1/);
+
+  api.setDriverExtras({ compositions, elements: hubs });
+  const a = api.hubRows('HUB-A');
+  assert.equal(a.hub.ref, 'H1');
+  assert.match(a.hub.parameters, /^\[\[300mm/);
+  assert.deepEqual(Object.keys(a.elements), ['E1', 'E2']);
+  assert.equal(a.elements.E1.contextParameters, '[50mm,25mm,0mm]<A.1>');
+  assert.equal(a.elements.E2.quantity, 3);
+  assert.deepEqual(Object.keys(api.hubRows('H3').elements), []);
+  assert.deepEqual(api.compositions(), { 'ET-W': [{ typeRef: 'ET-PSU', quantity: 2 }] });
+  api.setDriverExtras();
+
+  const m = engine.buildEmpty(Object.keys(hubs).sort(), 'ElementTypeRef,ElementTypeName,Parameters\nET-D,Driver,{<OP.1}\n');
+  assert.deepEqual(m.zones, ['H2', 'H3', 'HUB-A']);
+  assert.equal(m.mode, 'empty');
 });
