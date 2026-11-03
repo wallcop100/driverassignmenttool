@@ -35,6 +35,7 @@ export const DEFAULT_PREFS = {
   hubByHub: false,      // estimate: show one hub at a time (standalone, whole job)
   pvPower: false,       // estimate pivot: show the Total Power column
   pvFv: false,          // estimate pivot: show the Total Forward Voltage column
+  pvName: false,        // estimate pivot: show the Driver Name column
   snapMm: 5,            // resize grid in the space layout
 };
 
@@ -93,16 +94,18 @@ const typeAsPreset = (t) => ({
   invented: false,
 });
 
+// what an undo step restores: the cables, the drivers, and the estimate's driver-type choices (report TRF856)
+const snapOf = (s) => ({
+  assignments: s.assignments, addedDrivers: s.addedDrivers, deletedDrivers: s.deletedDrivers,
+  forcedTypes: s.forcedTypes, ownLine: s.ownLine,
+});
+
 // every mutation pushes the prior state onto undo and drops the redo stack
 function withUndo(state, next) {
   return {
     ...state,
     ...next,
-    undo: [...state.undo, {
-      assignments: state.assignments,
-      addedDrivers: state.addedDrivers,
-      deletedDrivers: state.deletedDrivers,
-    }],
+    undo: [...state.undo, snapOf(state)],
     redo: [],
   };
 }
@@ -339,22 +342,14 @@ export function reducer(state, action) {
     case 'UNDO': {
       if (!state.undo.length) return state;
       const prev = state.undo[state.undo.length - 1];
-      const snap = {
-        assignments: state.assignments,
-        addedDrivers: state.addedDrivers,
-        deletedDrivers: state.deletedDrivers,
-      };
+      const snap = snapOf(state);
       return { ...state, ...prev, undo: state.undo.slice(0, -1), redo: [...state.redo, snap], ...CLEAR_MODES };
     }
 
     case 'REDO': {
       if (!state.redo.length) return state;
       const nextS = state.redo[state.redo.length - 1];
-      const snap = {
-        assignments: state.assignments,
-        addedDrivers: state.addedDrivers,
-        deletedDrivers: state.deletedDrivers,
-      };
+      const snap = snapOf(state);
       return { ...state, ...nextS, redo: state.redo.slice(0, -1), undo: [...state.undo, snap], ...CLEAR_MODES };
     }
 
@@ -452,12 +447,12 @@ export function reducer(state, action) {
         if (action.typeRef) forcedTypes[key] = action.typeRef;
         else delete forcedTypes[key];
       }
-      return { ...state, forcedTypes };
+      return withUndo(state, { forcedTypes });
     }
     case 'OWN_LINE': {
       const ownLine = state.ownLine.filter((t) => t !== action.positionType);
       if (ownLine.length === state.ownLine.length) ownLine.push(action.positionType);
-      return { ...state, ownLine };
+      return withUndo(state, { ownLine });
     }
     case 'SET_ROW_FILTER':
       // null drops the column from the filter list, [] keeps it listed with nothing left out

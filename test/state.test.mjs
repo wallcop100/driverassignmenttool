@@ -350,3 +350,16 @@ test('own-line choices are the set\'s, so another hub opens with them (report RA
   assert.deepEqual(reducer(initialState, { type: 'RESTORE', saved, ownLine: ['B02E'] }).ownLine, ['B02E']);
   assert.deepEqual(reducer(initialState, { type: 'RESTORE', saved }).ownLine, ['OLD'], 'no set slot: the hub\'s own');
 });
+
+test('Ctrl+Z undoes a forced driver type and an own-line toggle (report TRF856)', () => {
+  let s = init();
+  s = reducer(s, { type: 'FORCE_TYPE', key: 'HUB-A|k1', typeRef: 'ET-X' });
+  s = reducer(s, { type: 'OWN_LINE', positionType: 'W03a' });
+  s = reducer(s, { type: 'UNDO' });
+  assert.deepEqual(s.ownLine, []);
+  assert.equal(s.forcedTypes['HUB-A|k1'], 'ET-X');
+  s = reducer(s, { type: 'UNDO' });
+  assert.deepEqual(s.forcedTypes, {});
+  s = reducer(s, { type: 'REDO' });
+  assert.equal(s.forcedTypes['HUB-A|k1'], 'ET-X');
+});

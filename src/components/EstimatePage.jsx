@@ -251,6 +251,7 @@ export default function EstimatePage({ state, dispatch, zone }) {
   // a line serving several groups sits under all of them together: the driver is shared
   const cgOf = (l) => l.groupQty?.map(([g]) => g || '-').join(', ') || l.controlGroup
     || [...new Set(rowsOf(l.rows).map((r) => r.controlGroup || '-'))].join(', ') || '-';
+  const [notSized, setNotSized] = useState(false);
   const groupsOf = (z) => {
     const m = new Map();
     const add = (l, unmatched) => {
@@ -258,8 +259,9 @@ export default function EstimatePage({ state, dispatch, zone }) {
       if (!m.has(cg)) m.set(cg, { cg, g: `${z.zone}#${cg}`, items: [] });
       m.get(cg).items.push({ l, k: `${z.zone}|${l.key}`, unmatched });
     };
-    z.lines.forEach((l) => add(l, false));
-    z.unmatched.forEach((u) => add(u, true));
+    // "not sized" in the header filters straight to those lines (XH36LA)
+    if (!notSized) z.lines.forEach((l) => add(l, false));
+    z.unmatched.filter((u) => !notSized || (u.skipped && !u.feed)).forEach((u) => add(u, true));
     return [...m.values()];
   };
   const unmatchedLabel = (skipped = false) => {
@@ -295,16 +297,23 @@ export default function EstimatePage({ state, dispatch, zone }) {
     window.addEventListener('keydown', onKey);
     return () => { document.removeEventListener('mousedown', onDoc); window.removeEventListener('keydown', onKey); };
   }, [bar]);
+  // fixed to the viewport, so a short page can't clip a menu inside its scroller (report 4Y859E)
+  const [barAt, setBarAt] = useState(null);
+  const menuAt = barAt && { position: 'fixed', top: barAt.bottom + 6, left: Math.min(barAt.left, window.innerWidth - 300),
+    maxHeight: window.innerHeight - barAt.bottom - 16, overflowY: 'auto' };
   const menuButton = (id, icon, label, badge) => (
     <button type="button" className={`hub-tb ${bar === id ? 'is-open' : ''}`} aria-expanded={bar === id}
-      onClick={() => setBar((o) => (o === id ? null : id))}>
+      onClick={(e) => { setBarAt(e.currentTarget.getBoundingClientRect()); setBar((o) => (o === id ? null : id)); }}>
       <span className="material-icons">{icon}</span>{label}
       {badge ? <span className="badge text-bg-primary">{badge}</span> : null}
       <span className="material-icons caret">expand_more</span>
     </button>
   );
-  const hiddenRows = rows.length - filterRequirements(rows, opts.rowFilter).length;
-  const posTypes = new Set(rows.map((r) => r.positionType).filter(Boolean));
+  // the header's figures count what the Filter keeps, like the totals do (3LD8AJ)
+  const kept = filterRequirements(rows, opts.rowFilter);
+  const hiddenRows = rows.length - kept.length;
+  const posTypes = new Set(kept.map((r) => r.positionType).filter(Boolean));
+  const hubCount = new Set(kept.map((r) => r.zone)).size;
   // a line opens to its rows, and its rows to the arithmetic behind the count
   const [open, setOpen] = useState(() => new Set());
   // one working at a time, in a dialog: several open inline was too busy (report TZY2VC)
@@ -314,16 +323,20 @@ export default function EstimatePage({ state, dispatch, zone }) {
   // one driver type for every line a PositionType is on (5SVFZX)
   const [forcingPt, setForcingPt] = useState(null);
   // now and then, so it is not wallpaper (5KEFGM)
-  const [flash] = useState(() => Math.random() < 1 / 3);
+  // a nudge on one open in three: either the note flashes, or (7SKR2E) it asks to be agreed to first
+  const [nudge] = useState(() => { const r = Math.random(); return r < 1 / 3 ? 'flash' : r < 2 / 3 ? 'confirm' : null; });
+  const flash = nudge === 'flash';
+  const [agreed, setAgreed] = useState(nudge !== 'confirm');
   const toggle = (set, k) => set((p) => { const n = new Set(p); if (!n.delete(k)) n.add(k); return n; });
   // hub by hub: only standalone over the whole job - the overlay already sends one hub
   const canStep = !isEmbedded() && !zone && zones.length > 1;
   const [hubAt, setHubAt] = useState(0);
   const at = Math.min(hubAt, zones.length - 1);
-  const shown = canStep && prefs.hubByHub ? zones.slice(at, at + 1) : zones;
+  const shown = (canStep && prefs.hubByHub ? zones.slice(at, at + 1) : zones).filter((z) => !notSized || groupsOf(z).length);
   // Total Power / Total Forward Voltage: hidden unless asked for from the header's ⋮
   const showP = !!prefs.pvPower;
   const showV = !!prefs.pvFv;
+  const showN = !!prefs.pvName;   // Driver Name, beside Driver Type (RDTQNJ)
   const lineKeys = shown.flatMap((z) => groupsOf(z).flatMap(({ g, items }) => [g, ...items.map((i) => i.k)]));
 
   // the line's rows are one channelClass (the engine splits on it); the popup is just the columns
@@ -600,6 +613,7 @@ export default function EstimatePage({ state, dispatch, zone }) {
       ['Outputs', `${t.nodes?.length ?? 1}${t.ballast ? ` · ${t.ballast}CH` : ''}`],
     ] : null;
   };
+  const nameOf = (ref) => (model.inventory ?? []).find((x) => x.typeRef === ref)?.name || '';
   const TypePill = ({ t }) => <Tooltip content={typeFacts(t)}><span className="est-pill est-pill-type" tabIndex={0}>{t}</span></Tooltip>;
   const reasonOf = (u) => (u.feed ? 'No driver' : u.reason ?? 'No ElementType in the DesignDB can take these');
   const canForce = (u) => !u.skipped || u.key.startsWith('no-power-type');
@@ -611,6 +625,7 @@ export default function EstimatePage({ state, dispatch, zone }) {
       {showP && <td className="n">{fmt(unmatched ? powerOf(l.rows) : l.loadW)} W</td>}
       {showV && <td className="n">{fvLabel(l.rows)}</td>}
       <td>{unmatched ? <span className={l.feed ? 'pv-note' : 'dp-fault'}>{reasonOf(l)}</span> : <TypePill t={l.typeRef} />}</td>
+      {showN && <td className="pv-name">{unmatched ? '' : nameOf(l.typeRef)}</td>}
       <td className="n">{unmatched ? '–' : l.count}</td>
       <td className="pv-flags">
         <ChannelIcon refs={l.rows} />
@@ -658,7 +673,7 @@ export default function EstimatePage({ state, dispatch, zone }) {
 
   const Detail = ({ l, k, unmatched }) => (
     <tr className="pv-detail">
-      <td colSpan={6 + showP + showV}>
+      <td colSpan={6 + showP + showV + showN}>
         <div className="est-body">
           {(unmatched ? canForce(l) : forcing === k || state.forcedTypes[k]) && <ForceType k={k} l={l} />}
           <RowTable refs={l.rows ?? []} />
@@ -693,7 +708,7 @@ export default function EstimatePage({ state, dispatch, zone }) {
   };
 
   return (
-    <div className="container-fluid py-3 drivers-page">
+    <div className="container-fluid py-3 drivers-page" onScroll={() => bar && setBar(null)}>
       <div className="est-top">
       <div className="est-summary">
       <div className="dp-head">
@@ -719,14 +734,18 @@ export default function EstimatePage({ state, dispatch, zone }) {
           </span>
         )}
         {totals.skipped > 0 && (
-          <span className="dp-need" title="Rows with no CC/CV SecondaryPowerType or no power - no driver is sized for them. Open the grey lines to see which.">
+          <button type="button" className={`dp-need est-need-filter${notSized ? ' is-on' : ''}`} aria-pressed={notSized}
+            title={notSized ? 'Showing only these lines - click to show everything again'
+              : 'Rows with no CC/CV SecondaryPowerType or no power - no driver is sized for them. Click to show only these lines.'}
+            onClick={() => setNotSized((v) => !v)}>
             {unmatchedLabel(true)} not sized
-          </span>
+            {notSized && <span className="material-icons" aria-hidden="true">close</span>}
+          </button>
         )}
       </div>
       <div className="est-meta">
-        {rows.length} row{rows.length === 1 ? '' : 's'} · {posTypes.size} PositionType{posTypes.size === 1 ? '' : 's'}
-        {zone ? '' : ` · ${zones.length} hub${zones.length === 1 ? '' : 's'}`}
+        {kept.length}{hiddenRows ? ` of ${rows.length}` : ''} row{rows.length === 1 ? '' : 's'} · {posTypes.size} PositionType{posTypes.size === 1 ? '' : 's'}
+        {zone ? '' : ` · ${hubCount} hub${hubCount === 1 ? '' : 's'}`}
         {views?.cables ? '' : ' · no links yet'}
       </div>
 
@@ -746,6 +765,18 @@ export default function EstimatePage({ state, dispatch, zone }) {
           onCopy={copyPatch} onClose={() => setPatchOpen(false)} />
       )}
 
+      {!agreed && (
+        <div className="nt-backdrop">
+          <div className="fd-dialog est-agree" role="alertdialog" aria-modal="true" aria-labelledby="est-agree-h">
+            <div className="fd-head"><span className="material-icons text-warning">warning</span><b id="est-agree-h">Check every calculation</b></div>
+            <p className="est-agree-body">{ESTIMATE_WARNING}</p>
+            <div className="fd-foot">
+              <button type="button" className="btn btn-sm btn-primary ms-auto" autoFocus onClick={() => setAgreed(true)}>I understand</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Always shown, never dismissable: the count is a starting point. */}
       <div className={`est-warn${flash ? ' is-flash' : ''}`} role="note">
         <span className="material-icons">warning</span>
@@ -762,7 +793,7 @@ export default function EstimatePage({ state, dispatch, zone }) {
           <span className="hub-menuwrap">
             {menuButton('filter', 'filter_alt', 'Filter', filtersOn)}
             {bar === 'filter' && (
-              <div className="hub-menu is-wide est-filters">
+              <div style={menuAt} className="hub-menu is-wide est-filters">
                 {filters.map(([col, values]) => {
                   const off = opts.rowFilter?.[col] ?? [];
                   const shown = values.filter(([v]) => !off.includes(v)).length;
@@ -813,7 +844,7 @@ export default function EstimatePage({ state, dispatch, zone }) {
         <span className="hub-menuwrap">
           {menuButton('separate', 'call_split', 'Keep separate')}
           {bar === 'separate' && (
-            <div className="hub-menu is-wide">
+            <div style={menuAt} className="hub-menu is-wide">
         <table className="est-grid">
           <thead><tr><th /><th>per driver</th><th>per output</th></tr></thead>
           <tbody>
@@ -844,7 +875,7 @@ export default function EstimatePage({ state, dispatch, zone }) {
         <span className="hub-menuwrap">
           {menuButton('types', 'tune', 'Driver types')}
           {bar === 'types' && (
-            <div className="hub-menu is-wide">
+            <div style={menuAt} className="hub-menu is-wide">
         <label className="est-c">
           Pick by
           <select className="form-select form-select-sm est-pick" value={opts.pickBy}
@@ -874,7 +905,7 @@ export default function EstimatePage({ state, dispatch, zone }) {
         <span className="hub-menuwrap">
           {menuButton('view', 'visibility', 'View')}
           {bar === 'view' && (
-            <div className="hub-menu">
+            <div style={menuAt} className="hub-menu">
               <button type="button" className="hub-mi" onClick={() => { setOpen(new Set(lineKeys)); setBar(null); }}>
                 <span className="material-icons">unfold_more</span><span className="grow">Expand all rows</span>
               </button>
@@ -949,12 +980,13 @@ export default function EstimatePage({ state, dispatch, zone }) {
             <tr>
               <th>Hub / ControlGroup</th>
               {showP && <th className="n">Total Power</th>}{showV && <th className="n">Total Forward Voltage</th>}
-              <th>Driver Type</th><th className="n">Driver Count</th><th>Flags</th><th>Limited By</th>
+              <th>Driver Type</th>{showN && <th>Driver Name</th>}<th className="n">Driver Count</th><th>Flags</th><th>Limited By</th>
               <th className="text-end">
                 {/* the totals are there to check against, not to read every time */}
                 <KebabMenu title="Columns" items={[
                   { label: 'Total Power', icon: showP ? 'check_box' : 'check_box_outline_blank', onClick: () => setPref({ pvPower: !showP }) },
                   { label: 'Total Forward Voltage', icon: showV ? 'check_box' : 'check_box_outline_blank', onClick: () => setPref({ pvFv: !showV }) },
+                  { label: 'Driver Name', icon: showN ? 'check_box' : 'check_box_outline_blank', onClick: () => setPref({ pvName: !showN }) },
                 ]} />
               </th>
             </tr>
@@ -967,6 +999,7 @@ export default function EstimatePage({ state, dispatch, zone }) {
                 <tr className="pv-hub">
                   <td>{z.zone}</td>{showP && <td className="n">{fmt(z.loadW)} W</td>}{showV && <td />}
                   <td>{hubTypes.size === 1 ? <TypePill t={[...hubTypes][0]} /> : null}</td>
+                  {showN && <td className="pv-name">{hubTypes.size === 1 ? nameOf([...hubTypes][0]) : null}</td>}
                   <td className="n">{z.drivers}</td><td /><td /><td />
                 </tr>
                 {groups.map(({ cg, g, items }) => {
@@ -991,6 +1024,7 @@ export default function EstimatePage({ state, dispatch, zone }) {
                         {showP && <td className="n">{fmt(powerOf(refs))} W</td>}
                         {showV && <td className="n">{fvLabel(refs)}</td>}
                         <td>{typeCell}</td>
+                        {showN && <td className="pv-name">{types.length === 1 ? nameOf(types[0]) : null}</td>}
                         <td className="n">{matched.reduce((n, i) => n + i.l.count, 0) || '–'}</td>
                         <td /><td /><td />
                       </>}
