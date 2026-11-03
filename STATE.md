@@ -1,6 +1,6 @@
 # driverassignmenttool — state
 
-Updated: 2026-10-30
+Updated: 2026-11-03
 
 <!-- Now / Next / Blocked are rewritten in place and never grow. Finish something, delete the
      line. Only Log appends. Format: /srv/projects/FORMAT.md -->
@@ -26,6 +26,7 @@ names and badge. `dat-autodeploy.timer` keeps Connected on Pages' build. The hos
 
 ## Log
 
+- 2026-11-03: branch `feat/designdb-types` (uncommitted, off `dev`): a DesignDB .xlsx can stand in for the driver type library. `src/designdb.js` ports the overlay's section-0 SELECT over the ElementTypes/Elements/Positions sheets and hands parseTypes() the same CSV. The import screen is a drop zone, a tick box per file (DesignDB, Secondary Power Assessment, Links, Driver Assignment) and a button per function the ticked combination supports (Secondary Power Assessment / Hub Spacing / Driver Assignment); no prose, no purple (the companion's). Dropped files are kept across drops. The type library CSV is not named in the UI, as nobody has one. SetupNotice has "Attach DesignDB" (standalone only). Fixed on the way: `parseAuto`'s has-cables probe used a one-column stand-in library that PapaParse can't delimit, so Links + Driver Assignment without a type CSV always failed standalone (also on `main`). Checked in Playwright with the 5642 sample DesignDB on all three routes; 361 tests pass, build clean. SheetJS (cdn.sheetjs.com 0.20.3, as PS&R) is lazy-loaded, its own 500 kB chunk.
 - 2026-10-30: branch `fix/drawer-drag` to `dev`: dragging out of the Add drivers drawer did nothing (broken since #25). Pressing a card sinks the drawer and makes it ignore the mouse, so the cursor was suddenly outside `.hub-lab`, whose mouseleave cancelled the drag. A drawer drag now listens on the window. Checked in the harness: into a bay, into Not placed, released on nothing, and a block drag still works. Not resolved anywhere until prod.
 - 2026-10-30: branch `ui/drawer-swing` to `dev`: drawer size previews default off; a card pulled out of the drawer swings (`hub-swing`, off under reduced motion); dragging the drawer's grab handle down more than 60px closes it, less springs back. Checked in the harness; 357 tests pass, build clean.
 - 2026-10-30: branch `ui/drawer-preview` to `dev`: the Add drivers drawer has roomier cards (names wrap) with a to-scale footprint preview (toggle in the drawer head, `prefs.drawerSizes`, on by default). Dragging a card shows a cursor ghost at the drawing's scale while the drawer sinks out of the way. Add drivers moved out of the toolbar to a tab fixed at the bottom centre; the report pip sits on it (`body.hub-page`). Checked in the harness; 357 tests pass, build clean.

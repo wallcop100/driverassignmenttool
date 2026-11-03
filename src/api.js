@@ -12,6 +12,7 @@ const demo = () => Promise.all([
 ]).then((m) => m.map((x) => x.default));
 import * as embed from './embed.js';
 import * as engine from './engine.js';
+import { isWorkbook, readDesignDb } from './designdb.js';
 import { readCsv } from './core/csv.js';
 import { parseParams } from './core/params.js';
 
@@ -57,22 +58,27 @@ export function rebuild(presets) {
 // Drop the files at once, autodetect which is which (#10). Three shapes are
 // accepted, one per mode: links + form, links + type library, or a requirement
 // assessment + type library when there are no links at all.
+// A DesignDB workbook stands in for the type library; a type CSV, being from a
+// commit, wins over it when both are dropped.
 export async function parseAuto(files) {
-  const texts = await Promise.all([...files].map((f) => f.text()));
+  const all = [...files];
+  const texts = await Promise.all(all.filter((f) => !isWorkbook(f)).map((f) => f.text()));
   const found = { form: null, links: null, types: null, assessment: null };
   for (const t of texts) {
     const kind = engine.detectKind(t);
     if (kind) found[kind] = t;
   }
+  const book = all.find(isWorkbook);
+  if (!found.types && book) found.types = await readDesignDb(book);
   // The circumstance decides the mode, not which file happened to be dropped: a
   // links CSV with a header and no rows is a hub with no cables, which is the
   // estimate's case and not an error.
   const hasLinks = found.links && engine.detectKind(found.links) === 'links'
-    && engine.buildModel(null, found.links, found.types ?? 'ElementTypeRef\nX\n').links.length > 0;
+    && engine.buildModel(null, found.links, found.types ?? 'ElementTypeRef,Name\nX,\n').links.length > 0;
 
   if (found.assessment && !hasLinks) {
     if (!found.types) {
-      throw new Error('The assessment needs the driver type library alongside it, to size against.');
+      throw needsTypes('The assessment needs driver types to size against.');
     }
     return parseEstimate(found.assessment, found.types);
   }
@@ -82,7 +88,7 @@ export async function parseAuto(files) {
       : "Couldn't detect a Links Assignment CSV, or a Requirement Assessment. Drop one of those.");
   }
   if (!found.form && !found.types) {
-    throw new Error('Links only: add the Driver Assignment CSV, or the driver type library to size new drivers from.');
+    throw needsTypes('Cables but no drivers: add the Driver Assignment CSV, or driver types to size new drivers from.');
   }
   return parseText(found.form, found.links, found.types, found.assessment);
 }
@@ -94,6 +100,20 @@ export function parseEmpty(zone, typesText) {
   applied = '[]';
   model = engine.buildEmpty(zone, typesText);
   return model;
+}
+
+// Missing only the type library: the import screen keeps what was dropped and
+// asks for the DesignDB, rather than starting over.
+function needsTypes(message) {
+  return Object.assign(new Error(message), { code: 'needs-types' });
+}
+
+// The type library arriving after the model was built - a DesignDB attached from
+// the app. Rebuilt as if it had been dropped with the CSVs.
+export async function attachDesignDb(file, presets) {
+  raw.types = await readDesignDb(file);
+  applied = null;
+  return rebuild(presets);
 }
 
 // Third mode: Positions rolled up by DJ 100053, no links and no drivers.
