@@ -1616,3 +1616,18 @@ test('estimate: rowFilter leaves out the values ticked off, like an Excel pivot 
   const cts = [...new Set(model.requirements.map((r) => engine.filterValue(r, 'ControlTypeRef')))];
   assert.equal(engine.estimate(model, { rowFilter: { ControlTypeRef: cts } }).length, 0);
 });
+
+test('estimate: tunable (2 nodes or 2 addresses) and multi-address (>2) fittings get a line per row', () => {
+  const head = '"Link_SecondaryPowerRef","ControlTypeRef","PositionTypeRef","SumQuantity","Unit_ControlAddressCount","MAX_SecondaryPowerNodes","SecondaryPowerType","PositionVoltage","PositionCurrent","SumVf","SumPower"';
+  const requirements = engine.parseAssessment(`${head}
+"H1","DALI","C01r","1","1","1","CV","24","0","0","20"
+"H1","DALI","C01r","1","1","2","CV","24","0","0","20"
+"H1","DALI","C01r","1","2","1","CV","24","0","0","20"
+"H1","DALI","C01r","1","4","1","CV","24","0","0","20"
+"H1","DALI","C01r","1","1","2","CV","24","0","0","20"
+`);
+  assert.deepEqual(requirements.map(engine.channelClass), [null, 'tunable', 'tunable', 'multi', 'tunable']);
+  const p = engine.planFromRequirements({ requirements, inventory: [{ typeRef: 'CV', powerType: 'CV', voltageV: 24, maxPowerW: 100, nodes: [{ name: '1', maxPowerW: 100 }] }] }, 'H1');
+  const keys = [...p.lines, ...p.unmatched].map((l) => l.key);
+  assert.equal(keys.length, 5, keys.join(' | ')); // the plain row, plus one line each for the other four
+});

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import * as api from '../api.js';
 import { listSessions } from '../persist.js';
-import { compareEstimate, ESTIMATE_WARNING, isFeed, estimatePatchRows, filterRequirements, filterValue, PIVOT_COLUMNS, generateEstimatePatch, isOwnLine, resolveSpec, zoneViews } from '../engine.js';
+import { compareEstimate, ESTIMATE_WARNING, isFeed, estimatePatchRows, filterRequirements, filterValue, PIVOT_COLUMNS, generateEstimatePatch, isOwnLine, channelClass, resolveSpec, zoneViews } from '../engine.js';
 import { effectiveDrivers } from '../state.js';
 import { openReport } from '../bugReports.js';
 import { isEmbedded } from '../embed.js';
@@ -26,7 +26,11 @@ const LIMIT = {
 
 // line flags are icons; the only chips are the driver ElementType and the PositionTypes
 // Material Symbols only, not in the Material Icons font this app ships
-const SYMBOL = { horizontal_align_right: 'M760-160v-640h80v640h-80ZM480-280l-56-56 104-104H120v-80h408L424-624l56-56 200 200-200 200Z' };
+const SYMBOL = {
+  horizontal_align_right: 'M760-160v-640h80v640h-80ZM480-280l-56-56 104-104H120v-80h408L424-624l56-56 200 200-200 200Z',
+  tonality_2: 'M480-80q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Zm40-718v636q121-15 200.5-106T800-480q0-121-79.5-212T520-798Zm-80 38v-38q-30 5-59 13.5T326-760h114Zm0 120v-40H230q-8 9-14 19t-12 21h236Zm0 120v-40H170l-4 20-4 20h278Zm0 120v-40H162l4 20 4 20h270Zm0 120v-40H204q6 11 12 21t14 19h210Zm0 118v-38H326q26 16 55 24.5t59 13.5Zm80-318Z',
+  instant_mix: 'M200-160v-280h-80v-80h240v80h-80v280h-80Zm0-440v-200h80v200h-80Zm160 0v-80h80v-120h80v120h80v80H360Zm80 440v-360h80v360h-80Zm240 0v-120h-80v-80h240v80h-80v120h-80Zm0-280v-360h80v360h-80Z',
+};
 // supplied marks: E in a triangle = emergency, orange asterisk = feed
 const MARK = {
   // symbol_E on Material's 24 grid: teal triangle border, white inside, black E
@@ -48,13 +52,21 @@ const PICK_LABEL = { single: 'Single output', fewest: 'Fewest drivers', spareOut
 
 // [driver pref, output pref, label, singular, what ticking it means]
 const SEPARATE = [
-  ['restrictControlGroup', null, 'ControlGroups', 'ControlGroup',
-    'A ControlGroup is dimmed and switched as one. Per driver: a driver carries one ControlGroup. Per output: always - an output is dimmed as one, so it can never carry two, though a 2-output driver can serve two groups.'],
-  ['splitByType', 'nodeSplitByType', 'Fitting types', 'fitting type',
-    'Per driver: fittings of different PositionTypes never share a driver. Per output: never share an output, though a driver may carry one type per output.'],
-  ['splitByLocation', 'nodeSplitByLocation', 'Rooms', 'room',
-    'Per driver: a driver only serves one room. Per output: each output serves one room, though a driver may serve one room per output.'],
+  ['restrictControlGroup', null, 'ControlGroups', 'ControlGroup', ['A ControlGroup is dimmed and switched as one.',
+    ['Per driver:', 'a driver carries one ControlGroup.'],
+    ['Per output:', 'always - an output is dimmed as one, so it can never carry two, though a 2-output driver can serve two groups.']]],
+  ['splitByType', 'nodeSplitByType', 'Fitting types', 'fitting type', [
+    ['Per driver:', 'fittings of different PositionTypes never share a driver.'],
+    ['Per output:', 'never share an output, though a driver may carry one type per output.']]],
+  ['splitByLocation', 'nodeSplitByLocation', 'Rooms', 'room', [
+    ['Per driver:', 'a driver only serves one room.'],
+    ['Per output:', 'each output serves one room, though a driver may serve one room per output.']]],
 ];
+const PICK_INFO = ['Which driver type wins when several fit.',
+  ['Single output:', 'the simplest part, leaving consolidation to the detail design.'],
+  ['Fewest drivers:', 'the most efficient.'],
+  ['Spare outputs:', 'room for fittings added late.'],
+  'Emergency stock always loses.'];
 
 // Load against the whole rating, the spare margin hatched at the end, so the
 // bar's full width is the driver's real capacity (8WQAAN).
@@ -67,7 +79,7 @@ const LoadBar = ({ load, rated, keep }) => (
 
 const Info = ({ text }) => (
   <Tooltip content={text}>
-    <span className="material-icons est-info" tabIndex={0} aria-label={text}>info_outline</span>
+    <span className="material-icons est-info" tabIndex={0} aria-label={[text].flat(2).join(' ')}>info_outline</span>
   </Tooltip>
 );
 
@@ -218,6 +230,28 @@ export default function EstimatePage({ state, dispatch, zone }) {
     const units = new Set((refs ?? []).map((ref) => reqByRef.get(ref)?.uom ?? null));
     return units.size === 1 ? [...units][0] : null;
   };
+  // the pivot's figures, from the assessment rows themselves
+  const rowsOf = (refs) => (refs ?? []).map((ref) => reqByRef.get(ref)).filter(Boolean);
+  const powerOf = (refs) => rowsOf(refs).reduce((n, r) => n + (r.loadW ?? 0), 0);
+  // series volts of every CC fitting; none on CV, so no total
+  const fvLabel = (refs) => {
+    const rs = rowsOf(refs).filter((r) => r.fvPer != null);
+    return rs.length ? `${fmt(rs.reduce((n, r) => n + r.fvPer * r.qty, 0))} V` : '–';
+  };
+  // a line serving several groups sits under all of them together: the driver is shared
+  const cgOf = (l) => l.groupQty?.map(([g]) => g || '-').join(', ') || l.controlGroup
+    || [...new Set(rowsOf(l.rows).map((r) => r.controlGroup || '-'))].join(', ') || '-';
+  const groupsOf = (z) => {
+    const m = new Map();
+    const add = (l, unmatched) => {
+      const cg = cgOf(l);
+      if (!m.has(cg)) m.set(cg, { cg, g: `${z.zone}#${cg}`, items: [] });
+      m.get(cg).items.push({ l, k: `${z.zone}|${l.key}`, unmatched });
+    };
+    z.lines.forEach((l) => add(l, false));
+    z.unmatched.forEach((u) => add(u, true));
+    return [...m.values()];
+  };
   const unmatchedLabel = (skipped = false) => {
     const byUnit = new Map();
     for (const z of zones) {
@@ -272,9 +306,29 @@ export default function EstimatePage({ state, dispatch, zone }) {
   // now and then, so it is not wallpaper (5KEFGM)
   const [flash] = useState(() => Math.random() < 1 / 3);
   const toggle = (set, k) => set((p) => { const n = new Set(p); if (!n.delete(k)) n.add(k); return n; });
+  // hub by hub: only standalone over the whole job - the overlay already sends one hub
+  const canStep = !isEmbedded() && !zone && zones.length > 1;
+  const [hubAt, setHubAt] = useState(0);
+  const at = Math.min(hubAt, zones.length - 1);
+  const shown = canStep && prefs.hubByHub ? zones.slice(at, at + 1) : zones;
+  const lineKeys = shown.flatMap((z) => groupsOf(z).flatMap(({ g, items }) => [g, ...items.map((i) => i.k)]));
+
+  // the line's rows are one channelClass (the engine splits on it); the popup is just the columns
+  const ChannelIcon = ({ refs }) => {
+    const rs = (refs ?? []).map((ref) => reqByRef.get(ref)).filter(Boolean);
+    const c = rs.length ? channelClass(rs[0]) : null;
+    if (!c) return null;
+    const facts = [...new Set(rs.map((r) => `MAX_SecondaryPowerNodes ${r.nodes ?? '-'} · ControlAddressCount ${r.addressCount ?? '-'}`))];
+    return (
+      <Tooltip content={facts}>
+        <Icon name={c === 'multi' ? 'instant_mix' : 'tonality_2'} cls={`est-ch-${c}`} label={facts.join('; ')} />
+      </Tooltip>
+    );
+  };
 
   const RowTable = ({ refs }) => (
     <table className="est-rowtable">
+      <thead><tr><th>PositionType</th><th>Room</th><th>ControlGroup</th><th className="text-end">Qty × W each</th><th>Drive</th><th /></tr></thead>
       <tbody>
         {refs.map((ref) => reqByRef.get(ref)).filter(Boolean).map((r) => {
           const part = resolveSpec(r.positionType);
@@ -394,7 +448,7 @@ export default function EstimatePage({ state, dispatch, zone }) {
     const split = w.packing ? w.packing.drivers.map((d) => d.w)
       : !w.runList && !w.packed && w.wPer ? Array.from({ length: l.count }, (_, i) => Math.min(l.perDriver, l.qty - i * l.perDriver) * w.wPer)
       : null;
-    const report = (e) => openReport(e.currentTarget.closest('.est-line'), {
+    const report = (e) => openReport(e.currentTarget.closest('td'), {
       // allowlisted: refs and numbers only, no location names
       estimate: {
         zone: z, typeRef: l.typeRef, count: l.count, qty: l.qty, perDriver: l.perDriver, outputs: l.outputs,
@@ -523,6 +577,74 @@ export default function EstimatePage({ state, dispatch, zone }) {
     );
   };
 
+  const TypePill = ({ t }) => <span className="est-pill est-pill-type">{t}</span>;
+  const reasonOf = (u) => (u.feed ? 'No driver' : u.reason ?? 'No ElementType in the DesignDB can take these');
+  const canForce = (u) => !u.skipped || u.key.startsWith('no-power-type');
+
+  // the cells after the label, for one line or one unmatched lot
+  const LineCells = ({ l, k, unmatched, zone: z }) => {
+    const lim = LIMIT[l.limit];
+    return <>
+      <td className="n">{fmt(unmatched ? powerOf(l.rows) : l.loadW)} W</td>
+      <td className="n">{fvLabel(l.rows)}</td>
+      <td>{unmatched ? <span className={l.feed ? 'pv-note' : 'dp-fault'}>{reasonOf(l)}</span> : <TypePill t={l.typeRef} />}</td>
+      <td className="n">{unmatched ? '–' : l.count}</td>
+      <td className="pv-flags">
+        <ChannelIcon refs={l.rows} />
+        {!l.forced && l.positionTypes?.some((pt) => /Em?$/.test(pt) && isOwnLine(pt, state.ownLine)) && (
+          <Tooltip content={[['May be emergency', ''], `${l.positionTypes.filter((pt) => /Em?$/.test(pt)).join(', ')} ends in E or Em, so it may be an emergency fitting and has its own line. If it is, change the driver type (⋮) to an emergency driver.`]}>
+            <Icon name="emergency" cls="est-em" label="May be emergency" />
+          </Tooltip>
+        )}
+        {l.positionTypes?.length > 0 && l.positionTypes.every(isFeed) && <Tooltip content="Feed"><Icon name="feed" cls="est-feed" label="Feed" /></Tooltip>}
+        {l.forced && (
+          <Tooltip content={[['Forced', ''], l.mismatch ? `Does not match: ${l.mismatch}` : l.forcedIssue ?? 'On this line instead of the automatic pick.']}>
+            <Icon name={l.mismatch || l.forcedIssue ? 'report_problem' : 'push_pin'} cls={`est-forced${l.mismatch || l.forcedIssue ? ' bad' : ''}`} label="Forced" />
+          </Tooltip>
+        )}
+      </td>
+      <td className="pv-lim">
+        {!unmatched && (
+          <Tooltip content={[[`${lim?.label ?? l.limit} limited`, ''], lim?.blurb].filter(Boolean)}>
+            <span><Icon name={lim?.icon ?? 'help_outline'} cls={`est-lim-${l.limit.replace(' ', '')}`} label={`${lim?.label ?? l.limit} limited`} /> {lim?.label ?? l.limit}</span>
+          </Tooltip>
+        )}
+      </td>
+      <td className="text-end" data-code={l.typeRef}>
+        {!unmatched && <KebabMenu title="Line actions" items={[...(l.working ? [{
+          label: `How ${l.count} was worked out`, icon: 'calculate',
+          onClick: () => setWorking(k),
+        }] : []), {
+          label: 'Change driver type', icon: 'swap_horiz',
+          onClick: () => { setForcing(k); if (!open.has(k)) toggle(setOpen, k); },
+        }]} />}
+        {working === k && (
+          <div className="nt-backdrop text-start" onClick={(e) => e.target === e.currentTarget && setWorking(null)}>
+            <div className="fd-dialog est-working-dialog" role="dialog" aria-label="How the count was worked out">
+              <div className="fd-head">
+                <b>How {l.count} × {l.typeRef} was worked out</b>
+                <button className="btn btn-sm btn-link ms-auto p-0" onClick={() => setWorking(null)}>close</button>
+              </div>
+              <Working l={l} zone={z} k={k} />
+            </div>
+          </div>
+        )}
+      </td>
+    </>;
+  };
+
+  const Detail = ({ l, k, unmatched }) => (
+    <tr className="pv-detail">
+      <td colSpan={8}>
+        <div className="est-body">
+          {(unmatched ? canForce(l) : forcing === k || state.forcedTypes[k]) && <ForceType k={k} l={l} />}
+          <RowTable refs={l.rows ?? []} />
+          {!unmatched && !l.working && <div className="est-howto">Sized by watts: {fmt(l.loadW)} W</div>}
+        </div>
+      </td>
+    </tr>
+  );
+
   const copyPatch = async (script) => {
     setError(null);
     try {
@@ -645,7 +767,7 @@ export default function EstimatePage({ state, dispatch, zone }) {
             onChange={(e) => setPref({ pickBy: e.target.value })}>
             {Object.entries(PICK_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
           </select>
-          <Info text="Which driver type wins when several fit. Single output: the simplest part, leaving consolidation to the detail design. Fewest drivers: the most efficient. Spare outputs: room for fittings added late. Emergency stock always loses." />
+          <Info text={PICK_INFO} />
         </label>
         <label className="est-c">
           <input type="checkbox" checked={!!prefs.allowLocal}
@@ -664,6 +786,42 @@ export default function EstimatePage({ state, dispatch, zone }) {
             </div>
           )}
         </span>
+
+        <span className="hub-menuwrap">
+          {menuButton('view', 'visibility', 'View')}
+          {bar === 'view' && (
+            <div className="hub-menu">
+              <button type="button" className="hub-mi" onClick={() => { setOpen(new Set(lineKeys)); setBar(null); }}>
+                <span className="material-icons">unfold_more</span><span className="grow">Expand all rows</span>
+              </button>
+              <button type="button" className="hub-mi" onClick={() => { setOpen(new Set()); setBar(null); }}>
+                <span className="material-icons">unfold_less</span><span className="grow">Collapse all rows</span>
+              </button>
+              {canStep && <>
+                <div className="hub-mdiv" />
+                <label className="hub-mi">
+                  <input type="checkbox" className="form-check-input m-0" checked={!!prefs.hubByHub}
+                    onChange={(e) => setPref({ hubByHub: e.target.checked })} />
+                  <span className="grow">One hub at a time</span>
+                </label>
+              </>}
+            </div>
+          )}
+        </span>
+
+        {canStep && prefs.hubByHub && (
+          <span className="est-step-hubs">
+            <button type="button" className="hub-tb" disabled={at === 0} aria-label="Previous hub"
+              onClick={() => setHubAt(at - 1)}><span className="material-icons">chevron_left</span></button>
+            <select className="form-select form-select-sm" value={at} aria-label="Hub"
+              onChange={(e) => setHubAt(Number(e.target.value))}>
+              {zones.map((z, i) => <option key={z.zone} value={i}>{z.zone}</option>)}
+            </select>
+            <span className="est-meta">{at + 1} of {zones.length}</span>
+            <button type="button" className="hub-tb" disabled={at === zones.length - 1} aria-label="Next hub"
+              onClick={() => setHubAt(at + 1)}><span className="material-icons">chevron_right</span></button>
+          </span>
+        )}
 
         <span className="flex-grow-1" />
         <button type="button" className="hub-tb" onClick={exportCsv}>
@@ -761,88 +919,70 @@ export default function EstimatePage({ state, dispatch, zone }) {
 
       {error && <div className="alert alert-danger py-2 mt-2">{error}</div>}
 
-      <div className="dp-list mt-3">
-        {zones.map((z) => (
-          <div key={z.zone} className="dp-part">
-            <div className="dp-part-head" style={{ cursor: 'default' }}>
-              <span className="dp-name">{z.zone}</span>
-              <span className="dp-spec">{fmt(z.loadW)}W</span>
-              <span className="dp-count">{z.drivers} driver{z.drivers === 1 ? '' : 's'}</span>
-            </div>
-            {z.lines.map((l) => {
-              const k = `${z.zone}|${l.key}`;
-              const isOpen = open.has(k);
-              return (
-                <div key={l.key} className={`est-line${isOpen ? ' open' : ''}`} data-debug-id="estimate-line" data-code={l.typeRef}>
-                  <div className="dp-ref est-line-head" role="button" aria-expanded={isOpen} onClick={() => toggle(setOpen, k)}>
-                    <span className="est-caret">{isOpen ? '▾' : '▸'}</span>
-                    <span className="dp-ref-id">{l.count} × <span className="est-pill est-pill-type">{l.typeRef}</span></span>
-                    <PtChips pts={l.positionTypes} />
-                    <span className="dp-ref-spec">{amount(l.qty, l.rows)} · {fmt(l.loadW)} W</span>
-                    <Tooltip content={`${LIMIT[l.limit]?.label ?? l.limit} limited. ${LIMIT[l.limit]?.blurb ?? ''}`}>
-                      <Icon name={LIMIT[l.limit]?.icon ?? 'help_outline'} cls={`est-lim-${l.limit.replace(' ', '')}`} label={`${LIMIT[l.limit]?.label ?? l.limit} limited`} />
-                    </Tooltip>
-                    {!l.forced && l.positionTypes?.some((pt) => /Em?$/.test(pt) && isOwnLine(pt, state.ownLine)) && (
-                      <Tooltip content={`${l.positionTypes.filter((pt) => /Em?$/.test(pt)).join(', ')} ends in E or Em, so it may be an emergency fitting and has its own line. If it is, change the driver type (⋮) to an emergency driver.`}>
-                        <Icon name="emergency" cls="est-em" label="May be emergency" />
-                      </Tooltip>
-                    )}
-                    {l.positionTypes?.length > 0 && l.positionTypes.every(isFeed) && <Tooltip content="Feed"><Icon name="feed" cls="est-feed" label="Feed" /></Tooltip>}
-                    {l.forced && (
-                      <Tooltip content={l.mismatch ? `Forced, and does not match: ${l.mismatch}` : l.forcedIssue ?? `Forced on this line instead of the automatic pick`}>
-                        <Icon name={l.mismatch || l.forcedIssue ? 'report_problem' : 'push_pin'} cls={`est-forced${l.mismatch || l.forcedIssue ? ' bad' : ''}`} label="Forced" />
-                      </Tooltip>
-                    )}
-                    <span className="dp-ref-use">{l.groupQty?.map(([g]) => g || '-').join(', ') || l.controlGroup || '-'}</span>
-                    <span className="est-nrows">{l.rows.length} row{l.rows.length === 1 ? '' : 's'}</span>
-                    <KebabMenu title="Line actions" items={[{
-                      label: 'Change driver type', icon: 'swap_horiz',
-                      onClick: () => { setForcing(k); if (!isOpen) toggle(setOpen, k); },
-                    }]} />
-                  </div>
-                  {isOpen && (
-                    <div className="est-body">
-                      {(forcing === k || state.forcedTypes[k]) && <ForceType k={k} l={l} />}
-                      <RowTable refs={l.rows} />
-                      {l.working ? (
-                        <div className="est-howto" role="button" onClick={() => setWorking(k)}>
-                          ▸ How {l.count} was worked out
-                        </div>
-                      ) : <div className="est-howto">Sized by watts: {fmt(l.loadW)} W</div>}
-                      {working === k && (
-                        <div className="nt-backdrop" onClick={(e) => e.target === e.currentTarget && setWorking(null)}>
-                          <div className="fd-dialog est-working-dialog" role="dialog" aria-label="How the count was worked out">
-                            <div className="fd-head">
-                              <b>How {l.count} × {l.typeRef} was worked out</b>
-                              <button className="btn btn-sm btn-link ms-auto p-0" onClick={() => setWorking(null)}>close</button>
-                            </div>
-                            <Working l={l} zone={z.zone} k={k} />
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-            {z.unmatched.map((u) => {
-              const k = `${z.zone}|${u.key}`;
-              const isOpen = open.has(k);
-              return (
-                <div key={u.key} className={`est-line${isOpen ? ' open' : ''}`} data-debug-id="estimate-unmatched">
-                  <div className={`dp-ref${u.feed ? '' : ' is-off'} est-line-head`} role="button" aria-expanded={isOpen} onClick={() => toggle(setOpen, k)}>
-                    <span className="est-caret">{isOpen ? '▾' : '▸'}</span>
-                    <span className="dp-ref-id">{amount(u.qty, u.rows)}</span>
-                    {u.feed && <PtChips pts={u.positionTypes} />}
-                    {u.feed && <Tooltip content="Feed"><Icon name="feed" cls="est-feed" label="Feed" /></Tooltip>}
-                    <span className={u.feed ? 'dp-ref-spec' : 'dp-fault'}>{u.feed ? 'No driver' : u.reason ?? 'No ElementType in the DesignDB can take these'}</span>
-                  </div>
-                  {isOpen && <div className="est-body">{(!u.skipped || u.key.startsWith('no-power-type')) && <ForceType k={k} l={u} />}<RowTable refs={u.rows ?? []} /></div>}
-                </div>
-              );
-            })}
-          </div>
-        ))}
+      {/* a pivot: Hub > ControlGroup, the totals as values, the driver as helper columns */}
+      <div className="est-pivot-wrap mt-3">
+        <table className="est-pivot">
+          <thead>
+            <tr>
+              <th>Hub / ControlGroup</th><th className="n">Total Power</th><th className="n">Total Forward Voltage</th>
+              <th>Driver Type</th><th className="n">Driver Count</th><th>Flags</th><th>Limited By</th><th />
+            </tr>
+          </thead>
+          {shown.map((z) => {
+            const groups = groupsOf(z);
+            const hubTypes = new Set(z.lines.map((l) => l.typeRef));
+            return (
+              <tbody key={z.zone}>
+                <tr className="pv-hub">
+                  <td>{z.zone}</td><td className="n">{fmt(z.loadW)} W</td><td />
+                  <td>{hubTypes.size === 1 ? <TypePill t={[...hubTypes][0]} /> : null}</td>
+                  <td className="n">{z.drivers}</td><td /><td /><td />
+                </tr>
+                {groups.map(({ cg, g, items }) => {
+                  const one = items.length === 1 ? items[0] : null;
+                  const isOpen = open.has(one ? one.k : g);
+                  const refs = items.flatMap((i) => i.l.rows ?? []);
+                  const matched = items.filter((i) => !i.unmatched);
+                  const types = [...new Set(matched.map((i) => i.l.typeRef))];
+                  const typeCell = one ? null : !matched.length ? <span className="pv-note">{reasonOf(items[0].l)}</span>
+                    : types.length === 1
+                      ? <><TypePill t={types[0]} /> <span className="pv-note">· {items.length} lines{prefs.splitByType ? ', fitting types kept apart' : ''}</span></>
+                      : <span className="pv-note">Mixed: {types.join(', ')}</span>;
+                  return [
+                    <tr key={g} className={`pv-cg${one?.unmatched && !one.l.feed ? ' is-off' : ''}${isOpen ? ' open' : ''}`}>
+                      <td>
+                        <button type="button" className="pv-toggle" aria-expanded={isOpen}
+                          onClick={() => toggle(setOpen, one ? one.k : g)}>
+                          <span className="est-caret">{isOpen ? '▾' : '▸'}</span>{cg}
+                        </button>
+                      </td>
+                      {one ? <LineCells {...one} zone={z.zone} /> : <>
+                        <td className="n">{fmt(powerOf(refs))} W</td>
+                        <td className="n">{fvLabel(refs)}</td>
+                        <td>{typeCell}</td>
+                        <td className="n">{matched.reduce((n, i) => n + i.l.count, 0) || '–'}</td>
+                        <td /><td /><td />
+                      </>}
+                    </tr>,
+                    one && isOpen && <Detail key={`${g}-d`} {...one} />,
+                    ...(!one && isOpen ? items.flatMap((i) => [
+                      <tr key={i.k} className={`pv-line${i.unmatched && !i.l.feed ? ' is-off' : ''}${open.has(i.k) ? ' open' : ''}`}>
+                        <td>
+                          <button type="button" className="pv-toggle" aria-expanded={open.has(i.k)} onClick={() => toggle(setOpen, i.k)}>
+                            <span className="est-caret">{open.has(i.k) ? '▾' : '▸'}</span>
+                            {i.unmatched && !i.l.feed ? amount(i.l.qty, i.l.rows) : <PtChips pts={i.l.positionTypes} />}
+                          </button>
+                        </td>
+                        <LineCells {...i} zone={z.zone} />
+                      </tr>,
+                      open.has(i.k) && <Detail key={`${i.k}-d`} {...i} />,
+                    ]) : []),
+                  ];
+                })}
+              </tbody>
+            );
+          })}
+        </table>
       </div>
     </div>
   );

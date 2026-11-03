@@ -358,6 +358,7 @@ export function parseAssessment(text, zoneAlias = {}) {
       uom: s(row.UoM) || null,
       controlType: s(row.ControlTypeRef),
       addressCount: num(row.ControlAddressCount ?? row.Unit_ControlAddressCount),
+      nodes: num(row.MAX_SecondaryPowerNodes),
       // every column as exported, so the estimate can be filtered on any of them like a pivot
       cols: Object.fromEntries(Object.entries(row).map(([k, v]) => [k, s(v)])),
       // per fitting - what actually has to fit on a node
@@ -1155,6 +1156,9 @@ export const PICK_BY = {
 
 // A PositionTypeRef suffixed E or Em (the emergency variant) gets a line of its
 // own unless toggled back into the bundle; any other type only when toggled out.
+// Tunable (2 nodes or 2 addresses) and multi-address (>2) fittings get a line per row, for checking
+export const channelClass = (r) => (r.addressCount > 2 ? 'multi'
+  : r.nodes === 2 || r.addressCount === 2 ? 'tunable' : null);
 export const isOwnLine = (pt, ownLine = []) => !!pt && /Em?$/.test(pt) !== ownLine.includes(pt);
 
 // Fittings of different sizes, packed as they are (MBTBA2): largest first onto
@@ -1258,6 +1262,7 @@ export function planFromRequirements(model, zone, opts = {}) {
     const key = [
       fpKey(r),                                        // a CC fitting cannot share a CV driver
       r.controlType || null,                           // nor a DALI fitting a Local driver
+      channelClass(r) && `${channelClass(r)} ${r.ref}`, // tunable and multi-address: one line per row, to be checked
       restrictControlGroup ? (r.controlGroup || '-') : null,
       splitByType || isOwnLine(r.positionType, ownLine) ? (r.positionType || '-') : null,
       splitByLocation ? (r.location || '-') : null,
