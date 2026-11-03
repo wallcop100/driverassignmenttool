@@ -9,15 +9,19 @@
 
 body { background: #f6f8fb; }
 
-.import-card { width: 460px; position: relative; }
+.import-card { width: 460px; max-width: 100%; position: relative; }
+.import-files li { display: flex; align-items: center; gap: 8px; padding: 3px 0; color: #64748b; }
+.import-files li .material-icons { font-size: 20px; color: #94a3b8; }
+.import-files li.is-met { color: #0f172a; }
+.import-files li.is-met .material-icons { color: #16a34a; }
 
 /* ---- drag-drop import (#10) ---- */
 .dropzone {
-  border: 2px dashed #c3ccdb; border-radius: 12px; padding: 32px 16px; text-align: center;
+  border: 2px dashed #c3ccdb; border-radius: 12px; padding: 20px 16px; text-align: center;
   cursor: pointer; transition: border-color .12s, background .12s; color: #475569;
 }
-.dropzone:hover { border-color: #7C5CFC; background: #fbfaff; }
-.dropzone.is-over { border-color: #7C5CFC; background: #f3f0ff; }
+.dropzone:hover { border-color: #0d6efd; background: #f5f9ff; }
+.dropzone.is-over { border-color: #0d6efd; background: #e7f1ff; }
 .dropzone-icon { font-size: 40px; color: #94a3b8; }
 
 /* sneaky demo entry - a faint dot in the card corner */
@@ -26,7 +30,7 @@ body { background: #f6f8fb; }
   border: none; background: none; color: #cbd5e1; font-weight: 700; line-height: 1; cursor: pointer;
   border-radius: 50%;
 }
-.demo-link:hover { color: #7C5CFC; background: #f3f0ff; }
+.demo-link:hover { color: #0d6efd; background: #e7f1ff; }
 
 /* ---- demo tutorial card ---- */
 .tutorial-card {

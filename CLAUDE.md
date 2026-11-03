@@ -85,6 +85,7 @@ npm run build                   # -> dist/
 | `src/api.js` | thin promise-based wrapper keeping engine calls behind a stable interface |
 | `src/catalogue.js` | 34 driver parts transcribed from the Driver Specs page group |
 | `src/components/` | ~30 components; `ImportScreen`, `Landing`, `ZonePage`, `Tray`, `DriverBin`, `ReviewModal` are the spine |
+| `src/designdb.js` | DesignDB .xlsx → type library CSV; the overlay's section 0 ported to sheet rows |
 | `src/persist.js` | the only persistence — session autosave to localStorage, offered back as "Resume" |
 | `src/companion.js` | probes `./companion/capabilities` once; null on Pages. Reports and the shared parts catalogue |
 | `src/build.js`, `src/buildNames.json` | build commit, channel and name (stamped by `vite.config.js`), shown as the bottom-right badge |
@@ -167,3 +168,7 @@ node docs/hub-layout-shots.mjs
   and turns off pointer events as the drag starts, so the cursor can land outside `.hub-lab` and its
   mouseleave would cancel the drag. That is what broke it in #25. The listener hook sits above the
   `if (!cur) return` and reaches `onDrop` through `dropRef` (2026-10-30).
+- **`src/designdb.js` is a second copy of the overlay's type-library filter** (section 0 of
+  `sysex-overlay-DJ101681.sql`): live types whose Parameters have `<` or `OP.`, parts of live
+  Elements, and types placed on a hub. The workbook doesn't say which PositionTypes are hubs, so a
+  hub there is any Position named as a `Link_SecondaryPowerRef`. Change both together (2026-11-03).
