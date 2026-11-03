@@ -358,6 +358,8 @@ export function parseAssessment(text, zoneAlias = {}) {
       uom: s(row.UoM) || null,
       controlType: s(row.ControlTypeRef),
       addressCount: num(row.ControlAddressCount ?? row.Unit_ControlAddressCount),
+      // every column as exported, so the estimate can be filtered on any of them like a pivot
+      cols: Object.fromEntries(Object.entries(row).map(([k, v]) => [k, s(v)])),
       // per fitting - what actually has to fit on a node
       wPer: loadW / qty,
       fvPer: fvV == null ? null : fvV / qty,
@@ -1224,8 +1226,16 @@ export function planFromRequirements(model, zone, opts = {}) {
     nodeSplitByLocation = false,
   } = opts;
   const keep = 1 - margin;
-  // A row with no load needs no driver, whatever its quantity.
-  const rows = (model.requirements || []).filter((r) => r.zone === zone && !!r.powerType && r.loadW > 0);
+  const all = (model.requirements || []).filter((r) => r.zone === zone);
+  // A row with no load needs no driver, and one with no CC/CV has nothing to size
+  // against. Both are still listed, so a hub of them doesn't read as 0 for no reason.
+  const rows = all.filter((r) => !!r.powerType && r.loadW > 0);
+  const skipped = [
+    ['no-power-type', 'No CC or CV SecondaryPowerType, so no driver is sized for these', all.filter((r) => !r.powerType)],
+    ['no-load', 'No power (SumPower 0), so no driver is needed', all.filter((r) => r.powerType && !(r.loadW > 0))],
+  ].filter(([, , rs]) => rs.length).map(([key, reason, rs]) => ({
+    key, reason, skipped: true, qty: rs.reduce((n, r) => n + r.qty, 0), rows: rs.map((r) => r.ref),
+  }));
 
   // Each constraint is a coarser bucket, and a coarser bucket means more
   // drivers. That is the point: an estimate that packs everything as tightly as
@@ -1439,13 +1449,33 @@ export function planFromRequirements(model, zone, opts = {}) {
   }
 
   const drivers = lines.reduce((n, l) => n + l.count, 0);
-  return { zone, hubRef: rows[0]?.hubRef ?? null, lines, unmatched, drivers,
+  return { zone, hubRef: all[0]?.hubRef ?? null, lines, unmatched: [...unmatched, ...skipped], drivers,
     loadW: lines.reduce((w, l) => w + l.loadW, 0) };
 }
 
 // Every hub in the assessment, sized - or just the one asked for.
+// The columns an Excel user pivots the assessment on, each under its 100053 and
+// 100874 name. Any other column can be added. A filter lists the values left
+// out, so a value new to this export is in by default.
+export const PIVOT_COLUMNS = [
+  ['Link_SecondaryPowerRef'],
+  ['Link_SecondaryPowerExtRef'],
+  ['ControlTypeRef'],
+  ['CC/CV', 'SecondaryPowerType'],
+  ['MAX_SecondaryPowerNodes'],
+  ['ControlAddressCount', 'Unit_ControlAddressCount'],
+];
+export const filterValue = (r, col) => r.cols?.[col] ?? '';
+export function filterRequirements(requirements, rowFilter) {
+  const out = Object.entries(rowFilter ?? {}).filter(([, vs]) => vs?.length);
+  if (!out.length) return requirements;
+  return requirements.filter((r) => out.every(([f, vs]) => !vs.includes(filterValue(r, f))));
+}
+
 export function estimate(model, opts, zone) {
-  const zones = zone ? [zone] : [...new Set((model.requirements || []).map((r) => r.zone))].sort();
+  const requirements = filterRequirements(model.requirements || [], opts?.rowFilter);
+  if (requirements !== model.requirements) model = { ...model, requirements };
+  const zones = zone ? [zone] : [...new Set(requirements.map((r) => r.zone))].sort();
   return zones.map((z) => planFromRequirements(model, z, opts));
 }
 

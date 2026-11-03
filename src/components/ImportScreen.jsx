@@ -52,6 +52,20 @@ export default function ImportScreen({ dispatch, saved, onResume, onDiscard }) {
     if (unknown.length) setError(`Not recognised: ${unknown.join(', ')}.`);
   };
 
+  // Chromium's picker gives handles, which read the workbook as saved since - so a
+  // save in Excel can be offered as a refresh. Elsewhere, the plain file input.
+  const pick = async () => {
+    if (!window.showOpenFilePicker) { fileInput.current?.click(); return; }
+    try {
+      const hs = await window.showOpenFilePicker({ multiple: true, types: [{ description: 'CSV exports or a DesignDB',
+        accept: { 'text/csv': ['.csv'], 'application/vnd.ms-excel.sheet.macroEnabled.12': ['.xlsm'],
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'] } }] });
+      addFiles(await Promise.all(hs.map((h) => h.getFile())), hs.map((h) => Promise.resolve(h)));
+    } catch (e) {
+      if (e?.name !== 'AbortError') fileInput.current?.click();
+    }
+  };
+
   const open = async (fn) => {
     setBusy(true);
     setError(null);
@@ -59,7 +73,7 @@ export default function ImportScreen({ dispatch, saved, onResume, onDiscard }) {
       const used = staged.filter((x) => fn.uses.includes(x.kind));
       const model = await api.parseAuto(used.map((x) => x.file));
       const book = used.find((x) => isWorkbook(x.file));
-      if (book) api.watchDesignDb(book.file, book.handle);
+      api.watchDesignDb(book?.file ?? null, book?.handle ?? null);
       dispatch({ type: 'INIT', model });
     } catch (e) {
       setError(e.message);
@@ -100,7 +114,7 @@ export default function ImportScreen({ dispatch, saved, onResume, onDiscard }) {
                 .map((it) => it.getAsFileSystemHandle?.() ?? null);
               addFiles(e.dataTransfer.files, handles);
             }}
-            onClick={() => fileInput.current?.click()}>
+            onClick={pick}>
             <span className="material-icons dropzone-icon">upload_file</span>
             <div className="fw-semibold">Drop files here</div>
             <input ref={fileInput} type="file" accept=".csv,.xlsx,.xlsm" multiple hidden

@@ -1583,3 +1583,32 @@ test('estimate: a saved hub slot (JSON round-trip) still sizes, for the multi-hu
   assert.ok(live.length > 0);
   assert.deepEqual(saved, live);
 });
+
+test('estimate: a hub of LOCAL rows (no CC/CV) lists them as not sized, not as nothing', () => {
+  const head = '"Link_SecondaryPowerRef","Link_SecondaryPowerExtRef","ControlTypeRef","PositionTypeRef","SumQuantity","Unit_ControlAddressCount","SecondaryPowerType","PositionVoltage","PositionCurrent","SumVf","SumPower"';
+  const requirements = engine.parseAssessment(`${head}
+"P50440","","LOCAL","F01","1","1","","0","0","0","100"
+"P50440","","LOCAL","F01","1","1","","0","0","0","100"
+`);
+  const p = engine.planFromRequirements({ requirements, driverTypes: [] }, 'P50440');
+  assert.equal(p.drivers, 0);
+  assert.equal(p.hubRef, 'P50440');
+  assert.deepEqual(p.unmatched.map((u) => [u.key, u.skipped, u.qty]), [['no-power-type', true, 2]]);
+});
+
+test('estimate: rowFilter leaves out the values ticked off, like an Excel pivot filter', () => {
+  const head = '"Link_SecondaryPowerRef","ControlTypeRef","PositionTypeRef","SumQuantity","Unit_ControlAddressCount","MAX_SecondaryPowerNodes","SecondaryPowerType","PositionVoltage","PositionCurrent","SumVf","SumPower"';
+  const requirements = engine.parseAssessment(`${head}
+"H1","DALI","B02w","2","1","1","CC","0","0.3","70","23.6"
+"H1","LOCAL","F01","1","","","","0","0","0","100"
+"H2","DALI","C01r","1","1","2","CV","24","0","0","20"
+`);
+  assert.equal(requirements[0].cols.MAX_SecondaryPowerNodes, '1');
+  assert.deepEqual(engine.filterRequirements(requirements, { SecondaryPowerType: ['CV'] }).map((r) => r.zone), ['H1', 'H1']);
+  assert.equal(engine.filterRequirements(requirements, { ControlTypeRef: ['LOCAL'], MAX_SecondaryPowerNodes: ['2'] }).length, 1);
+  assert.equal(engine.filterRequirements(requirements, {}), requirements);
+  const model = engine.buildEstimate(fs.readFileSync(path.join(dir, '..', 'src', 'demo', 'assessment.csv'), 'utf8'),
+    fs.readFileSync(path.join(dir, '..', 'src', 'demo', 'form.csv'), 'utf8'));
+  const cts = [...new Set(model.requirements.map((r) => engine.filterValue(r, 'ControlTypeRef')))];
+  assert.equal(engine.estimate(model, { rowFilter: { ControlTypeRef: cts } }).length, 0);
+});

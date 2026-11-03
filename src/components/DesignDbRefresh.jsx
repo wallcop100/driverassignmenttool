@@ -19,6 +19,12 @@ export default function DesignDbRefresh({ state, dispatch }) {
   }, [state.model]);
 
   if (!change) return null;
+  // after a reload: the browser asks once, then the save is compared as before
+  const check = async () => {
+    if (!(await api.allowDesignDb(change.handle))) return;
+    const c = await api.designDbChange();
+    if (c?.file) read(c.file); else setChange(null);
+  };
   const read = async (file) => {
     if (!file) return;
     setMsg('Reading…');
@@ -35,8 +41,9 @@ export default function DesignDbRefresh({ state, dispatch }) {
   return (
     <div className="alert alert-info d-flex align-items-center gap-2 py-2 mb-0" role="status">
       <span className="material-icons">sync</span>
-      <div className="flex-grow-1 small">The DesignDB has been saved since it was read. {msg}</div>
-      {change.file
+      <div className="flex-grow-1 small">{change.ask ? 'DesignDB' : 'DesignDB saved since it was read.'} {msg}</div>
+      {change.ask ? <button className="btn btn-sm btn-primary" onClick={check}>Check for changes</button>
+        : change.file
         ? <button className="btn btn-sm btn-primary" onClick={() => read(change.file)}>Refresh design data</button>
         : <>
           <button className="btn btn-sm btn-primary" onClick={() => input.current?.click()}>Choose it again</button>

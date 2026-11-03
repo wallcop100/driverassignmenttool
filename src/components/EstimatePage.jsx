@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import * as api from '../api.js';
 import { listSessions } from '../persist.js';
-import { compareEstimate, ESTIMATE_WARNING, estimatePatchRows, generateEstimatePatch, isOwnLine, resolveSpec, zoneViews } from '../engine.js';
+import { compareEstimate, ESTIMATE_WARNING, estimatePatchRows, filterRequirements, filterValue, PIVOT_COLUMNS, generateEstimatePatch, isOwnLine, resolveSpec, zoneViews } from '../engine.js';
 import { effectiveDrivers } from '../state.js';
 import { openReport } from '../bugReports.js';
+import { isEmbedded } from '../embed.js';
 import KebabMenu from './KebabMenu.jsx';
 import Tooltip from './Tooltip.jsx';
 import ViewToggle from './ViewToggle.jsx';
@@ -137,13 +138,15 @@ export default function EstimatePage({ state, dispatch, zone }) {
     margin: prefs.margin,
     forced: state.forcedTypes,
     ownLine: state.ownLine,
+    // the pivot filters an Excel user would set; the overlay sends one hub's rows already
+    rowFilter: isEmbedded() ? null : state.rowFilter,
   };
   useEffect(() => {
     let stale = false;
     api.estimate(opts, zone).then((z) => !stale && setZones(z)).catch((e) => setError(e.message));
     return () => { stale = true; };
   }, [model, zone, prefs.restrictControlGroup, prefs.splitByType, prefs.splitByLocation,
-      prefs.nodeSplitByType, prefs.nodeSplitByLocation, prefs.allowLocal, prefs.pickBy, prefs.preferSingleOutput, prefs.margin, state.forcedTypes, state.ownLine]);
+      prefs.nodeSplitByType, prefs.nodeSplitByLocation, prefs.allowLocal, prefs.pickBy, prefs.preferSingleOutput, prefs.margin, state.forcedTypes, state.ownLine, state.rowFilter]);
 
   // Overlay: hubs estimated in other frames of this branch+set, not this one.
   const otherHubs = useMemo(() => {
@@ -160,12 +163,13 @@ export default function EstimatePage({ state, dispatch, zone }) {
     const byType = new Map();
     let drivers = 0;
     let unmatched = 0;
+    let skipped = 0;
     for (const z of zones) {
       drivers += z.drivers;
-      unmatched += z.unmatched.reduce((n, u) => n + u.qty, 0);
+      for (const u of z.unmatched) if (u.skipped) skipped += u.qty; else unmatched += u.qty;
       for (const l of z.lines) byType.set(l.typeRef, (byType.get(l.typeRef) ?? 0) + l.count);
     }
-    return { drivers, unmatched, byType: [...byType.entries()].sort() };
+    return { drivers, unmatched, skipped, byType: [...byType.entries()].sort() };
   }, [zones]);
 
   // Beside the hub's actual drivers, per type - only for one hub that has any.
@@ -194,10 +198,10 @@ export default function EstimatePage({ state, dispatch, zone }) {
     const units = new Set((refs ?? []).map((ref) => reqByRef.get(ref)?.uom ?? null));
     return units.size === 1 ? [...units][0] : null;
   };
-  const unmatchedLabel = () => {
+  const unmatchedLabel = (skipped = false) => {
     const byUnit = new Map();
     for (const z of zones) {
-      for (const u of z.unmatched) {
+      for (const u of z.unmatched.filter((x) => !!x.skipped === skipped)) {
         for (const ref of u.rows ?? []) {
           const r = reqByRef.get(ref);
           if (r) byUnit.set(r.uom ?? '', (byUnit.get(r.uom ?? '') ?? 0) + r.qty);
@@ -209,6 +213,33 @@ export default function EstimatePage({ state, dispatch, zone }) {
 
   // scoped to one hub when routed from the landing page, whole job otherwise
   const rows = zone ? model.requirements.filter((r) => r.zone === zone) : model.requirements;
+  // a filter is only offered for a column this export has; values counted over the scope
+  const columns = useMemo(() => [...new Set(rows.flatMap((r) => Object.keys(r.cols ?? {})))], [rows]);
+  const pivots = PIVOT_COLUMNS.map((names) => names.find((c) => columns.includes(c))).filter(Boolean);
+  const filters = opts.rowFilter ? [...new Set([...pivots, ...Object.keys(opts.rowFilter)])].map((col) => {
+    const n = new Map();
+    for (const r of rows) n.set(filterValue(r, col), (n.get(filterValue(r, col)) ?? 0) + 1);
+    return [col, [...n].sort(([a], [b]) => a.localeCompare(b, undefined, { numeric: true }))];
+  }) : [];
+  const filtersOn = Object.values(opts.rowFilter ?? {}).filter((vs) => vs?.length).length;
+  const [bar, setBar] = useState(null); // which toolbar menu is open
+  useEffect(() => {
+    if (!bar) return undefined;
+    const onDoc = (e) => { if (!e.target.closest?.('.hub-menuwrap')) setBar(null); };
+    const onKey = (e) => { if (e.key === 'Escape') setBar(null); };
+    document.addEventListener('mousedown', onDoc);
+    window.addEventListener('keydown', onKey);
+    return () => { document.removeEventListener('mousedown', onDoc); window.removeEventListener('keydown', onKey); };
+  }, [bar]);
+  const menuButton = (id, icon, label, badge) => (
+    <button type="button" className={`hub-tb ${bar === id ? 'is-open' : ''}`} aria-expanded={bar === id}
+      onClick={() => setBar((o) => (o === id ? null : id))}>
+      <span className="material-icons">{icon}</span>{label}
+      {badge ? <span className="badge text-bg-primary">{badge}</span> : null}
+      <span className="material-icons caret">expand_more</span>
+    </button>
+  );
+  const hiddenRows = rows.length - filterRequirements(rows, opts.rowFilter).length;
   const posTypes = new Set(rows.map((r) => r.positionType).filter(Boolean));
   // a line opens to its rows, and its rows to the arithmetic behind the count
   const [open, setOpen] = useState(() => new Set());
@@ -236,7 +267,7 @@ export default function EstimatePage({ state, dispatch, zone }) {
               <td className="est-load">{fmt(r.qty)}{u} × {fmt(r.wPer)} W{r.uom ? `/${r.uom}` : ''} = <b>{fmt(r.loadW)} W</b></td>
               <td>
                 <span className={`est-drive is-${(r.powerType ?? '').toLowerCase()}`}>
-                  {r.powerType === 'CV' ? `CV ${r.voltageV ?? ''} V`
+                  {!r.powerType ? 'no CC/CV' : r.powerType === 'CV' ? `CV ${r.voltageV ?? ''} V`
                     : `CC ${r.currentA != null ? `${Math.round(r.currentA * 1000)} mA` : '?'}${r.fvPer != null ? ` · ${fmt(r.fvPer)} V` : ''}`}
                 </span>
               </td>
@@ -286,7 +317,7 @@ export default function EstimatePage({ state, dispatch, zone }) {
 
   const ForcePositionType = ({ pt }) => {
     const ptsOf = (l) => l.positionTypes ?? (l.rows ?? []).map((ref) => reqByRef.get(ref)?.positionType);
-    const lines = zones.flatMap((z) => [...z.lines, ...z.unmatched]
+    const lines = zones.flatMap((z) => [...z.lines, ...z.unmatched.filter((u) => !u.skipped)]
       .filter((l) => ptsOf(l).includes(pt)).map((l) => ({ k: `${z.zone}|${l.key}`, l })));
     const fits = driverTypes.filter((t) => lines.every(({ l }) => (l.fitTypes ?? []).includes(t)));
     const now = new Set(lines.map(({ k }) => state.forcedTypes[k] ?? ''));
@@ -498,69 +529,59 @@ export default function EstimatePage({ state, dispatch, zone }) {
 
   return (
     <div className="container-fluid py-3 drivers-page">
-      <div className="est-top">
-      <div className="est-summary">
-      <div className="dp-head">
-        <h5 className="mb-0">Secondary Power Assessment</h5>
-        {zone && <span className="est-hub">{zone}</span>}
-        {zone && <ViewToggle model={model} zone={zone} current="estimate" dispatch={dispatch} />}
-        {/* An early design has hubs and Elements but no cables: the space layout is
-            still where they are arranged, so the quiet way in is here too. */}
-        {zone && (
-          <button type="button" className="space-link" title="Hub layout" aria-label="Open the hub layout"
-            onClick={() => dispatch({ type: 'SET_VIEW', view: { page: 'layout', zone, from: 'estimate' } })}>
-            <span className="material-icons">straighten</span>
-          </button>
-        )}
-        {totals.unmatched > 0 && (
-          <span className="dp-need" title="No ElementType in the DesignDB can take these, so no driver is counted for them">
-            {unmatchedLabel()} unmatched
+      {/* one slim row like the hub layout's; each menu makes the estimate looser,
+          and the count higher. All off is the tightest answer, rarely the one to price. */}
+      <div className="hub-bar est-bar-top" data-debug-id="estimate-options">
+        {filters.length > 0 && (
+          <span className="hub-menuwrap">
+            {menuButton('filter', 'filter_alt', 'Filter', filtersOn)}
+            {bar === 'filter' && (
+              <div className="hub-menu is-wide est-filters">
+                {filters.map(([col, values]) => {
+                  const off = opts.rowFilter?.[col] ?? [];
+                  const shown = values.filter(([v]) => !off.includes(v)).length;
+                  const set = (vs) => dispatch({ type: 'SET_ROW_FILTER', field: col, values: vs });
+                  return (
+                    <details key={col} className="est-filter" open={off.length > 0 || undefined}>
+                      <summary>
+                        <span className="grow">{col}</span>
+                        <b>{shown === values.length ? 'All' : `${shown} of ${values.length}`}</b>
+                        {!pivots.includes(col) && (
+                          <button type="button" className="btn-close btn-sm ms-1" aria-label={`Remove the ${col} filter`}
+                            onClick={(e) => { e.preventDefault(); set(null); }} />
+                        )}
+                      </summary>
+                      <div className="est-filter-vals">
+                        {values.map(([v, n]) => (
+                          <label key={v} className="hub-mi">
+                            <input type="checkbox" className="form-check-input m-0" checked={!off.includes(v)}
+                              onChange={(e) => set(e.target.checked ? off.filter((x) => x !== v) : [...off, v])} />
+                            <span className="grow rv-ref">{v || '(blank)'}</span><span className="hint">{n}</span>
+                          </label>
+                        ))}
+                      </div>
+                      {off.length > 0 && <button type="button" className="btn btn-link btn-sm p-0 ms-2" onClick={() => set([])}>Show all</button>}
+                    </details>
+                  );
+                })}
+                <div className="hub-mdiv" />
+                <div className="hub-mi">
+                  <span className="material-icons">add</span>
+                  <select className="form-select form-select-sm" value="" aria-label="Filter on another column"
+                    onChange={(e) => e.target.value && dispatch({ type: 'SET_ROW_FILTER', field: e.target.value, values: [] })}>
+                    <option value="">Add column…</option>
+                    {columns.filter((c) => !filters.some(([f]) => f === c)).map((c) => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+              </div>
+            )}
           </span>
         )}
-      </div>
-      <div className="est-meta">
-        {rows.length} row{rows.length === 1 ? '' : 's'} · {posTypes.size} PositionType{posTypes.size === 1 ? '' : 's'}
-        {zone ? '' : ` · ${zones.length} hub${zones.length === 1 ? '' : 's'}`}
-        {views?.cables ? '' : ' · no links yet'}
-      </div>
 
-      <div className="est-hero">
-        <div className="est-big">{totals.drivers}<small>driver{totals.drivers === 1 ? '' : 's'}</small></div>
-        {totals.byType.map(([t, n]) => <span key={t} className="est-chip"><b>{n}</b> × {t}</span>)}
-      </div>
-
-      <div className="est-actions">
-        <button className="btn btn-sm btn-outline-secondary" onClick={exportCsv}>Export CSV</button>
-        <button className="btn btn-sm btn-primary" onClick={() => setPatchOpen(true)}
-          title="An ExcelScript that appends these drivers to the Elements sheet">
-          {copied ? 'Copied!' : 'Copy Elements patch…'}
-        </button>
-        {/* the patch appends rows it cannot ref; that is the next job */}
-        {totals.drivers > 0 && (
-          <span className="est-meta">then give each appended row a Ref before committing</span>
-        )}
-      </div>
-
-      {forcingPt && <ForcePositionType pt={forcingPt} />}
-
-      {patchOpen && (
-        <PatchDialog opts={opts} zone={zone} others={otherHubs} perDriver={!!prefs.patchPerDriver}
-          onPerDriver={(v) => setPref({ patchPerDriver: v })}
-          onCopy={copyPatch} onClose={() => setPatchOpen(false)} />
-      )}
-
-      {/* Always shown, never dismissable: the count is a starting point. */}
-      <div className={`est-warn${flash ? ' is-flash' : ''}`} role="note">
-        <span className="material-icons">warning</span>
-        <div><strong>Check every calculation.</strong> {ESTIMATE_WARNING}</div>
-      </div>
-      </div>
-
-      {/* Each of these makes the estimate looser, and the count higher. Turning
-          them all off gives the tightest possible answer, which is rarely the
-          one to price at tender. */}
-      <aside className="est-assume" data-debug-id="estimate-options">
-        <div className="est-c-label">Keep separate</div>
+        <span className="hub-menuwrap">
+          {menuButton('separate', 'call_split', 'Keep separate')}
+          {bar === 'separate' && (
+            <div className="hub-menu is-wide">
         <table className="est-grid">
           <thead><tr><th /><th>per driver</th><th>per output</th></tr></thead>
           <tbody>
@@ -584,8 +605,14 @@ export default function EstimatePage({ state, dispatch, zone }) {
             ))}
           </tbody>
         </table>
+            </div>
+          )}
+        </span>
 
-        <div className="est-c-label mt-3">Driver type restrictions</div>
+        <span className="hub-menuwrap">
+          {menuButton('types', 'tune', 'Driver types')}
+          {bar === 'types' && (
+            <div className="hub-menu is-wide">
         <label className="est-c">
           Pick by
           <select className="form-select form-select-sm est-pick" value={opts.pickBy}
@@ -608,7 +635,79 @@ export default function EstimatePage({ state, dispatch, zone }) {
           %
           <Info text={`Capacity left free on every driver and output, for late changes. At ${marginPct}% each is filled to ${100 - marginPct}% of its rating.`} />
         </label>
-      </aside>
+            </div>
+          )}
+        </span>
+
+        <span className="flex-grow-1" />
+        <button type="button" className="hub-tb" onClick={exportCsv}>
+          <span className="material-icons">download</span>Export CSV
+        </button>
+        <button type="button" className="hub-tb is-solid" onClick={() => setPatchOpen(true)}
+          title="An ExcelScript that appends these drivers to the Elements sheet">
+          <span className="material-icons">{copied ? 'check' : 'content_copy'}</span>{copied ? 'Copied' : 'Copy Elements patch…'}
+        </button>
+      </div>
+
+      <div className="est-top">
+      <div className="est-summary">
+      <div className="dp-head">
+        <h5 className="mb-0">Secondary Power Assessment</h5>
+        {zone && <span className="est-hub">{zone}</span>}
+        {zone && <ViewToggle model={model} zone={zone} current="estimate" dispatch={dispatch} />}
+        {/* An early design has hubs and Elements but no cables: the space layout is
+            still where they are arranged, so the quiet way in is here too. */}
+        {zone && (
+          <button type="button" className="space-link" title="Hub layout" aria-label="Open the hub layout"
+            onClick={() => dispatch({ type: 'SET_VIEW', view: { page: 'layout', zone, from: 'estimate' } })}>
+            <span className="material-icons">straighten</span>
+          </button>
+        )}
+        {totals.unmatched > 0 && (
+          <span className="dp-need" title="No ElementType in the DesignDB can take these, so no driver is counted for them">
+            {unmatchedLabel()} unmatched
+          </span>
+        )}
+        {hiddenRows > 0 && (
+          <span className="dp-need" title="Left out by the Filter menu - they are not in this estimate">
+            {hiddenRows} row(s) filtered out
+          </span>
+        )}
+        {totals.skipped > 0 && (
+          <span className="dp-need" title="Rows with no CC/CV SecondaryPowerType or no power - no driver is sized for them. Open the grey lines to see which.">
+            {unmatchedLabel(true)} not sized
+          </span>
+        )}
+      </div>
+      <div className="est-meta">
+        {rows.length} row{rows.length === 1 ? '' : 's'} · {posTypes.size} PositionType{posTypes.size === 1 ? '' : 's'}
+        {zone ? '' : ` · ${zones.length} hub${zones.length === 1 ? '' : 's'}`}
+        {views?.cables ? '' : ' · no links yet'}
+      </div>
+
+      <div className="est-hero">
+        <div className="est-big">{totals.drivers}<small>driver{totals.drivers === 1 ? '' : 's'}</small></div>
+        {totals.byType.map(([t, n]) => <span key={t} className="est-chip"><b>{n}</b> × {t}</span>)}
+      </div>
+
+      {/* the patch appends rows it cannot ref; that is the next job */}
+      {totals.drivers > 0 && <div className="est-meta mb-2">Patch drivers get no Ref: give each appended row one before committing.</div>}
+
+      {forcingPt && <ForcePositionType pt={forcingPt} />}
+
+      {patchOpen && (
+        <PatchDialog opts={opts} zone={zone} others={otherHubs} perDriver={!!prefs.patchPerDriver}
+          onPerDriver={(v) => setPref({ patchPerDriver: v })}
+          onCopy={copyPatch} onClose={() => setPatchOpen(false)} />
+      )}
+
+      {/* Always shown, never dismissable: the count is a starting point. */}
+      <div className={`est-warn${flash ? ' is-flash' : ''}`} role="note">
+        <span className="material-icons">warning</span>
+        <div><strong>Check every calculation.</strong> {ESTIMATE_WARNING}</div>
+      </div>
+      </div>
+
       </div>
 
       {zone && !rows.length && (
@@ -708,7 +807,7 @@ export default function EstimatePage({ state, dispatch, zone }) {
                     <span className="dp-ref-id">{amount(u.qty, u.rows)}</span>
                     <span className="dp-fault">{u.reason ?? 'No ElementType in the DesignDB can take these'}</span>
                   </div>
-                  {isOpen && <div className="est-body"><ForceType k={k} l={u} /><RowTable refs={u.rows ?? []} /></div>}
+                  {isOpen && <div className="est-body">{!u.skipped && <ForceType k={k} l={u} />}<RowTable refs={u.rows ?? []} /></div>}
                 </div>
               );
             })}

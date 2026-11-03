@@ -119,6 +119,7 @@ node docs/hub-layout-shots.mjs
 
 ## Gotchas
 
+- **A picked file can't see an Excel save (2026-11-03).** An `<input type=file>` File is a snapshot and dies on reload, so the DesignDB refresh needs a FileSystemFileHandle (from a drop or `showOpenFilePicker`), kept in IndexedDB. To test with a real handle, write the workbook into OPFS (`navigator.storage.getDirectory()`), stub `getAsFileSystemHandle`, and rewrite the OPFS file to stand in for a save.
 - **DesignDB names parts by product code, with lookalike characters.** `SL0240A3` has a zero where
   the letter O belongs, and `SLO560S3`/`DL0560S3` differ by prefix only. Matching is by model token
   because the names are free text. Add aliases **from the data, not from the spec page**.
