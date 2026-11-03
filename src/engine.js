@@ -1205,6 +1205,9 @@ export function packLine(runs, t, keep) {
   };
 }
 
+// A PositionTypeRef starting F is a feed: no CC/CV is expected of it, so it is no warning.
+export const isFeed = (pt) => /^F/i.test(pt ?? '');
+
 export function planFromRequirements(model, zone, opts = {}) {
   const {
     restrictControlGroup = true,
@@ -1230,11 +1233,17 @@ export function planFromRequirements(model, zone, opts = {}) {
   // A row with no load needs no driver, and one with no CC/CV has nothing to size
   // against. Both are still listed, so a hub of them doesn't read as 0 for no reason.
   const rows = all.filter((r) => !!r.powerType && r.loadW > 0);
+  // No CC/CV is one line per PositionType, so a type can be forced on them (a feed's PSU, say).
+  const noPt = new Map();
+  for (const r of all.filter((x) => !x.powerType)) noPt.set(r.positionType || '-', [...(noPt.get(r.positionType || '-') ?? []), r]);
   const skipped = [
-    ['no-power-type', 'No CC or CV SecondaryPowerType, so no driver is sized for these', all.filter((r) => !r.powerType)],
+    ...[...noPt].map(([pt, rs]) => [`no-power-type:${pt}`, 'No CC or CV SecondaryPowerType, so no driver is sized for these', rs]),
     ['no-load', 'No power (SumPower 0), so no driver is needed', all.filter((r) => r.powerType && !(r.loadW > 0))],
   ].filter(([, , rs]) => rs.length).map(([key, reason, rs]) => ({
     key, reason, skipped: true, qty: rs.reduce((n, r) => n + r.qty, 0), rows: rs.map((r) => r.ref),
+    positionTypes: [...new Set(rs.map((r) => r.positionType).filter(Boolean))],
+    feed: rs.every((r) => isFeed(r.positionType)),
+    group: rs,
   }));
 
   // Each constraint is a coarser bucket, and a coarser bucket means more
@@ -1448,9 +1457,30 @@ export function planFromRequirements(model, zone, opts = {}) {
     });
   }
 
+  // A type forced on a no-CC/CV line: nothing to size against but watts, so drivers
+  // enough for the load at the margin, and at least one.
+  const left = [];
+  for (const { group, ...u } of skipped) {
+    const want = forced[`${zone}|${u.key}`];
+    const t = want && u.key.startsWith('no-power-type') && model.inventory?.find((x) => x.typeRef === want);
+    if (!t) { left.push(u); continue; }
+    const totalW = group.reduce((w, r) => w + r.loadW, 0);
+    const perW = (t.maxPowerW ?? 0) * keep;
+    lines.push({
+      ...u, skipped: undefined, typeRef: t.typeRef, name: t.name || '',
+      count: Math.max(1, perW > 0 ? Math.ceil(totalW / perW) : 1),
+      limit: 'driver W', working: null, considered: [], fitTypes: [], forced: want,
+      forcedIssue: null, mismatch: null, loadW: totalW, controlGroup: group[0].controlGroup,
+      groupQty: [...group.reduce((m, r) => m.set(r.controlGroup || '', (m.get(r.controlGroup || '') ?? 0) + r.qty),
+        new Map())].sort(([a], [b]) => a.localeCompare(b)),
+      locations: [...new Set(group.map((r) => r.location).filter(Boolean))],
+    });
+  }
+
   const drivers = lines.reduce((n, l) => n + l.count, 0);
-  return { zone, hubRef: all[0]?.hubRef ?? null, lines, unmatched: [...unmatched, ...skipped], drivers,
-    loadW: lines.reduce((w, l) => w + l.loadW, 0) };
+  return { zone, hubRef: all[0]?.hubRef ?? null, lines, unmatched: [...unmatched, ...left], drivers,
+    // every row's power, so a hub of feeds or unsized rows doesn't read 0 W
+    loadW: all.reduce((w, r) => w + (r.loadW || 0), 0) };
 }
 
 // Every hub in the assessment, sized - or just the one asked for.

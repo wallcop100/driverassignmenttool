@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import * as api from '../api.js';
 import { listSessions } from '../persist.js';
-import { compareEstimate, ESTIMATE_WARNING, estimatePatchRows, filterRequirements, filterValue, PIVOT_COLUMNS, generateEstimatePatch, isOwnLine, resolveSpec, zoneViews } from '../engine.js';
+import { compareEstimate, ESTIMATE_WARNING, isFeed, estimatePatchRows, filterRequirements, filterValue, PIVOT_COLUMNS, generateEstimatePatch, isOwnLine, resolveSpec, zoneViews } from '../engine.js';
 import { effectiveDrivers } from '../state.js';
 import { openReport } from '../bugReports.js';
 import { isEmbedded } from '../embed.js';
@@ -166,7 +166,7 @@ export default function EstimatePage({ state, dispatch, zone }) {
     let skipped = 0;
     for (const z of zones) {
       drivers += z.drivers;
-      for (const u of z.unmatched) if (u.skipped) skipped += u.qty; else unmatched += u.qty;
+      for (const u of z.unmatched) if (u.feed) continue; else if (u.skipped) skipped += u.qty; else unmatched += u.qty;
       for (const l of z.lines) byType.set(l.typeRef, (byType.get(l.typeRef) ?? 0) + l.count);
     }
     return { drivers, unmatched, skipped, byType: [...byType.entries()].sort() };
@@ -201,7 +201,7 @@ export default function EstimatePage({ state, dispatch, zone }) {
   const unmatchedLabel = (skipped = false) => {
     const byUnit = new Map();
     for (const z of zones) {
-      for (const u of z.unmatched.filter((x) => !!x.skipped === skipped)) {
+      for (const u of z.unmatched.filter((x) => !x.feed && !!x.skipped === skipped)) {
         for (const ref of u.rows ?? []) {
           const r = reqByRef.get(ref);
           if (r) byUnit.set(r.uom ?? '', (byUnit.get(r.uom ?? '') ?? 0) + r.qty);
@@ -304,10 +304,10 @@ export default function EstimatePage({ state, dispatch, zone }) {
         <select className="form-select form-select-sm" value={state.forcedTypes[k] ?? ''}
           onChange={(e) => dispatch({ type: 'FORCE_TYPE', key: k, typeRef: e.target.value || null })}>
           <option value="">Automatic{auto ? ` - ${auto}` : ''}</option>
-          <optgroup label="Fits these fittings">
+          {fits.length > 0 && <optgroup label="Fits these fittings">
             {fits.map((t) => <option key={t} value={t}>{t}</option>)}
-          </optgroup>
-          <optgroup label="Does not match - will be flagged">
+          </optgroup>}
+          <optgroup label={l.feed ? 'Sized by watts only' : 'Does not match - will be flagged'}>
             {driverTypes.filter((t) => !fits.includes(t)).map((t) => <option key={t} value={t}>{t}</option>)}
           </optgroup>
         </select>
@@ -317,7 +317,7 @@ export default function EstimatePage({ state, dispatch, zone }) {
 
   const ForcePositionType = ({ pt }) => {
     const ptsOf = (l) => l.positionTypes ?? (l.rows ?? []).map((ref) => reqByRef.get(ref)?.positionType);
-    const lines = zones.flatMap((z) => [...z.lines, ...z.unmatched.filter((u) => !u.skipped)]
+    const lines = zones.flatMap((z) => [...z.lines, ...z.unmatched.filter((u) => !u.skipped || u.key.startsWith('no-power-type'))]
       .filter((l) => ptsOf(l).includes(pt)).map((l) => ({ k: `${z.zone}|${l.key}`, l })));
     const fits = driverTypes.filter((t) => lines.every(({ l }) => (l.fitTypes ?? []).includes(t)));
     const now = new Set(lines.map(({ k }) => state.forcedTypes[k] ?? ''));
@@ -338,10 +338,10 @@ export default function EstimatePage({ state, dispatch, zone }) {
                 close();
               }}>
               <option value="">Automatic</option>
-              <optgroup label="Fits every line">
+              {fits.length > 0 && <optgroup label="Fits every line">
                 {fits.map((x) => <option key={x} value={x}>{x}</option>)}
-              </optgroup>
-              <optgroup label="Does not match every line - will be flagged">
+              </optgroup>}
+              <optgroup label={isFeed(pt) ? 'Sized by watts only' : 'Does not match every line - will be flagged'}>
                 {driverTypes.filter((x) => !fits.includes(x)).map((x) => <option key={x} value={x}>{x}</option>)}
               </optgroup>
             </select>
@@ -762,6 +762,7 @@ export default function EstimatePage({ state, dispatch, zone }) {
                         <span className="est-lim est-em">may be emergency</span>
                       </Tooltip>
                     )}
+                    {l.positionTypes?.length > 0 && l.positionTypes.every(isFeed) && <span className="est-lim est-feed">Feed</span>}
                     {l.forced && (
                       <Tooltip content={l.mismatch ? `Forced, and does not match: ${l.mismatch}` : l.forcedIssue ?? `Forced on this line instead of the automatic pick`}>
                         <span className={`est-lim est-forced${l.mismatch || l.forcedIssue ? ' bad' : ''}`}>{l.mismatch || l.forcedIssue ? '⚠ forced' : 'forced'}</span>
@@ -778,9 +779,11 @@ export default function EstimatePage({ state, dispatch, zone }) {
                     <div className="est-body">
                       {(forcing === k || state.forcedTypes[k]) && <ForceType k={k} l={l} />}
                       <RowTable refs={l.rows} />
-                      <div className="est-howto" role="button" onClick={() => setWorking(k)}>
-                        ▸ How {l.count} was worked out
-                      </div>
+                      {l.working ? (
+                        <div className="est-howto" role="button" onClick={() => setWorking(k)}>
+                          ▸ How {l.count} was worked out
+                        </div>
+                      ) : <div className="est-howto">Sized by watts: {fmt(l.loadW)} W</div>}
                       {working === k && (
                         <div className="nt-backdrop" onClick={(e) => e.target === e.currentTarget && setWorking(null)}>
                           <div className="fd-dialog est-working-dialog" role="dialog" aria-label="How the count was worked out">
@@ -802,12 +805,14 @@ export default function EstimatePage({ state, dispatch, zone }) {
               const isOpen = open.has(k);
               return (
                 <div key={u.key} className={`est-line${isOpen ? ' open' : ''}`} data-debug-id="estimate-unmatched">
-                  <div className="dp-ref is-off est-line-head" role="button" aria-expanded={isOpen} onClick={() => toggle(setOpen, k)}>
+                  <div className={`dp-ref${u.feed ? '' : ' is-off'} est-line-head`} role="button" aria-expanded={isOpen} onClick={() => toggle(setOpen, k)}>
                     <span className="est-caret">{isOpen ? '▾' : '▸'}</span>
                     <span className="dp-ref-id">{amount(u.qty, u.rows)}</span>
-                    <span className="dp-fault">{u.reason ?? 'No ElementType in the DesignDB can take these'}</span>
+                    {u.feed && <span className="dp-ref-spec">{u.positionTypes.join(', ')}</span>}
+                    {u.feed && <span className="est-lim est-feed">Feed</span>}
+                    <span className={u.feed ? 'dp-ref-spec' : 'dp-fault'}>{u.feed ? 'No driver' : u.reason ?? 'No ElementType in the DesignDB can take these'}</span>
                   </div>
-                  {isOpen && <div className="est-body">{!u.skipped && <ForceType k={k} l={u} />}<RowTable refs={u.rows ?? []} /></div>}
+                  {isOpen && <div className="est-body">{(!u.skipped || u.key.startsWith('no-power-type')) && <ForceType k={k} l={u} />}<RowTable refs={u.rows ?? []} /></div>}
                 </div>
               );
             })}

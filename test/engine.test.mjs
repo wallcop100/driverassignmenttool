@@ -1593,7 +1593,11 @@ test('estimate: a hub of LOCAL rows (no CC/CV) lists them as not sized, not as n
   const p = engine.planFromRequirements({ requirements, driverTypes: [] }, 'P50440');
   assert.equal(p.drivers, 0);
   assert.equal(p.hubRef, 'P50440');
-  assert.deepEqual(p.unmatched.map((u) => [u.key, u.skipped, u.qty]), [['no-power-type', true, 2]]);
+  assert.deepEqual(p.unmatched.map((u) => [u.key, u.skipped, u.qty, u.feed]), [['no-power-type:F01', true, 2, true]]);
+  // a type forced on them sizes by watts: 200 W on 60 W at 5% spare is 4
+  const f = engine.planFromRequirements({ requirements, inventory: [{ typeRef: 'PSU-60', maxPowerW: 60 }] }, 'P50440',
+    { forced: { 'P50440|no-power-type:F01': 'PSU-60' } });
+  assert.deepEqual([f.drivers, f.unmatched.length, f.lines[0].typeRef, f.lines[0].feed], [4, 0, 'PSU-60', true]);
 });
 
 test('estimate: rowFilter leaves out the values ticked off, like an Excel pivot filter', () => {
