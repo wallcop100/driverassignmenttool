@@ -144,6 +144,7 @@ export function saveSession(state) {
     presets: state.presets,
     layouts: state.layouts,
     forcedTypes: state.forcedTypes,
+    rowFilter: state.rowFilter,
     ownLine: state.ownLine,
     view: state.view,
     savedAt: Date.now(),
@@ -175,3 +176,21 @@ export function loadSession() {
 export function clearSession() {
   try { localStorage.removeItem(key); } catch { /* ignore */ }
 }
+
+// The DesignDB's FileSystemFileHandle and the save it was read at, so a reload
+// and resume can still tell the workbook has been saved since. Handles only
+// survive in IndexedDB (localStorage takes strings). Standalone, one slot.
+const idb = () => new Promise((resolve, reject) => {
+  const req = indexedDB.open(`${PREFIX}.files`, 1);
+  req.onupgradeneeded = () => req.result.createObjectStore('kv');
+  req.onsuccess = () => resolve(req.result);
+  req.onerror = () => reject(req.error);
+});
+const kv = (mode, fn) => idb().then((db) => new Promise((resolve, reject) => {
+  const tx = db.transaction('kv', mode);
+  const req = fn(tx.objectStore('kv'));
+  tx.oncomplete = () => { db.close(); resolve(req?.result); };
+  tx.onerror = () => { db.close(); reject(tx.error); };
+}));
+export const saveDesignDbHandle = (v) => kv('readwrite', (s) => (v ? s.put(v, 'designdb') : s.delete('designdb'))).catch(() => {});
+export const loadDesignDbHandle = () => kv('readonly', (s) => s.get('designdb')).catch(() => null);

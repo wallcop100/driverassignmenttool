@@ -1362,3 +1362,15 @@ body.drawer-open .ck-pip { bottom: calc(var(--drawer-h, 300px) + 8px); }
   .hub-drawer, .ck-pip { transition: none; }
   .hub-drag-ghost { animation: none; }
 }
+.est-filter { margin: 0 0 4px; color: #475569; }
+.est-filter > summary { cursor: pointer; }
+.est-filter[open] { margin-bottom: 8px; }
+.est-filters { max-height: 70vh; overflow: auto; }
+.est-filter > summary { display: flex; align-items: center; gap: 6px; padding: 6px 8px; border-radius: 6px; list-style: none; }
+.est-filter > summary::before { content: '▸'; color: #94a3b8; }
+.est-filter[open] > summary::before { content: '▾'; }
+.est-filter > summary:hover { background: #f1f5f9; }
+.est-filter > summary .grow { flex: 1; }
+.est-filter-vals { max-height: 220px; overflow: auto; padding-left: 14px; }
+.est-bar-top .est-grid { width: 100%; }
+.hub-menu .est-c { padding: 4px 8px; margin: 0; }

@@ -57,6 +57,7 @@ export const initialState = {
   recipes: {},          // wrapper typeRef -> [part] arranged here
   jboxes: {},           // driver Element ref -> junction box count set here
   forcedTypes: {},      // `${hub}|${estimate line key}` -> typeRef chosen by hand
+  rowFilter: {},        // requirement field -> values left out of the estimate (engine ROW_FILTERS)
   ownLine: [],          // PositionTypeRefs toggled against the estimate's own-line default (engine isOwnLine)
   demo: false,          // demo dataset loaded → show the tutorial
   deletedDrivers: [],   // refs of DesignDB drivers to mark IsDeleted in the patch
@@ -381,6 +382,7 @@ export function reducer(state, action) {
         recipes: { ...(action.saved.recipes ?? {}), ...(action.recipes ?? {}) },
         jboxes: { ...(action.saved.jboxes ?? {}), ...(action.jboxes ?? {}) },
         forcedTypes: action.saved.forcedTypes ?? {},
+        rowFilter: action.saved.rowFilter ?? {},
         // the set's, like the type extras above - the hub's own copy is only a fallback
         ownLine: action.ownLine ?? action.saved.ownLine ?? [],
         layouts: action.saved.layouts ?? {},
@@ -454,6 +456,13 @@ export function reducer(state, action) {
       if (ownLine.length === state.ownLine.length) ownLine.push(action.positionType);
       return { ...state, ownLine };
     }
+    case 'SET_ROW_FILTER':
+      // null drops the column from the filter list, [] keeps it listed with nothing left out
+      if (action.values == null) {
+        const { [action.field]: _, ...rest } = state.rowFilter;
+        return { ...state, rowFilter: rest };
+      }
+      return { ...state, rowFilter: { ...state.rowFilter, [action.field]: action.values } };
     case 'SET_PREFS':
       return { ...state, prefs: { ...state.prefs, ...action.prefs } };
     case 'SET_FLAGS':

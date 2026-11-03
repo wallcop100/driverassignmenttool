@@ -15,6 +15,7 @@ import * as engine from './engine.js';
 import { isWorkbook, readDesignDb } from './designdb.js';
 import { readCsv } from './core/csv.js';
 import { parseParams } from './core/params.js';
+import { loadDesignDbHandle, saveDesignDbHandle } from './persist.js';
 
 let model = null;
 // The raw CSVs are kept so the model can be rebuilt when a driver type preset is
@@ -61,7 +62,7 @@ export function rebuild(presets) {
 // A DesignDB workbook stands in for the type library; a type CSV, being from a
 // commit, wins over it when both are dropped.
 export async function parseAuto(files) {
-  source = null;
+  watchDesignDb(null);
   const all = [...files];
   const texts = await Promise.all(all.filter((f) => !isWorkbook(f)).map((f) => f.text()));
   const found = { form: null, links: null, types: null, assessment: null };
@@ -124,6 +125,16 @@ export async function attachDesignDb(file, presets, handle = null) {
 let source = null;
 export function watchDesignDb(file, handle = null) {
   source = file ? { file, handle, at: file.lastModified } : null;
+  saveDesignDbHandle(handle ? { handle, at: file.lastModified } : null);
+}
+// After a reload: the handle saved with the session, compared against the save it was read at.
+export async function resumeDesignDb() {
+  const v = await loadDesignDbHandle();
+  source = v?.handle ? { file: null, handle: v.handle, at: v.at } : null;
+}
+// A handle restored after a reload needs the user's say-so (a click) before it reads again.
+export async function allowDesignDb(handle) {
+  return (await handle.requestPermission?.({ mode: 'read' })) === 'granted';
 }
 // Not now: ask again only on the next save (a snapshot can't tell saves apart, so it stops asking).
 export function skipDesignDbChange(change) {
@@ -136,6 +147,8 @@ export async function designDbChange() {
   if (!source) return null;
   try {
     if (source.handle) {
+      const perm = await source.handle.queryPermission?.({ mode: 'read' });
+      if (perm && perm !== 'granted') return { file: null, handle: source.handle, ask: true };
       const f = await source.handle.getFile();
       return f.lastModified !== source.at ? { file: f, handle: source.handle } : null;
     }
