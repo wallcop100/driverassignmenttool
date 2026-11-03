@@ -32,6 +32,7 @@ export const DEFAULT_PREFS = {
   pickBy: 'single',           // how the estimate picks a driver type: single | fewest | spareOutputs
   allowLocal: false,    // Local control type drivers: left out of sizing, flagged in a hub
   patchPerDriver: false, // estimate patch: one row per driver, not one per type per hub
+  hubByHub: false,      // estimate: show one hub at a time (standalone, whole job)
   snapMm: 5,            // resize grid in the space layout
 };
 

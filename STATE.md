@@ -26,12 +26,25 @@ names and badge. `dat-autodeploy.timer` keeps Connected on Pages' build. The hos
 
 ## Log
 
-### 2026-11-03 — Hub Spacing from the DesignDB alone (uncommitted)
+### 2026-11-03 — Assessment view settings (uncommitted)
+
+- "How N was worked out" moved from the line body into the line's ⋮ menu; its dialog opens with the line collapsed.
+- New **View** menu: Expand all / Collapse all rows, and **One hub at a time** (`prefs.hubByHub`). The last is standalone and whole-job only, with prev/next and a hub picker. Totals at the top stay whole-job.
+- The lines are now a pivot: Hub > ControlGroup, with columns Total Power, Total Forward Voltage, Driver Type, Driver Count, Flags and Limited By. A group with several lines opens to one sub-row per line, and each line opens to its assessment rows. A line that serves several ControlGroups sits under the joined name ("A, B"), so its driver count is never split. Total Forward Voltage is the sum of fvPer × qty over the CC rows, and "–" when there are none.
+- Tooltips with several cases now take `[head, body]` lines (`Tooltip.jsx`), so the head shows in bold. Converted: Pick by, Keep separate infos, limit, may-be-emergency and forced marks.
+
+### 2026-11-03 — Hub Spacing from the DesignDB alone (#37)
 - A dropped DesignDB on its own offers Hub Spacing. `hubsFromSheets` (designdb.js) ports the overlay's `datc_`/`date_` blocks (section 2d): compositions, plus per hub its row, bays and Elements. `api.hubRows(hub)` reads them per hub label.
 - A hub is a live Position holding a driver Element (a type with `<`/`OP.`, or one with parts), or one named in a `Link_SecondaryPowerRef`. The model is `buildEmpty(labels)` and opens on the layout.
 - Standalone, the patch now takes the hub's Position Ref from the workbook's hub row.
 - Checked in Playwright with the 5642 DesignDB: 27 hubs (11 PSU.HUB plus 16 LE1/LE2 local drivers). HUB-A draws 8 drivers with 2 feed provisions in the tray, and the patch writes `contextRef` P50001. 368 tests pass, build clean.
 - On resume, the workbook is read again through its saved handle when read permission is still granted, and the patch looks the hub Ref up at copy time. Without a handle (Firefox, or a picked file without one), the patch falls back to the label until the DesignDB is attached again.
+
+### 2026-11-03 — Tunable and multi-address lines (uncommitted)
+- `channelClass` (engine.js): MAX_SecondaryPowerNodes = 2 or ControlAddressCount = 2 → `tunable`; ControlAddressCount > 2 → `multi`. The bucket key adds the class and the row ref, so each such row is its own line, to be checked.
+- Line icon: tonality_2 in #fecd62 for tunable, instant_mix in grey for multi. Both are inline Material Symbols SVG, and the tooltip shows the two column values.
+- Display and split only. Sizing still ignores nodes and addressCount.
+- DJ 100874 has no such rows, so the demo used a modified copy (`~/.playwright-mcp/dat/dj100874-tw.csv`).
 
 ### 2026-11-03 — Emergency and feed marks (#36)
 - Emergency follows Erik's symbol_E.svg on Material's 24 grid: a teal (#08a8ac) triangle border, white inside, a black E, at 19px.

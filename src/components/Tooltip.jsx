@@ -24,7 +24,8 @@ export default function Tooltip({ content, placement = 'bottom', children }) {
     <span className="tt-anchor" onMouseEnter={place} onFocus={place}>
       {children}
       <span className={`tt-pop tt-${pos ? (pos.up ? 'top' : 'bottom') : placement}`} role="tooltip" style={pos?.style}>
-        {lines.map((line, i) => <span key={i} className="tt-line">{line}</span>)}
+        {/* a [head, body] line is one case of several: the head in bold, like a little header */}
+        {lines.map((line, i) => <span key={i} className="tt-line">{Array.isArray(line) ? <><b>{line[0]}</b> {line[1]}</> : line}</span>)}
       </span>
     </span>
   );
