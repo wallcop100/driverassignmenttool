@@ -159,12 +159,13 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
   const dbTbc = useMemo(() => api.tbcFlags(), [model]);
   const typesLib = useMemo(() => api.typeInfo(), [model]);
   const comps = useMemo(() => api.compositions(), [model]);
-  const rows = useMemo(() => api.hubRows(), [model]);
+  const hubs = model.zones;
+  const [hub, setHub] = useState(hubs.includes(zone) ? zone : hubs[0] ?? null);
+  const rows = useMemo(() => api.hubRows(hub), [model, hub]);
   // and everything else the hub holds, which the driver form never mentioned
-  const hubLabel = zone ?? state.context?.hubLabel ?? model.zones[0];
   const drivers = useMemo(
-    () => [...effective, ...hubElements(model, effective, rows, hubLabel)],
-    [effective, model, rows, hubLabel],
+    () => [...effective, ...hubElements(model, effective, rows, hub)],
+    [effective, model, rows, hub],
   );
   const elemParams = useMemo(() => Object.fromEntries(Object.values(rows.elements)
     .map((e) => [e.ref, e.parameters])), [rows]);
@@ -178,8 +179,6 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
   const stackFor = (d) => hl.stack(moduleFor(d, ctx), qtyOf(d.ref));
   const snap = state.prefs?.snapMm > 0 ? state.prefs.snapMm : DEFAULT_SNAP;
 
-  const hubs = model.zones;
-  const [hub, setHub] = useState(hubs.includes(zone) ? zone : hubs[0] ?? null);
   // Kept in the session, not in this component: leaving for the allocation
   // screen and coming back would otherwise start the hub from scratch.
   const st = state.layouts ?? {};
@@ -718,8 +717,11 @@ export default function HubLayoutLab({ state, dispatch, zone = null, onBack = nu
   // here, and TBC flags.
   const copyPatch = async () => {
     const ctxHub = state.context;
-    const container = ctxHub?.hubRef
-      ? { ref: ctxHub.hubRef, name: hub, contextType: ctxHub.hubContextType ?? 'Position' }
+    // standalone, a hub read from the DesignDB knows its own Position Ref
+    // read now, not from the memo: after a resume the rows arrive once the handle is read
+    const hubRef = ctxHub?.hubRef ?? api.hubRows(hub).hub?.ref;
+    const container = hubRef
+      ? { ref: hubRef, name: hub, contextType: ctxHub?.hubContextType ?? 'Position' }
       : { name: hub };
     const saved = hl.save(laid, {
       container, separate, widths: allWidths, heights: allHeights,

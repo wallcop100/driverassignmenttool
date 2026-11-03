@@ -78,7 +78,19 @@ export async function parseAuto(files) {
   }
   const book = all.find(isWorkbook);
   ptUom = {};
-  if (!found.types && book) ({ types: found.types, uom: ptUom } = await readDesignDb(book));
+  setDriverExtras();
+  const db = book ? await readDesignDb(book) : null;
+  if (db) {
+    found.types ??= db.types;
+    ptUom = db.uom;
+    setDriverExtras({ compositions: db.compositions, elements: db.hubs });
+  }
+  // the DesignDB alone: its hubs, their drivers and stored layouts, for the space layout
+  if (db && !texts.length) {
+    const hubs = Object.keys(db.hubs).sort();
+    if (!hubs.length) throw new Error(`${book.name} has no hubs: no Position holds a driver or is named as a Link_SecondaryPowerRef.`);
+    return parseEmpty(hubs, found.types);
+  }
   // The circumstance decides the mode, not which file happened to be dropped: a
   // links CSV with a header and no rows is a hub with no cables, which is the
   // estimate's case and not an error.
@@ -120,7 +132,11 @@ function needsTypes(message) {
 // The type library arriving after the model was built - a DesignDB attached from
 // the app. Rebuilt as if it had been dropped with the CSVs.
 export async function attachDesignDb(file, presets, handle = null) {
-  ({ types: raw.types, uom: ptUom } = await readDesignDb(file));
+  const db = await readDesignDb(file);
+  ({ types: raw.types, uom: ptUom } = db);
+  if (!embed.isEmbedded()) setDriverExtras({ compositions: db.compositions, elements: db.hubs });
+  // opened from the DesignDB alone, so a save may have added or removed a hub
+  if (Array.isArray(raw.empty)) raw.empty = Object.keys(db.hubs).sort();
   applied = null;
   watchDesignDb(file, handle);
   return rebuild(presets);
@@ -138,6 +154,12 @@ export function watchDesignDb(file, handle = null) {
 export async function resumeDesignDb() {
   const v = await loadDesignDbHandle();
   source = v?.handle ? { file: null, handle: v.handle, at: v.at } : null;
+  // the hub rows aren't in the session, so read them back while the handle still may
+  if (!source || embed.isEmbedded() || (await v.handle.queryPermission?.({ mode: 'read' })) !== 'granted') return;
+  try {
+    const db = await readDesignDb(await v.handle.getFile());
+    setDriverExtras({ compositions: db.compositions, elements: db.hubs });
+  } catch { /* unreadable now: the refresh banner takes it from here */ }
 }
 // A handle restored after a reload needs the user's say-so (a click) before it reads again.
 export async function allowDesignDb(handle) {
@@ -325,10 +347,12 @@ export function compositions() {
 // their sizes), any bay separated into an Element, and every driver's placement,
 // as-placed size and junction boxes. This is what lets a layout saved by the
 // patch be drawn again with nothing from the session.
-export function hubRows() {
+// Embedded, the host sends the one hub's rows; from a DesignDB they come per hub label.
+export function hubRows(hub = null) {
   const out = { hub: null, bays: [], elements: {} };
-  if (!elementText?.trim()) return out;
-  const { rows } = readCsv(elementText, [], 'Hub rows', true);
+  const text = typeof elementText === 'string' ? elementText : elementText?.[hub];
+  if (!text?.trim()) return out;
+  const { rows } = readCsv(text, [], 'Hub rows', true);
   for (const r of rows) {
     const row = {
       ref: String(r.Ref ?? r.ElementRef ?? '').trim(),
