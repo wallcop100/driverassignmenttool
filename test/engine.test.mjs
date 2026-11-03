@@ -1559,3 +1559,17 @@ test('Local drivers are left out of sizing by default and flagged in a hub', () 
   assert.equal(flagged.length, 1);
   assert.equal(engine.validate(m, {}, added, { allowLocal: true }).filter((f) => f.check === 'ControlType').length, 0);
 });
+
+test('assessment: DJ 100874 column names, zone is BestRef', () => {
+  const head = '"Link_SecondaryPowerRef","Link_SecondaryPowerExtRef","ControlTypeRef","PositionTypeRef","SumQuantity","Unit_ControlAddressCount","SecondaryPowerType","PositionVoltage","PositionCurrent","SumVf","SumPower"';
+  const [cv, cc, local, mains] = engine.parseAssessment(`${head}
+"P50001","HUB-A","DALI","C01r","13.4","1","CV","24","0","0","321.6"
+"P50001","HUB-A","DALI","B02w","2","1","CC","0","0.3","70","23.6"
+"P50002","","LOCAL","F01","1","","","0","0","0","100"
+"P50003","","","F02a","1","","N/A","0","0","0","10"
+`);
+  assert.deepEqual([cv.zone, cv.hubRef, cv.powerType, cv.voltageV, cv.currentA, cv.addressCount], ['HUB-A', 'P50001', 'CV', 24, null, 1]);
+  assert.deepEqual([cc.powerType, cc.voltageV, cc.currentA], ['CC', null, 0.3]);
+  assert.deepEqual([local.zone, local.powerType], ['P50002', null]);
+  assert.equal(mains.powerType, null);
+});
