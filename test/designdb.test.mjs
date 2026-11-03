@@ -1,7 +1,7 @@
 // DesignDB workbook -> type library CSV, as the overlay's section 0 would emit it.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { channels, typesCsvFromSheets } from '../src/designdb.js';
+import { channels, typesCsvFromSheets, positionUoms } from '../src/designdb.js';
 import * as engine from '../src/engine.js';
 
 test('channels follows the overlay CASE', () => {
@@ -34,4 +34,10 @@ test('keeps live drivers, parts and placed types; drops the rest', () => {
   assert.equal(a.maxPowerW, 30);
   assert.equal(a.powerType, 'CC');
   assert.equal(a.nodes.length, 1);
+});
+
+test('positionUoms: live PositionTypes with a UoM only', () => {
+  assert.deepEqual(positionUoms([
+    { Ref: 'C01r', UoM: 'm' }, { Ref: 'B02w', UoM: '' }, { Ref: 'X', UoM: 'm', IsDeleted: 'Y' }, { Ref: 'P1', UoM: 'm2' },
+  ]), { C01r: 'm', P1: 'm2' });
 });
