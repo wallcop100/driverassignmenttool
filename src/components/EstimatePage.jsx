@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import * as api from '../api.js';
-import { compareEstimate, ESTIMATE_WARNING, isOwnLine, resolveSpec, zoneViews } from '../engine.js';
+import { listSessions } from '../persist.js';
+import { compareEstimate, ESTIMATE_WARNING, estimatePatchRows, generateEstimatePatch, isOwnLine, resolveSpec, zoneViews } from '../engine.js';
 import { effectiveDrivers } from '../state.js';
 import { openReport } from '../bugReports.js';
 import KebabMenu from './KebabMenu.jsx';
@@ -34,6 +35,15 @@ const SEPARATE = [
     'Per driver: a driver only serves one room. Per output: each output serves one room, though a driver may serve one room per output.'],
 ];
 
+// Load against the whole rating, the spare margin hatched at the end, so the
+// bar's full width is the driver's real capacity (8WQAAN).
+const LoadBar = ({ load, rated, keep }) => (
+  <div className="est-bar">
+    <i style={{ width: `${Math.min(100, Math.round((load / rated) * 100))}%` }} />
+    {keep < 1 && <b className="est-spare" style={{ width: `${Math.round((1 - keep) * 100)}%` }} />}
+  </div>
+);
+
 const Info = ({ text }) => (
   <Tooltip content={text}>
     <span className="material-icons est-info" tabIndex={0} aria-label={text}>info_outline</span>
@@ -47,13 +57,18 @@ const ROW_MODES = [
   [true, 'One row per driver', 'Quantity 1 each. Each Name lists the ControlGroups that driver carries - dealt out in order when groups share drivers.'],
 ];
 
-function PatchDialog({ opts, zone, perDriver, onPerDriver, onCopy, onClose }) {
-  const [rows, setRows] = useState([]);
+// `others`: hubs saved in this branch+set (overlay only), ticked into the same patch.
+function PatchDialog({ opts, zone, others, perDriver, onPerDriver, onCopy, onClose }) {
+  const [estimates, setEstimates] = useState([]);
+  const [picked, setPicked] = useState(() => new Set(others.map((s) => s.key)));
   useEffect(() => {
     let stale = false;
-    api.estimatePatchRows(opts, zone, { perDriver }).then((r) => !stale && setRows(r));
+    Promise.all([api.estimate(opts, zone), api.estimateHubs(others.filter((s) => picked.has(s.key)), opts)])
+      .then(([here, more]) => !stale && setEstimates([...here, ...more]));
     return () => { stale = true; };
-  }, [JSON.stringify(opts), zone, perDriver]);
+  }, [JSON.stringify(opts), zone, picked]);
+  const rows = estimatePatchRows(estimates, { perDriver });
+  const tick = (key) => setPicked((p) => { const n = new Set(p); if (!n.delete(key)) n.add(key); return n; });
 
   return (
     <div className="nt-backdrop" onClick={(e) => e.target === e.currentTarget && onClose()}>
@@ -71,6 +86,18 @@ function PatchDialog({ opts, zone, perDriver, onPerDriver, onCopy, onClose }) {
             </label>
           ))}
         </fieldset>
+        {others.length > 0 && (
+          <fieldset className="est-patch-modes">
+            <legend>Hubs</legend>
+            <label><input type="checkbox" checked disabled /><span><b>{zone ?? 'This hub'}</b></span></label>
+            {others.map((s) => (
+              <label key={s.key}>
+                <input type="checkbox" checked={picked.has(s.key)} onChange={() => tick(s.key)} />
+                <span><b>{s.zones.join(', ')}</b></span>
+              </label>
+            ))}
+          </fieldset>
+        )}
         <div className="est-patch-preview">
           <table className="table table-sm mb-0">
             <thead><tr><th>Name</th><th>ElementType</th><th>ContextRef</th><th>Quantity</th></tr></thead>
@@ -84,7 +111,8 @@ function PatchDialog({ opts, zone, perDriver, onPerDriver, onCopy, onClose }) {
         </div>
         <div className="fd-foot">
           <span className="est-meta">{rows.length} row{rows.length === 1 ? '' : 's'} appended, each needing a Ref</span>
-          <button className="btn btn-sm btn-primary ms-auto" onClick={onCopy} disabled={!rows.length}>Copy patch</button>
+          <button className="btn btn-sm btn-primary ms-auto" onClick={() => onCopy(generateEstimatePatch(estimates, { perDriver }))}
+            disabled={!rows.length}>Copy patch</button>
         </div>
       </div>
     </div>
@@ -116,6 +144,14 @@ export default function EstimatePage({ state, dispatch, zone }) {
     return () => { stale = true; };
   }, [model, zone, prefs.restrictControlGroup, prefs.splitByType, prefs.splitByLocation,
       prefs.nodeSplitByType, prefs.nodeSplitByLocation, prefs.allowLocal, prefs.pickBy, prefs.preferSingleOutput, prefs.margin, state.forcedTypes, state.ownLine]);
+
+  // Overlay: hubs estimated in other frames of this branch+set, not this one.
+  const otherHubs = useMemo(() => {
+    if (!patchOpen) return [];
+    const here = new Set((model.requirements || []).map((r) => r.zone));
+    return listSessions().map((s) => ({ ...s, zones: [...new Set((s.model.requirements || []).map((r) => r.zone))] }))
+      .filter((s) => s.zones.some((z) => !here.has(z)));
+  }, [patchOpen, model]);
 
   const setPref = (p) => dispatch({ type: 'SET_PREFS', prefs: p });
   const marginPct = Math.round((prefs.margin ?? 0) * 100);
@@ -180,6 +216,8 @@ export default function EstimatePage({ state, dispatch, zone }) {
   const [working, setWorking] = useState(null);
   // the driver type select stays out of the way until asked for from ⋮ (SSCMMX)
   const [forcing, setForcing] = useState(null);
+  // one driver type for every line a PositionType is on (5SVFZX)
+  const [forcingPt, setForcingPt] = useState(null);
   // now and then, so it is not wallpaper (5KEFGM)
   const [flash] = useState(() => Math.random() < 1 / 3);
   const toggle = (set, k) => set((p) => { const n = new Set(p); if (!n.delete(k)) n.add(k); return n; });
@@ -207,6 +245,9 @@ export default function EstimatePage({ state, dispatch, zone }) {
                   label: isOwnLine(r.positionType, state.ownLine)
                     ? `Bundle ${r.positionType} again` : `Own line for every ${r.positionType}`,
                   onClick: () => dispatch({ type: 'OWN_LINE', positionType: r.positionType }),
+                }] : []), ...(r.positionType ? [{
+                  label: `Driver type for every ${r.positionType}`, icon: 'swap_horiz',
+                  onClick: () => setForcingPt(r.positionType),
                 }] : []), {
                   label: 'Report an issue', icon: 'flag',
                   onClick: (e) => openReport(e.currentTarget.closest('tr')),
@@ -240,6 +281,43 @@ export default function EstimatePage({ state, dispatch, zone }) {
           </optgroup>
         </select>
       </label>
+    );
+  };
+
+  const ForcePositionType = ({ pt }) => {
+    const ptsOf = (l) => l.positionTypes ?? (l.rows ?? []).map((ref) => reqByRef.get(ref)?.positionType);
+    const lines = zones.flatMap((z) => [...z.lines, ...z.unmatched]
+      .filter((l) => ptsOf(l).includes(pt)).map((l) => ({ k: `${z.zone}|${l.key}`, l })));
+    const fits = driverTypes.filter((t) => lines.every(({ l }) => (l.fitTypes ?? []).includes(t)));
+    const now = new Set(lines.map(({ k }) => state.forcedTypes[k] ?? ''));
+    const mixed = lines.filter(({ l }) => ptsOf(l).some((x) => x && x !== pt)).length;
+    const close = () => setForcingPt(null);
+    return (
+      <div className="nt-backdrop" onClick={(e) => e.target === e.currentTarget && close()}>
+        <div className="fd-dialog" role="dialog" aria-label={`Driver type for every ${pt}`}>
+          <div className="fd-head">
+            <b>Driver type for every {pt}</b>
+            <button className="btn btn-sm btn-link ms-auto p-0" onClick={close}>close</button>
+          </div>
+          <label className="est-force">
+            {lines.length} line{lines.length === 1 ? '' : 's'}
+            <select className="form-select form-select-sm" value={now.size === 1 ? [...now][0] : ''}
+              onChange={(e) => {
+                dispatch({ type: 'FORCE_TYPE', keys: lines.map(({ k }) => k), typeRef: e.target.value || null });
+                close();
+              }}>
+              <option value="">Automatic</option>
+              <optgroup label="Fits every line">
+                {fits.map((x) => <option key={x} value={x}>{x}</option>)}
+              </optgroup>
+              <optgroup label="Does not match every line - will be flagged">
+                {driverTypes.filter((x) => !fits.includes(x)).map((x) => <option key={x} value={x}>{x}</option>)}
+              </optgroup>
+            </select>
+          </label>
+          {mixed > 0 && <small className="text-secondary">{mixed} of these also carr{mixed === 1 ? 'ies' : 'y'} other fitting types, which change with it.</small>}
+        </div>
+      </div>
     );
   };
 
@@ -378,13 +456,13 @@ export default function EstimatePage({ state, dispatch, zone }) {
           : w.runList ? `${w.runs} groups kept on separate outputs` : `${l.perDriver} per driver`, ' result')}
         {split && split.length > 1 && split.map((wd, i) => (
           <div className="est-usage" key={i}>
-            <div className="est-bar"><i style={{ width: `${Math.min(100, Math.round(wd / dCap * 100))}%` }} /></div>
-            <span>Driver {i + 1}: {fmt(wd)} W of {fmt(dCap)} W</span>
+            <LoadBar load={wd} rated={w.maxPowerW} keep={w.keep} />
+            <span>Driver {i + 1}: {fmt(wd)} W of {fmt(dCap)} W · {fmt(w.maxPowerW)} W rated</span>
           </div>
         ))}
         <div className="est-usage">
-          <div className="est-bar"><i style={{ width: `${Math.min(100, pct)}%` }} /></div>
-          <span>{fmt(l.loadW)} W of {fmt(cap)} W usable · {pct}% loaded</span>
+          <LoadBar load={l.loadW} rated={l.count * w.maxPowerW} keep={w.keep} />
+          <span>{fmt(l.loadW)} W of {fmt(cap)} W usable · {fmt(l.count * w.maxPowerW)} W rated · {pct}% loaded</span>
           <button type="button" className="btn btn-sm btn-link est-flag" onClick={report}
             title="Send this working with a note about what is wrong">
             <span className="material-icons">flag</span> Calculation looks wrong
@@ -394,10 +472,10 @@ export default function EstimatePage({ state, dispatch, zone }) {
     );
   };
 
-  const copyPatch = async () => {
+  const copyPatch = async (script) => {
     setError(null);
     try {
-      await api.copyPatch(await api.generateEstimatePatch(opts, zone, { perDriver: !!prefs.patchPerDriver }));
+      await api.copyPatch(script);
       setPatchOpen(false);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
@@ -463,8 +541,10 @@ export default function EstimatePage({ state, dispatch, zone }) {
         )}
       </div>
 
+      {forcingPt && <ForcePositionType pt={forcingPt} />}
+
       {patchOpen && (
-        <PatchDialog opts={opts} zone={zone} perDriver={!!prefs.patchPerDriver}
+        <PatchDialog opts={opts} zone={zone} others={otherHubs} perDriver={!!prefs.patchPerDriver}
           onPerDriver={(v) => setPref({ patchPerDriver: v })}
           onCopy={copyPatch} onClose={() => setPatchOpen(false)} />
       )}

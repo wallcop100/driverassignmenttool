@@ -173,3 +173,4 @@ node docs/hub-layout-shots.mjs
   Elements, and types placed on a hub. The workbook doesn't say which PositionTypes are hubs, so a
   hub there is any Position named as a `Link_SecondaryPowerRef`. Change both together (2026-11-03).
 - 2026-11-03: The SP assessment in use is DJ 100874, not 100053. Its column names differ (`SecondaryPowerType`, `PositionVoltage`/`PositionCurrent` with 0 for n/a, `Unit_ControlAddressCount`, `Link_SecondaryPowerExtRef`). parseAssessment accepts both, and the zone is BestRef = ExtRef or Ref. A missing column there fails silently, giving powerType null and 0 drivers, not an error.
+- 2026-11-03: Playwright's `setInputFiles` copies the file, so a File in the page never sees a later change on disk. To test the DesignDB refresh, stub `DataTransferItem.prototype.getAsFileSystemHandle` and dispatch a synthetic drop. `getAsFileSystemHandle()` has to be called inside the drop handler, before any await.

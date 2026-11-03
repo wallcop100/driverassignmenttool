@@ -37,11 +37,15 @@ export default function ImportScreen({ dispatch, saved, onResume, onDiscard }) {
   const [staged, setStaged] = useState([]);
   const fileInput = useRef(null);
 
-  const addFiles = async (list) => {
-    const picked = [...list].filter((f) => /\.(csv|xlsx|xlsm)$/i.test(f.name));
+  // handles: per file, a promise of its FileSystemFileHandle (dropped in Chromium) or null
+  const addFiles = async (list, handles = []) => {
+    const picked = [...list].map((file, i) => ({ file, handle: handles[i] }))
+      .filter(({ file }) => /\.(csv|xlsx|xlsm)$/i.test(file.name));
     if (!picked.length) { setError('Drop CSV exports or a DesignDB (.xlsx).'); return; }
     setError(null);
-    const added = await Promise.all(picked.map(async (file) => ({ file, kind: await kindOf(file) })));
+    const added = await Promise.all(picked.map(async ({ file, handle }) => ({
+      file, kind: await kindOf(file), handle: await handle?.catch(() => null) ?? null,
+    })));
     const unknown = added.filter((x) => !x.kind).map((x) => x.file.name);
     const known = added.filter((x) => x.kind);
     setStaged((prev) => [...prev.filter((s) => !known.some((a) => a.kind === s.kind)), ...known]);
@@ -52,7 +56,10 @@ export default function ImportScreen({ dispatch, saved, onResume, onDiscard }) {
     setBusy(true);
     setError(null);
     try {
-      const model = await api.parseAuto(staged.filter((x) => fn.uses.includes(x.kind)).map((x) => x.file));
+      const used = staged.filter((x) => fn.uses.includes(x.kind));
+      const model = await api.parseAuto(used.map((x) => x.file));
+      const book = used.find((x) => isWorkbook(x.file));
+      if (book) api.watchDesignDb(book.file, book.handle);
       dispatch({ type: 'INIT', model });
     } catch (e) {
       setError(e.message);
@@ -86,7 +93,13 @@ export default function ImportScreen({ dispatch, saved, onResume, onDiscard }) {
             onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') fileInput.current?.click(); }}
             onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
             onDragLeave={() => setDragOver(false)}
-            onDrop={(e) => { e.preventDefault(); setDragOver(false); addFiles(e.dataTransfer.files); }}
+            onDrop={(e) => {
+              e.preventDefault(); setDragOver(false);
+              // asked for during the event: the items are gone once it returns
+              const handles = [...e.dataTransfer.items].filter((it) => it.kind === 'file')
+                .map((it) => it.getAsFileSystemHandle?.() ?? null);
+              addFiles(e.dataTransfer.files, handles);
+            }}
             onClick={() => fileInput.current?.click()}>
             <span className="material-icons dropzone-icon">upload_file</span>
             <div className="fw-semibold">Drop files here</div>
