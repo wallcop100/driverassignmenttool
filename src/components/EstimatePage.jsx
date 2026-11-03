@@ -550,7 +550,7 @@ export default function EstimatePage({ state, dispatch, zone }) {
                   const shown = values.filter(([v]) => !off.includes(v)).length;
                   const set = (vs) => dispatch({ type: 'SET_ROW_FILTER', field: col, values: vs });
                   return (
-                    <details key={col} className="est-filter" open={off.length > 0 || undefined}>
+                    <details key={col} className="est-filter" ref={(el) => { if (el && off.length) el.open = true; }}>
                       <summary>
                         <span className="grow">{col}</span>
                         <b>{shown === values.length ? 'All' : `${shown} of ${values.length}`}</b>
@@ -560,6 +560,13 @@ export default function EstimatePage({ state, dispatch, zone }) {
                         )}
                       </summary>
                       <div className="est-filter-vals">
+                        {/* like Excel: ticks or clears every value, part-ticked when some are off */}
+                        <label className="hub-mi">
+                          <input type="checkbox" className="form-check-input m-0" checked={off.length === 0}
+                            ref={(el) => { if (el) el.indeterminate = off.length > 0 && shown > 0; }}
+                            onChange={() => set(off.length === 0 ? values.map(([v]) => v) : [])} />
+                          <span className="grow">(Select All)</span>
+                        </label>
                         {values.map(([v, n]) => (
                           <label key={v} className="hub-mi">
                             <input type="checkbox" className="form-check-input m-0" checked={!off.includes(v)}
@@ -568,7 +575,6 @@ export default function EstimatePage({ state, dispatch, zone }) {
                           </label>
                         ))}
                       </div>
-                      {off.length > 0 && <button type="button" className="btn btn-link btn-sm p-0 ms-2" onClick={() => set([])}>Show all</button>}
                     </details>
                   );
                 })}

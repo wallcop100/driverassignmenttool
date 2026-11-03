@@ -26,6 +26,10 @@ names and badge. `dat-autodeploy.timer` keeps Connected on Pages' build. The hos
 
 ## Log
 
+### 2026-11-03 — Filter (Select All) (uncommitted)
+- Each filter has an Excel-style (Select All) that ticks or clears every value, and shows part-ticked when some values are off. It replaces "Show all".
+- A filter's list only ever opens itself, so re-ticking everything no longer collapses it.
+
 ### 2026-11-03 — Line flags as icons, UoM from DesignDB (uncommitted)
 - Line flags are icons with the detail in the popup:
   - voltage, driver-watts and output-watts limits: Material Symbols `horizontal_align_right` (inline SVG, since the app's font lacks it)
