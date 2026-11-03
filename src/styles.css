@@ -1408,3 +1408,11 @@ body.drawer-open .ck-pip { bottom: calc(var(--drawer-h, 300px) + 8px); }
 /* the header row stays in view while the hubs scroll under it */
 .est-bar-top { position: sticky; top: -1rem; z-index: 4; }   /* above the header, so its menus open over it */
 .est-pivot > thead > tr > th { position: sticky; top: calc(var(--est-bar-h, 0px) - 1rem); z-index: 3; }  /* -1rem: past .drivers-page's py-3, so nothing shows above it */
+.est-pivot .pv-name { color: #64748b; font-weight: 400; }
+.est-agree { max-width: 460px; }
+.est-agree .fd-head { gap: 6px; }
+.est-agree-body { padding: 12px 16px; margin: 0; font-size: 13.5px; color: #334155; }
+.est-need-filter { display: inline-flex; align-items: center; gap: 3px; cursor: pointer; }
+.est-need-filter:hover { filter: brightness(.97); }
+.est-need-filter.is-on { box-shadow: inset 0 0 0 1px #bf8700; }
+.est-need-filter .material-icons { font-size: 14px; }

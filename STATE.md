@@ -26,7 +26,17 @@ names and badge. `dat-autodeploy.timer` keeps Connected on Pages' build. The hos
 
 ## Log
 
-### 2026-11-03 — Pivot header: hidden totals, frozen header (uncommitted)
+### 2026-11-03 — Reports from 16:25–16:44 (#40)
+
+- TRF856: Ctrl+Z / redo now cover `FORCE_TYPE` and `OWN_LINE`. Undo snapshots (`snapOf` in state.js) carry `forcedTypes` and `ownLine`; test in state.test.mjs.
+- 4Y859E: the options bar's menus are `position: fixed` from the button's rect (`menuAt`), capped to the viewport, and close when the page scrolls. A short page no longer clips them.
+- RDTQNJ: Driver Name (the ElementType's name) is a third column toggle in the header ⋮ (pref `pvName`).
+- 3LD8AJ: the header's rows / PositionTypes / hubs count what the Filter keeps ("N of M rows"). Totals already did.
+- 7SKR2E: one open in three now either flashes the note or (new) shows an "I understand" dialog first, a single roll in `nudge`.
+- XH36LA: the "not sized" badge is a button that filters the pivot to just those lines, with ✕ when on. It isn't persisted, and Erik named that badge only, not "unmatched".
+- 8WQAAN was already built (the hatched spare in `LoadBar`) and needs resolving only.
+
+### 2026-11-03 — Pivot header: hidden totals, frozen bar and header, type pill facts (#39)
 
 - Total Power and Total Forward Voltage are off by default (prefs `pvPower`/`pvFv`); the ⋮ on the header row turns them on.
 - The header row is sticky (`top: -1rem` to clear `.drivers-page`'s padding; `.est-pivot-wrap` lost `overflow-x`, which would have captured it). The rule is `> thead > tr > th`, so the detail tables' own headers don't stick over it.
