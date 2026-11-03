@@ -55,15 +55,22 @@ export function typesCsvFromSheets({ ElementTypes = [], Elements = [], Positions
   return Papa.unparse({ fields: COLUMNS, data: rows.map((r) => COLUMNS.map((c) => r[c])) });
 }
 
+// PositionType Ref -> UoM ('m', 'm2'), for an assessment exported without the UoM column
+export const positionUoms = (rows) => Object.fromEntries(rows.filter(live)
+  .map((r) => [s(r.Ref), s(r.UoM)]).filter(([ref, u]) => ref && u));
+
 export const isWorkbook = (file) => /\.xls[xm]$/i.test(file.name);
 
 // SheetJS is only loaded when somebody drops a workbook, so the CSV path stays light.
 export async function readDesignDb(file) {
   const XLSX = await import('xlsx');
-  const wb = XLSX.read(await file.arrayBuffer(), { sheets: ['ElementTypes', 'Elements', 'Positions'] });
+  const wb = XLSX.read(await file.arrayBuffer(), { sheets: ['ElementTypes', 'Elements', 'Positions', 'PositionTypes'] });
   if (!wb.SheetNames.includes('ElementTypes')) {
     throw new Error(`${file.name} has no ElementTypes sheet - is it a DesignDB?`);
   }
   const rows = (n) => (wb.Sheets[n] ? XLSX.utils.sheet_to_json(wb.Sheets[n], { defval: '' }) : []);
-  return typesCsvFromSheets({ ElementTypes: rows('ElementTypes'), Elements: rows('Elements'), Positions: rows('Positions') });
+  return {
+    types: typesCsvFromSheets({ ElementTypes: rows('ElementTypes'), Elements: rows('Elements'), Positions: rows('Positions') }),
+    uom: positionUoms(rows('PositionTypes')),
+  };
 }

@@ -518,16 +518,20 @@ body { background: #f6f8fb; }
 .est-line-head { cursor: pointer; align-items: center; }
 .est-line.open { background: #fbfdff; }
 .est-caret { color: #94a3b8; width: 12px; flex: 0 0 auto; }
-.est-nrows { margin-left: auto; font-size: 12px; color: #64748b; background: #f1f5f9; border-radius: 10px; padding: 0 8px; }
+.est-nrows { margin-left: auto; font-size: 12px; color: #64748b; }
+.est-pills { display: inline-flex; gap: 4px; flex-wrap: wrap; }
+.est-pill { font: 11.5px system-ui, sans-serif; color: #000; border: 0; padding: 1px 8px; border-radius: 10px; white-space: nowrap; }
+.est-pill-type { background: #fbe9de; }
+.est-pill-pt { background: #e6f2fc; }
+.est-ico { font-size: 17px; cursor: help; }
+.est-svg { width: 17px; height: 17px; }
 .est-lim { font-size: 11.5px; padding: 1px 8px; border-radius: 10px; white-space: nowrap; cursor: help; }
-.est-forced { background: #eef1f6; color: #334155; }
-.est-forced.bad { background: #fde8e7; color: #a12622; }
+.est-forced { color: #64748b; }
+.est-forced.bad { color: #c0392b; }
 .est-force { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #64748b; padding: 6px 10px 2px; }
 .est-force select { width: auto; max-width: 340px; }
-.est-lim-fV { background: #fff4dc; color: #8a5a00; }
-.est-lim-driverW { background: #eaf5ea; color: #25632a; }
-.est-lim-nodeW { background: #f3eefe; color: #5b3fa0; }
-.est-lim-outputs { background: #e7f0fb; color: #1f4f8a; }
+/* a limit is information, not a verdict: one neutral colour, the popup says which */
+.est-lim-fV, .est-lim-driverW, .est-lim-nodeW, .est-lim-outputs { color: #64748b; }
 .est-body { margin: 0 0 6px 34px; border-left: 2px solid #dbe7f5; padding-left: 4px; }
 .est-rowtable { width: 100%; border-collapse: collapse; font-size: 13px; }
 .est-rowtable td { padding: 5px 10px; border-bottom: 1px solid #f1f4f8; vertical-align: middle; }
@@ -585,7 +589,7 @@ body { background: #f6f8fb; }
 .est-warn.is-flash { animation: est-flash .45s ease-in-out 3; }
 @keyframes est-flash { 50% { background: #ffd33d; } }
 @media (prefers-reduced-motion: reduce) { .est-warn.is-flash { animation: none; } }
-.est-em, .est-feed { background: #e6f7fa; color: #0e7490; }
+.est-em, .est-feed { color: #0e9fb5; }
 .est-take { cursor: pointer; }
 .est-fork .est-take:hover .est-step, .est-fork .est-take:focus .est-step { opacity: 1; border-color: #0d6efd; }
 .est-take:focus { outline: none; }

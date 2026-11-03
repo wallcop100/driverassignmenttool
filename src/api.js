@@ -23,6 +23,12 @@ let model = null;
 // nobody to ask). `applied` is what the current model was built with.
 let raw = { form: null, links: null, types: null, assessment: null, empty: null };
 let applied = '[]';
+// PositionType -> UoM from the DesignDB, for assessments without a UoM column (DJ 100874)
+let ptUom = {};
+const withUom = (m) => {
+  for (const r of m?.requirements ?? []) if (!r.uom && ptUom[r.positionType]) r.uom = ptUom[r.positionType];
+  return m;
+};
 // Hub Ref -> hub label, from the host's context: the assessment names a hub by
 // its Position Ref, everything else by its label. Empty when standalone.
 let zoneAlias = {};
@@ -36,7 +42,7 @@ export function setModel(m) { model = m; }
 export function parseText(formText, linksText, typesText, assessmentText) {
   raw = { form: formText, links: linksText, types: typesText, assessment: assessmentText };
   applied = '[]';
-  model = engine.buildModel(formText, linksText, typesText, null, assessmentText, zoneAlias);
+  model = withUom(engine.buildModel(formText, linksText, typesText, null, assessmentText, zoneAlias));
   return model;
 }
 
@@ -53,7 +59,7 @@ export function rebuild(presets) {
   else if (raw.empty) model = engine.buildEmpty(raw.empty, raw.types, list);
   else return null;
   applied = key;
-  return model;
+  return withUom(model);
 }
 
 // Drop the files at once, autodetect which is which (#10). Three shapes are
@@ -71,7 +77,8 @@ export async function parseAuto(files) {
     if (kind) found[kind] = t;
   }
   const book = all.find(isWorkbook);
-  if (!found.types && book) found.types = await readDesignDb(book);
+  ptUom = {};
+  if (!found.types && book) ({ types: found.types, uom: ptUom } = await readDesignDb(book));
   // The circumstance decides the mode, not which file happened to be dropped: a
   // links CSV with a header and no rows is a hub with no cables, which is the
   // estimate's case and not an error.
@@ -113,7 +120,7 @@ function needsTypes(message) {
 // The type library arriving after the model was built - a DesignDB attached from
 // the app. Rebuilt as if it had been dropped with the CSVs.
 export async function attachDesignDb(file, presets, handle = null) {
-  raw.types = await readDesignDb(file);
+  ({ types: raw.types, uom: ptUom } = await readDesignDb(file));
   applied = null;
   watchDesignDb(file, handle);
   return rebuild(presets);
@@ -164,7 +171,7 @@ export async function designDbChange() {
 export function parseEstimate(assessmentText, typesText) {
   raw = { form: null, links: null, types: typesText, assessment: assessmentText };
   applied = '[]';
-  model = engine.buildEstimate(assessmentText, typesText, null, zoneAlias);
+  model = withUom(engine.buildEstimate(assessmentText, typesText, null, zoneAlias));
   return model;
 }
 

@@ -18,11 +18,19 @@ const fmt = (n) => (n == null ? null : (Number.isInteger(n) ? n : +n.toFixed(1))
 
 // Why a count is what it is, in the terms someone will argue with it in.
 const LIMIT = {
-  fV: { label: 'Voltage', blurb: 'Fittings on one output are in series, so their forward voltages add up. The output ran out of voltage before the driver ran out of watts, so the count is set by how many fit on each output.' },
-  'node W': { label: 'Output watts', blurb: 'Each output has its own wattage cap, and that ran out before the voltage or the driver total did.' },
-  'driver W': { label: 'Driver watts', blurb: "The driver's total wattage, less the spare margin, ran out first. Its outputs had voltage to spare." },
-  outputs: { label: 'Outputs', blurb: 'Groups that must stay on separate outputs ran out of outputs before the driver ran out of watts.' },
+  fV: { label: 'Voltage', icon: 'horizontal_align_right', blurb: 'Fittings on one output are in series, so their forward voltages add up. The output ran out of voltage before the driver ran out of watts, so the count is set by how many fit on each output.' },
+  'node W': { label: 'Output watts', icon: 'horizontal_align_right', blurb: 'Each output has its own wattage cap, and that ran out before the voltage or the driver total did.' },
+  'driver W': { label: 'Driver watts', icon: 'horizontal_align_right', blurb: "The driver's total wattage, less the spare margin, ran out first. Its outputs had voltage to spare." },
+  outputs: { label: 'Outputs', icon: 'call_split', blurb: 'Groups that must stay on separate outputs ran out of outputs before the driver ran out of watts.' },
 };
+
+// line flags are icons; the only chips are the driver ElementType and the PositionTypes
+// Material Symbols only, not in the Material Icons font this app ships
+const SYMBOL = { horizontal_align_right: 'M760-160v-640h80v640h-80ZM480-280l-56-56 104-104H120v-80h408L424-624l56-56 200 200-200 200Z' };
+const Icon = ({ name, cls, label }) => (SYMBOL[name]
+  ? <svg className={`est-ico est-svg ${cls}`} viewBox="0 -960 960 960" role="img" aria-label={label}><path d={SYMBOL[name]} fill="currentColor" /></svg>
+  : <span className={`material-icons est-ico ${cls}`} role="img" aria-label={label}>{name}</span>);
+const PtChips = ({ pts }) => <span className="est-pills">{(pts?.length ? pts : ['-']).map((pt) => <span key={pt} className="est-pill est-pill-pt">{pt}</span>)}</span>;
 
 const PICK_LABEL = { single: 'Single output', fewest: 'Fewest drivers', spareOutputs: 'Spare outputs' };
 
@@ -750,22 +758,21 @@ export default function EstimatePage({ state, dispatch, zone }) {
                 <div key={l.key} className={`est-line${isOpen ? ' open' : ''}`} data-debug-id="estimate-line" data-code={l.typeRef}>
                   <div className="dp-ref est-line-head" role="button" aria-expanded={isOpen} onClick={() => toggle(setOpen, k)}>
                     <span className="est-caret">{isOpen ? '▾' : '▸'}</span>
-                    <span className="dp-ref-id">{l.count} × {l.typeRef}</span>
-                    <span className="dp-ref-spec">
-                      {l.positionTypes?.join(', ') || '-'} · {amount(l.qty, l.rows)} · {fmt(l.loadW)} W
-                    </span>
-                    <Tooltip content={LIMIT[l.limit]?.blurb ?? `Limited by ${l.limit}`}>
-                      <span className={`est-lim est-lim-${l.limit.replace(' ', '')}`}>{LIMIT[l.limit]?.label ?? l.limit} limited</span>
+                    <span className="dp-ref-id">{l.count} × <span className="est-pill est-pill-type">{l.typeRef}</span></span>
+                    <PtChips pts={l.positionTypes} />
+                    <span className="dp-ref-spec">{amount(l.qty, l.rows)} · {fmt(l.loadW)} W</span>
+                    <Tooltip content={`${LIMIT[l.limit]?.label ?? l.limit} limited. ${LIMIT[l.limit]?.blurb ?? ''}`}>
+                      <Icon name={LIMIT[l.limit]?.icon ?? 'help_outline'} cls={`est-lim-${l.limit.replace(' ', '')}`} label={`${LIMIT[l.limit]?.label ?? l.limit} limited`} />
                     </Tooltip>
                     {!l.forced && l.positionTypes?.some((pt) => /Em?$/.test(pt) && isOwnLine(pt, state.ownLine)) && (
                       <Tooltip content={`${l.positionTypes.filter((pt) => /Em?$/.test(pt)).join(', ')} ends in E or Em, so it may be an emergency fitting and has its own line. If it is, change the driver type (⋮) to an emergency driver.`}>
-                        <span className="est-lim est-em">may be emergency</span>
+                        <Icon name="emergency" cls="est-em" label="May be emergency" />
                       </Tooltip>
                     )}
-                    {l.positionTypes?.length > 0 && l.positionTypes.every(isFeed) && <span className="est-lim est-feed">Feed</span>}
+                    {l.positionTypes?.length > 0 && l.positionTypes.every(isFeed) && <Tooltip content="Feed"><Icon name="power" cls="est-feed" label="Feed" /></Tooltip>}
                     {l.forced && (
                       <Tooltip content={l.mismatch ? `Forced, and does not match: ${l.mismatch}` : l.forcedIssue ?? `Forced on this line instead of the automatic pick`}>
-                        <span className={`est-lim est-forced${l.mismatch || l.forcedIssue ? ' bad' : ''}`}>{l.mismatch || l.forcedIssue ? '⚠ forced' : 'forced'}</span>
+                        <Icon name={l.mismatch || l.forcedIssue ? 'report_problem' : 'push_pin'} cls={`est-forced${l.mismatch || l.forcedIssue ? ' bad' : ''}`} label="Forced" />
                       </Tooltip>
                     )}
                     <span className="dp-ref-use">{l.groupQty?.map(([g]) => g || '-').join(', ') || l.controlGroup || '-'}</span>
@@ -808,8 +815,8 @@ export default function EstimatePage({ state, dispatch, zone }) {
                   <div className={`dp-ref${u.feed ? '' : ' is-off'} est-line-head`} role="button" aria-expanded={isOpen} onClick={() => toggle(setOpen, k)}>
                     <span className="est-caret">{isOpen ? '▾' : '▸'}</span>
                     <span className="dp-ref-id">{amount(u.qty, u.rows)}</span>
-                    {u.feed && <span className="dp-ref-spec">{u.positionTypes.join(', ')}</span>}
-                    {u.feed && <span className="est-lim est-feed">Feed</span>}
+                    {u.feed && <PtChips pts={u.positionTypes} />}
+                    {u.feed && <Tooltip content="Feed"><Icon name="power" cls="est-feed" label="Feed" /></Tooltip>}
                     <span className={u.feed ? 'dp-ref-spec' : 'dp-fault'}>{u.feed ? 'No driver' : u.reason ?? 'No ElementType in the DesignDB can take these'}</span>
                   </div>
                   {isOpen && <div className="est-body">{(!u.skipped || u.key.startsWith('no-power-type')) && <ForceType k={k} l={u} />}<RowTable refs={u.rows ?? []} /></div>}

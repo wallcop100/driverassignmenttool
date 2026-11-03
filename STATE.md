@@ -26,6 +26,13 @@ names and badge. `dat-autodeploy.timer` keeps Connected on Pages' build. The hos
 
 ## Log
 
+### 2026-11-03 — Line flags as icons, UoM from DesignDB (uncommitted)
+- Line flags are icons with the detail in the popup:
+  - voltage, driver-watts and output-watts limits: Material Symbols `horizontal_align_right` (inline SVG, since the app's font lacks it)
+  - outputs `call_split`, emergency `emergency`, feed `power`, forced `push_pin` / `report_problem`
+- The only pills are the driver ElementType (#fbe9de) and the PositionTypes (#e6f2fc).
+- DJ 100874 has no UoM column, so a dropped DesignDB's PositionTypes.UoM now fills it (`positionUoms`). C01r reads 13.4 m, not qty 13.4.
+
 ### 2026-11-03 — Feed chip, cyan emergency chip, forceable unsized rows (uncommitted)
 - "may be emergency" and the new "Feed" chip (PositionType starting with F) are soft cyan. Feed rows aren't highlighted as warnings and don't count as unmatched.
 - Rows with no CC/CV are grouped per PositionType. "Driver type for every F01" now lists them (it showed 0 rows before), and forcing a type sizes them by watts.
