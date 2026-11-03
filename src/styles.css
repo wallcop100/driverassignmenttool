@@ -589,7 +589,7 @@ body { background: #f6f8fb; }
 .est-warn.is-flash { animation: est-flash .45s ease-in-out 3; }
 @keyframes est-flash { 50% { background: #ffd33d; } }
 @media (prefers-reduced-motion: reduce) { .est-warn.is-flash { animation: none; } }
-.est-em, .est-feed { color: #0e9fb5; }
+.est-svg.est-em { width: 19px; height: 19px; }
 .est-take { cursor: pointer; }
 .est-fork .est-take:hover .est-step, .est-fork .est-take:focus .est-step { opacity: 1; border-color: #0d6efd; }
 .est-take:focus { outline: none; }
