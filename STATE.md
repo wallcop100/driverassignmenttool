@@ -26,7 +26,14 @@ names and badge. `dat-autodeploy.timer` keeps Connected on Pages' build. The hos
 
 ## Log
 
-### 2026-11-03 — Assessment view settings (uncommitted)
+### 2026-11-03 — Pivot header: hidden totals, frozen header (uncommitted)
+
+- Total Power and Total Forward Voltage are off by default (prefs `pvPower`/`pvFv`); the ⋮ on the header row turns them on.
+- The header row is sticky (`top: -1rem` to clear `.drivers-page`'s padding; `.est-pivot-wrap` lost `overflow-x`, which would have captured it). The rule is `> thead > tr > th`, so the detail tables' own headers don't stick over it.
+- The Filter / Keep separate / Driver types / View toolbar now sits under the Secondary Power Assessment card and is sticky too (z-index above the header so its menus open over it). The header sits under it at `--est-bar-h`, which a ResizeObserver keeps equal to the bar's height.
+- Top card: the per-type counts use the table's ElementType pill (`TypePill`), not the old mono chip. Every `TypePill` has hover facts (Name, Drive, Rated, Outputs) from `model.inventory` via `ratingsOf`, the fields `TypeCard` shows.
+
+### 2026-11-03 — Assessment view settings (#38)
 
 - "How N was worked out" moved from the line body into the line's ⋮ menu; its dialog opens with the line collapsed.
 - New **View** menu: Expand all / Collapse all rows, and **One hub at a time** (`prefs.hubByHub`). The last is standalone and whole-job only, with prev/next and a hub picker. Totals at the top stay whole-job.
@@ -40,7 +47,7 @@ names and badge. `dat-autodeploy.timer` keeps Connected on Pages' build. The hos
 - Checked in Playwright with the 5642 DesignDB: 27 hubs (11 PSU.HUB plus 16 LE1/LE2 local drivers). HUB-A draws 8 drivers with 2 feed provisions in the tray, and the patch writes `contextRef` P50001. 368 tests pass, build clean.
 - On resume, the workbook is read again through its saved handle when read permission is still granted, and the patch looks the hub Ref up at copy time. Without a handle (Firefox, or a picked file without one), the patch falls back to the label until the DesignDB is attached again.
 
-### 2026-11-03 — Tunable and multi-address lines (uncommitted)
+### 2026-11-03 — Tunable and multi-address lines (#38)
 - `channelClass` (engine.js): MAX_SecondaryPowerNodes = 2 or ControlAddressCount = 2 → `tunable`; ControlAddressCount > 2 → `multi`. The bucket key adds the class and the row ref, so each such row is its own line, to be checked.
 - Line icon: tonality_2 in #fecd62 for tunable, instant_mix in grey for multi. Both are inline Material Symbols SVG, and the tooltip shows the two column values.
 - Display and split only. Sizing still ignores nodes and addressCount.

@@ -33,6 +33,8 @@ export const DEFAULT_PREFS = {
   allowLocal: false,    // Local control type drivers: left out of sizing, flagged in a hub
   patchPerDriver: false, // estimate patch: one row per driver, not one per type per hub
   hubByHub: false,      // estimate: show one hub at a time (standalone, whole job)
+  pvPower: false,       // estimate pivot: show the Total Power column
+  pvFv: false,          // estimate pivot: show the Total Forward Voltage column
   snapMm: 5,            // resize grid in the space layout
 };
 

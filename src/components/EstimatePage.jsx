@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import * as api from '../api.js';
 import { listSessions } from '../persist.js';
 import { compareEstimate, ESTIMATE_WARNING, isFeed, estimatePatchRows, filterRequirements, filterValue, PIVOT_COLUMNS, generateEstimatePatch, isOwnLine, channelClass, resolveSpec, zoneViews } from '../engine.js';
 import { effectiveDrivers } from '../state.js';
+import { ratingsOf } from '../typeFaults.js';
 import { openReport } from '../bugReports.js';
 import { isEmbedded } from '../embed.js';
 import KebabMenu from './KebabMenu.jsx';
@@ -189,6 +190,15 @@ export default function EstimatePage({ state, dispatch, zone }) {
   }, [patchOpen, model]);
 
   const setPref = (p) => dispatch({ type: 'SET_PREFS', prefs: p });
+  // the options bar and the pivot header both stick; the header sits under the bar, whatever height it wraps to
+  const barRef = useRef(null);
+  useEffect(() => {
+    const el = barRef.current;
+    if (!el) return undefined;
+    const ro = new ResizeObserver(() => el.parentElement.style.setProperty('--est-bar-h', `${el.offsetHeight}px`));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
   const marginPct = Math.round((prefs.margin ?? 0) * 100);
 
   const totals = useMemo(() => {
@@ -311,6 +321,9 @@ export default function EstimatePage({ state, dispatch, zone }) {
   const [hubAt, setHubAt] = useState(0);
   const at = Math.min(hubAt, zones.length - 1);
   const shown = canStep && prefs.hubByHub ? zones.slice(at, at + 1) : zones;
+  // Total Power / Total Forward Voltage: hidden unless asked for from the header's ⋮
+  const showP = !!prefs.pvPower;
+  const showV = !!prefs.pvFv;
   const lineKeys = shown.flatMap((z) => groupsOf(z).flatMap(({ g, items }) => [g, ...items.map((i) => i.k)]));
 
   // the line's rows are one channelClass (the engine splits on it); the popup is just the columns
@@ -577,7 +590,17 @@ export default function EstimatePage({ state, dispatch, zone }) {
     );
   };
 
-  const TypePill = ({ t }) => <span className="est-pill est-pill-type">{t}</span>;
+  // hover facts, from the same fields the driver type cards show
+  const typeFacts = (ref) => {
+    const t = (model.inventory ?? []).find((x) => x.typeRef === ref);
+    return t ? [
+      ['Name', t.name || '-'],
+      ['Drive', t.powerType ?? '-'],
+      ['Rated', ratingsOf(t)],
+      ['Outputs', `${t.nodes?.length ?? 1}${t.ballast ? ` · ${t.ballast}CH` : ''}`],
+    ] : null;
+  };
+  const TypePill = ({ t }) => <Tooltip content={typeFacts(t)}><span className="est-pill est-pill-type" tabIndex={0}>{t}</span></Tooltip>;
   const reasonOf = (u) => (u.feed ? 'No driver' : u.reason ?? 'No ElementType in the DesignDB can take these');
   const canForce = (u) => !u.skipped || u.key.startsWith('no-power-type');
 
@@ -585,8 +608,8 @@ export default function EstimatePage({ state, dispatch, zone }) {
   const LineCells = ({ l, k, unmatched, zone: z }) => {
     const lim = LIMIT[l.limit];
     return <>
-      <td className="n">{fmt(unmatched ? powerOf(l.rows) : l.loadW)} W</td>
-      <td className="n">{fvLabel(l.rows)}</td>
+      {showP && <td className="n">{fmt(unmatched ? powerOf(l.rows) : l.loadW)} W</td>}
+      {showV && <td className="n">{fvLabel(l.rows)}</td>}
       <td>{unmatched ? <span className={l.feed ? 'pv-note' : 'dp-fault'}>{reasonOf(l)}</span> : <TypePill t={l.typeRef} />}</td>
       <td className="n">{unmatched ? '–' : l.count}</td>
       <td className="pv-flags">
@@ -635,7 +658,7 @@ export default function EstimatePage({ state, dispatch, zone }) {
 
   const Detail = ({ l, k, unmatched }) => (
     <tr className="pv-detail">
-      <td colSpan={8}>
+      <td colSpan={6 + showP + showV}>
         <div className="est-body">
           {(unmatched ? canForce(l) : forcing === k || state.forcedTypes[k]) && <ForceType k={k} l={l} />}
           <RowTable refs={l.rows ?? []} />
@@ -671,9 +694,70 @@ export default function EstimatePage({ state, dispatch, zone }) {
 
   return (
     <div className="container-fluid py-3 drivers-page">
+      <div className="est-top">
+      <div className="est-summary">
+      <div className="dp-head">
+        <h5 className="mb-0">Secondary Power Assessment</h5>
+        {zone && <span className="est-hub">{zone}</span>}
+        {zone && <ViewToggle model={model} zone={zone} current="estimate" dispatch={dispatch} />}
+        {/* An early design has hubs and Elements but no cables: the space layout is
+            still where they are arranged, so the quiet way in is here too. */}
+        {zone && (
+          <button type="button" className="space-link" title="Hub layout" aria-label="Open the hub layout"
+            onClick={() => dispatch({ type: 'SET_VIEW', view: { page: 'layout', zone, from: 'estimate' } })}>
+            <span className="material-icons">straighten</span>
+          </button>
+        )}
+        {totals.unmatched > 0 && (
+          <span className="dp-need" title="No ElementType in the DesignDB can take these, so no driver is counted for them">
+            {unmatchedLabel()} unmatched
+          </span>
+        )}
+        {hiddenRows > 0 && (
+          <span className="dp-need" title="Left out by the Filter menu - they are not in this estimate">
+            {hiddenRows} row(s) filtered out
+          </span>
+        )}
+        {totals.skipped > 0 && (
+          <span className="dp-need" title="Rows with no CC/CV SecondaryPowerType or no power - no driver is sized for them. Open the grey lines to see which.">
+            {unmatchedLabel(true)} not sized
+          </span>
+        )}
+      </div>
+      <div className="est-meta">
+        {rows.length} row{rows.length === 1 ? '' : 's'} · {posTypes.size} PositionType{posTypes.size === 1 ? '' : 's'}
+        {zone ? '' : ` · ${zones.length} hub${zones.length === 1 ? '' : 's'}`}
+        {views?.cables ? '' : ' · no links yet'}
+      </div>
+
+      <div className="est-hero">
+        <div className="est-big">{totals.drivers}<small>driver{totals.drivers === 1 ? '' : 's'}</small></div>
+        {totals.byType.map(([t, n]) => <span key={t} className="est-chip"><b>{n}</b> × <TypePill t={t} /></span>)}
+      </div>
+
+      {/* the patch appends rows it cannot ref; that is the next job */}
+      {totals.drivers > 0 && <div className="est-meta mb-2">Patch drivers get no Ref: give each appended row one before committing.</div>}
+
+      {forcingPt && <ForcePositionType pt={forcingPt} />}
+
+      {patchOpen && (
+        <PatchDialog opts={opts} zone={zone} others={otherHubs} perDriver={!!prefs.patchPerDriver}
+          onPerDriver={(v) => setPref({ patchPerDriver: v })}
+          onCopy={copyPatch} onClose={() => setPatchOpen(false)} />
+      )}
+
+      {/* Always shown, never dismissable: the count is a starting point. */}
+      <div className={`est-warn${flash ? ' is-flash' : ''}`} role="note">
+        <span className="material-icons">warning</span>
+        <div><strong>Check every calculation.</strong> {ESTIMATE_WARNING}</div>
+      </div>
+      </div>
+
+      </div>
+
       {/* one slim row like the hub layout's; each menu makes the estimate looser,
           and the count higher. All off is the tightest answer, rarely the one to price. */}
-      <div className="hub-bar est-bar-top" data-debug-id="estimate-options">
+      <div ref={barRef} className="hub-bar est-bar-top" data-debug-id="estimate-options">
         {filters.length > 0 && (
           <span className="hub-menuwrap">
             {menuButton('filter', 'filter_alt', 'Filter', filtersOn)}
@@ -833,67 +917,6 @@ export default function EstimatePage({ state, dispatch, zone }) {
         </button>
       </div>
 
-      <div className="est-top">
-      <div className="est-summary">
-      <div className="dp-head">
-        <h5 className="mb-0">Secondary Power Assessment</h5>
-        {zone && <span className="est-hub">{zone}</span>}
-        {zone && <ViewToggle model={model} zone={zone} current="estimate" dispatch={dispatch} />}
-        {/* An early design has hubs and Elements but no cables: the space layout is
-            still where they are arranged, so the quiet way in is here too. */}
-        {zone && (
-          <button type="button" className="space-link" title="Hub layout" aria-label="Open the hub layout"
-            onClick={() => dispatch({ type: 'SET_VIEW', view: { page: 'layout', zone, from: 'estimate' } })}>
-            <span className="material-icons">straighten</span>
-          </button>
-        )}
-        {totals.unmatched > 0 && (
-          <span className="dp-need" title="No ElementType in the DesignDB can take these, so no driver is counted for them">
-            {unmatchedLabel()} unmatched
-          </span>
-        )}
-        {hiddenRows > 0 && (
-          <span className="dp-need" title="Left out by the Filter menu - they are not in this estimate">
-            {hiddenRows} row(s) filtered out
-          </span>
-        )}
-        {totals.skipped > 0 && (
-          <span className="dp-need" title="Rows with no CC/CV SecondaryPowerType or no power - no driver is sized for them. Open the grey lines to see which.">
-            {unmatchedLabel(true)} not sized
-          </span>
-        )}
-      </div>
-      <div className="est-meta">
-        {rows.length} row{rows.length === 1 ? '' : 's'} · {posTypes.size} PositionType{posTypes.size === 1 ? '' : 's'}
-        {zone ? '' : ` · ${zones.length} hub${zones.length === 1 ? '' : 's'}`}
-        {views?.cables ? '' : ' · no links yet'}
-      </div>
-
-      <div className="est-hero">
-        <div className="est-big">{totals.drivers}<small>driver{totals.drivers === 1 ? '' : 's'}</small></div>
-        {totals.byType.map(([t, n]) => <span key={t} className="est-chip"><b>{n}</b> × {t}</span>)}
-      </div>
-
-      {/* the patch appends rows it cannot ref; that is the next job */}
-      {totals.drivers > 0 && <div className="est-meta mb-2">Patch drivers get no Ref: give each appended row one before committing.</div>}
-
-      {forcingPt && <ForcePositionType pt={forcingPt} />}
-
-      {patchOpen && (
-        <PatchDialog opts={opts} zone={zone} others={otherHubs} perDriver={!!prefs.patchPerDriver}
-          onPerDriver={(v) => setPref({ patchPerDriver: v })}
-          onCopy={copyPatch} onClose={() => setPatchOpen(false)} />
-      )}
-
-      {/* Always shown, never dismissable: the count is a starting point. */}
-      <div className={`est-warn${flash ? ' is-flash' : ''}`} role="note">
-        <span className="material-icons">warning</span>
-        <div><strong>Check every calculation.</strong> {ESTIMATE_WARNING}</div>
-      </div>
-      </div>
-
-      </div>
-
       {zone && !rows.length && (
         <div className="alert alert-secondary py-2 small">
           No assessment rows for {zone}. The host sends them from the hub's Positions (DJ 100053) - if
@@ -924,8 +947,16 @@ export default function EstimatePage({ state, dispatch, zone }) {
         <table className="est-pivot">
           <thead>
             <tr>
-              <th>Hub / ControlGroup</th><th className="n">Total Power</th><th className="n">Total Forward Voltage</th>
-              <th>Driver Type</th><th className="n">Driver Count</th><th>Flags</th><th>Limited By</th><th />
+              <th>Hub / ControlGroup</th>
+              {showP && <th className="n">Total Power</th>}{showV && <th className="n">Total Forward Voltage</th>}
+              <th>Driver Type</th><th className="n">Driver Count</th><th>Flags</th><th>Limited By</th>
+              <th className="text-end">
+                {/* the totals are there to check against, not to read every time */}
+                <KebabMenu title="Columns" items={[
+                  { label: 'Total Power', icon: showP ? 'check_box' : 'check_box_outline_blank', onClick: () => setPref({ pvPower: !showP }) },
+                  { label: 'Total Forward Voltage', icon: showV ? 'check_box' : 'check_box_outline_blank', onClick: () => setPref({ pvFv: !showV }) },
+                ]} />
+              </th>
             </tr>
           </thead>
           {shown.map((z) => {
@@ -934,7 +965,7 @@ export default function EstimatePage({ state, dispatch, zone }) {
             return (
               <tbody key={z.zone}>
                 <tr className="pv-hub">
-                  <td>{z.zone}</td><td className="n">{fmt(z.loadW)} W</td><td />
+                  <td>{z.zone}</td>{showP && <td className="n">{fmt(z.loadW)} W</td>}{showV && <td />}
                   <td>{hubTypes.size === 1 ? <TypePill t={[...hubTypes][0]} /> : null}</td>
                   <td className="n">{z.drivers}</td><td /><td /><td />
                 </tr>
@@ -957,8 +988,8 @@ export default function EstimatePage({ state, dispatch, zone }) {
                         </button>
                       </td>
                       {one ? <LineCells {...one} zone={z.zone} /> : <>
-                        <td className="n">{fmt(powerOf(refs))} W</td>
-                        <td className="n">{fvLabel(refs)}</td>
+                        {showP && <td className="n">{fmt(powerOf(refs))} W</td>}
+                        {showV && <td className="n">{fvLabel(refs)}</td>}
                         <td>{typeCell}</td>
                         <td className="n">{matched.reduce((n, i) => n + i.l.count, 0) || '–'}</td>
                         <td /><td /><td />

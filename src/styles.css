@@ -581,7 +581,7 @@ body { background: #f6f8fb; }
 .est-big { font-size: 38px; font-weight: 700; line-height: 1; color: #1f2328; margin-right: 4px; }
 .est-big small { font-size: 14px; font-weight: 500; color: #64748b; margin-left: 6px; }
 .est-bom-n { width: 3.5em; text-align: right; font-variant-numeric: tabular-nums; }
-.est-chip { font: 12.5px ui-monospace, monospace; border: 1px solid #dbe3ee; border-left: 3px solid #bf8700; border-radius: 6px; padding: 4px 9px; background: #f7f9fc; }
+.est-chip { font-size: 13px; color: #475569; white-space: nowrap; }   /* count × the same type pill as the table */
 .est-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .est-actions .est-meta { margin: 0 0 0 6px; }
 .est-warn { display: flex; gap: 6px; align-items: flex-start; font-size: 12.5px; color: #7d4e00; background: #fff8c5; border-radius: 6px; padding: 6px 10px; margin-top: 12px; }
@@ -1386,7 +1386,8 @@ body.drawer-open .ck-pip { bottom: calc(var(--drawer-h, 300px) + 8px); }
 .est-step-hubs .form-select { width: auto; max-width: 220px; }
 
 /* estimate pivot: Hub > ControlGroup, totals then the driver */
-.est-pivot-wrap { overflow-x: auto; background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; }
+/* no overflow here: it would make the wrap, not the page, the sticky header's scroller */
+.est-pivot-wrap { background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; }
 .est-pivot { width: 100%; border-collapse: collapse; font-size: 13px; }
 .est-pivot th { font-size: 11px; letter-spacing: .04em; text-transform: uppercase; color: #64748b; font-weight: 600;
   text-align: left; padding: 8px 12px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; white-space: nowrap; }
@@ -1404,3 +1405,6 @@ body.drawer-open .ck-pip { bottom: calc(var(--drawer-h, 300px) + 8px); }
 .pv-flags > * + * { margin-left: 4px; }
 .pv-lim { color: #64748b; font-size: 12px; white-space: nowrap; }
 .est-rowtable th { font-size: 10.5px; letter-spacing: .04em; text-transform: uppercase; color: #94a3b8; font-weight: 600; padding: 4px 10px; text-align: left; }
+/* the header row stays in view while the hubs scroll under it */
+.est-bar-top { position: sticky; top: -1rem; z-index: 4; }   /* above the header, so its menus open over it */
+.est-pivot > thead > tr > th { position: sticky; top: calc(var(--est-bar-h, 0px) - 1rem); z-index: 3; }  /* -1rem: past .drivers-page's py-3, so nothing shows above it */
