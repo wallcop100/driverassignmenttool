@@ -330,10 +330,14 @@ export function parseAssessment(text, zoneAlias = {}) {
   rows.forEach((row, i) => {
     const ref = s(row.Link_SecondaryPowerRef);
     if (!ref) return;                        // 100053 already drops these; belt and braces
-    const zone = zoneAlias[ref] || ref;
+    // BestRef = COALESCE(ExtRef, Ref): DJ 100874 sends the ExtRef, 100053 only the Ref
+    const best = s(row.Link_SecondaryPowerExtRef) || ref;
+    const zone = zoneAlias[best] || zoneAlias[ref] || best;
     const qty = num(row.SumQuantity) ?? 1;
     if (qty <= 0) return;                    // a parent replaced by its own children
-    const pt = s(row['CC/CV']);
+    // DJ 100874 renamed CC/CV, CV_Voltage, CC_Current, ControlAddressCount; 0 there means n/a
+    const pt = s(row['CC/CV'] ?? row.SecondaryPowerType);
+    const pos = (v) => { const n = num(v); return n ? n : null; };
     const loadW = num(row.SumPower) ?? 0;
     const fvV = num(row.SumVf);
     out.push({
@@ -343,8 +347,8 @@ export function parseAssessment(text, zoneAlias = {}) {
       qty,
       loadW,
       fvV,
-      currentA: num(row.CC_Current),
-      voltageV: num(row.CV_Voltage),
+      currentA: row.CC_Current != null ? num(row.CC_Current) : pos(row.PositionCurrent),
+      voltageV: row.CV_Voltage != null ? num(row.CV_Voltage) : pos(row.PositionVoltage),
       powerType: pt === 'CC' || pt === 'CV' ? pt : null,
       controlGroup: s(row.ControlGrouptext),
       location: s(row.LocationName),
@@ -353,7 +357,7 @@ export function parseAssessment(text, zoneAlias = {}) {
       // sent from overlay V1.14; without it a quantity is a plain count.
       uom: s(row.UoM) || null,
       controlType: s(row.ControlTypeRef),
-      addressCount: num(row.ControlAddressCount),
+      addressCount: num(row.ControlAddressCount ?? row.Unit_ControlAddressCount),
       // per fitting - what actually has to fit on a node
       wPer: loadW / qty,
       fvPer: fvV == null ? null : fvV / qty,
