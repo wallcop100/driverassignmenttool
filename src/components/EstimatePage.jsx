@@ -153,6 +153,11 @@ export default function EstimatePage({ state, dispatch, zone }) {
     const [unit] = units;
     return unit ? `${fmt(qty)} ${unit}` : `qty ${fmt(qty)}`;
   };
+  // '25 W per m' for strip, '25 W each' for a counted fitting (BERMQB)
+  const unitOf = (refs) => {
+    const units = new Set((refs ?? []).map((ref) => reqByRef.get(ref)?.uom ?? null));
+    return units.size === 1 ? [...units][0] : null;
+  };
   const unmatchedLabel = () => {
     const byUnit = new Map();
     for (const z of zones) {
@@ -175,6 +180,8 @@ export default function EstimatePage({ state, dispatch, zone }) {
   const [working, setWorking] = useState(null);
   // the driver type select stays out of the way until asked for from ⋮ (SSCMMX)
   const [forcing, setForcing] = useState(null);
+  // now and then, so it is not wallpaper (5KEFGM)
+  const [flash] = useState(() => Math.random() < 1 / 3);
   const toggle = (set, k) => set((p) => { const n = new Set(p); if (!n.delete(k)) n.add(k); return n; });
 
   const RowTable = ({ refs }) => (
@@ -237,10 +244,13 @@ export default function EstimatePage({ state, dispatch, zone }) {
   };
 
   // The engine's own inputs, laid out as the sum a person would check by hand.
-  const Working = ({ l, zone: z }) => {
+  const Working = ({ l, zone: z, k }) => {
     const w = l.working;
     if (!w) return null;
     const n = w.outputs;
+    const unit = unitOf(l.rows);
+    const each = unit ? `per ${unit}` : 'each';
+    const W = unit ? `W/${unit}` : 'W';
     const step = (label, body, note, cls = '') => (
       <div className={`est-step${cls}`}>
         <span className="est-step-l">{label}</span>
@@ -273,7 +283,11 @@ export default function EstimatePage({ state, dispatch, zone }) {
         <div className="est-fork">
           <span className="est-fork-l">{title}</span>
           {branches.map((b) => (
-            <div key={b.key} className={b.taken ? '' : 'est-off'}>{step(b.label, b.body, b.note, b.taken ? b.cls ?? '' : '')}</div>
+            <div key={b.key} className={b.taken ? '' : `est-off${b.pick ? ' est-take' : ''}`}
+              {...(b.pick && { role: 'button', tabIndex: 0, title: 'Use this driver type', onClick: b.pick,
+                onKeyDown: (e) => (e.key === 'Enter' || e.key === ' ') && b.pick() })}>
+              {step(b.label, b.body, b.note, b.taken ? b.cls ?? '' : '')}
+            </div>
           ))}
         </div>
       ));
@@ -284,9 +298,9 @@ export default function EstimatePage({ state, dispatch, zone }) {
         {w.fittings?.length > 1
           ? fork(`Fittings, each whole${w.mixed ? ' and packed at its own size' : ''}`, w.fittings.map((f, i) => ({
             key: i, taken: true, label: f.positionType || '-',
-            body: `${amount(f.qty, f.refs)} · ${fmt(f.wPer)} W each${f.fvPer ? ` · ${fmt(f.fvPer)} V each` : ''}`,
+            body: `${amount(f.qty, f.refs)} · ${fmt(f.wPer)} W ${unitOf(f.refs) ? `per ${unitOf(f.refs)}` : 'each'}${f.fvPer ? ` · ${fmt(f.fvPer)} V each` : ''}`,
           })))
-          : step('Fittings', `${l.positionTypes?.length ? `${l.positionTypes.join(', ')} · ` : ''}${amount(l.qty, l.rows)} · ${fmt(w.wPer)} W each${w.fvPer ? ` · ${fmt(w.fvPer)} V each` : ''}`,
+          : step('Fittings', `${l.positionTypes?.length ? `${l.positionTypes.join(', ')} · ` : ''}${amount(l.qty, l.rows)} · ${fmt(w.wPer)} W ${each}${w.fvPer ? ` · ${fmt(w.fvPer)} V each` : ''}`,
             'each one whole: never split across outputs or drivers')}
         {arr}
         {l.forcedIssue && <>{step('Forced type not used', l.forcedIssue, 'sized on the automatic pick instead', ' warn')}{arr}</>}
@@ -294,6 +308,7 @@ export default function EstimatePage({ state, dispatch, zone }) {
           {fork(`Driver type, ${l.forced && !l.forcedIssue ? 'forced on this line' : `by ${PICK_LABEL[opts.pickBy]?.toLowerCase() ?? 'fit'}`}`,
             l.considered.map((c) => ({
               key: c.typeRef, taken: c.taken, cls: c.mismatch ? ' run warn' : ' run',
+              pick: c.taken ? null : () => dispatch({ type: 'FORCE_TYPE', key: k, typeRef: c.auto ? null : c.typeRef }),
               label: `${c.typeRef}${c.em ? ' (EM)' : ''}`,
               body: c.count == null ? 'not sized'
                 : <>{c.count} × {c.outputs}-output · {c.spareOutputs} spare output{c.spareOutputs === 1 ? '' : 's'}</>,
@@ -333,7 +348,7 @@ export default function EstimatePage({ state, dispatch, zone }) {
             key: r.label, taken: true, cls: ' run',
             label: r.label || '-',
             body: <>{fmt(r.qty)} ÷ {r.per}{r.qty % r.per ? ' ↑' : ''} = <b>{r.outputs}</b> output{r.outputs === 1 ? '' : 's'}</>,
-            note: `${r.per} per output at ${fmt(r.wPer)} W${r.fvPer ? `, ${fmt(r.fvPer)} V` : ''} each`,
+            note: `${r.per} per output at ${fmt(r.wPer)} ${W}${r.fvPer ? `, ${fmt(r.fvPer)} V` : ''} each`,
           })))}
           {arr}
           {fork('Enough drivers for both', [
@@ -341,17 +356,17 @@ export default function EstimatePage({ state, dispatch, zone }) {
               body: <>{l.outputs} ÷ {n}{l.outputs % n ? ' ↑' : ''} = <b>{byOutputs}</b></> },
             { key: 'w', taken: w.byWatts > byOutputs, cls: ' bind', label: 'By driver watts',
               body: <>{fmt(l.qty)} ÷ {w.perDriverW}{l.qty % w.perDriverW ? ' ↑' : ''} = <b>{w.byWatts}</b></>,
-              note: `${w.perDriverW} whole fittings per driver: ${fmt(w.maxPowerW * w.keep)} W ÷ ${fmt(w.wPer)} W` },
+              note: `${w.perDriverW} whole ${unit ? unit : 'fittings'} per driver: ${fmt(w.maxPowerW * w.keep)} W ÷ ${fmt(w.wPer)} ${W}` },
           ])}
         </> : fork('Per driver, the tightest limit', [
           w.perNodeFv != null && { key: 'fV', taken: l.limit === 'fV', cls: ' bind', label: 'Per output by voltage',
             body: <>{fmt(w.maxFvV * w.keep)} V ÷ {fmt(w.fvPer)} V = <b>{w.perNodeFv}</b></>,
             note: n > 1 ? `× ${n} outputs = ${w.perNodeFv * n}` : null },
           w.perNodeW != null && { key: 'nW', taken: l.limit === 'node W', cls: ' bind', label: 'Per output by watts',
-            body: <>{fmt(w.maxLoadW * w.keep)} W ÷ {fmt(w.wPer)} W = <b>{w.perNodeW}</b></>,
+            body: <>{fmt(w.maxLoadW * w.keep)} W ÷ {fmt(w.wPer)} {W} = <b>{w.perNodeW}</b></>,
             note: n > 1 ? `× ${n} outputs = ${w.perNodeW * n}` : null },
           { key: 'dW', taken: l.limit === 'driver W', cls: ' bind', label: 'Per driver by watts',
-            body: <>{fmt(w.maxPowerW * w.keep)} W ÷ {fmt(w.wPer)} W = <b>{w.perDriverW}</b></> },
+            body: <>{fmt(w.maxPowerW * w.keep)} W ÷ {fmt(w.wPer)} {W} = <b>{w.perDriverW}</b></> },
         ].filter(Boolean))}
         {arr}
         {step('Drivers', w.runList || w.packed
@@ -455,7 +470,7 @@ export default function EstimatePage({ state, dispatch, zone }) {
       )}
 
       {/* Always shown, never dismissable: the count is a starting point. */}
-      <div className="est-warn" role="note">
+      <div className={`est-warn${flash ? ' is-flash' : ''}`} role="note">
         <span className="material-icons">warning</span>
         <div><strong>Check every calculation.</strong> {ESTIMATE_WARNING}</div>
       </div>
@@ -563,6 +578,11 @@ export default function EstimatePage({ state, dispatch, zone }) {
                     <Tooltip content={LIMIT[l.limit]?.blurb ?? `Limited by ${l.limit}`}>
                       <span className={`est-lim est-lim-${l.limit.replace(' ', '')}`}>{LIMIT[l.limit]?.label ?? l.limit} limited</span>
                     </Tooltip>
+                    {!l.forced && l.positionTypes?.some((pt) => /Em?$/.test(pt) && isOwnLine(pt, state.ownLine)) && (
+                      <Tooltip content={`${l.positionTypes.filter((pt) => /Em?$/.test(pt)).join(', ')} ends in E or Em, so it may be an emergency fitting and has its own line. If it is, change the driver type (⋮) to an emergency driver.`}>
+                        <span className="est-lim est-em">may be emergency</span>
+                      </Tooltip>
+                    )}
                     {l.forced && (
                       <Tooltip content={l.mismatch ? `Forced, and does not match: ${l.mismatch}` : l.forcedIssue ?? `Forced on this line instead of the automatic pick`}>
                         <span className={`est-lim est-forced${l.mismatch || l.forcedIssue ? ' bad' : ''}`}>{l.mismatch || l.forcedIssue ? '⚠ forced' : 'forced'}</span>
@@ -589,7 +609,7 @@ export default function EstimatePage({ state, dispatch, zone }) {
                               <b>How {l.count} × {l.typeRef} was worked out</b>
                               <button className="btn btn-sm btn-link ms-auto p-0" onClick={() => setWorking(null)}>close</button>
                             </div>
-                            <Working l={l} zone={z.zone} />
+                            <Working l={l} zone={z.zone} k={k} />
                           </div>
                         </div>
                       )}

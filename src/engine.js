@@ -951,9 +951,9 @@ export function compareEstimate(plan, drivers) {
 // Shown on the assessment view and written into anything it exports. The
 // estimate sizes from roll-ups and a transcribed catalogue - it is a starting
 // count, not a design, and nothing downstream checks it.
-export const ESTIMATE_WARNING = 'Estimate only - driver counts are calculated from the DJ 100053 Position '
-  + 'roll-ups and the static catalogue. Double-check every figure against the spec sheets and the '
-  + 'actual cable runs before relying on it.';
+export const ESTIMATE_WARNING = 'Estimate only - driver counts are calculated from the Secondary Power '
+  + 'Assessment (DJ 100053) and then checked against the Driver ElementTypes. You are responsible for '
+  + 'double-checking any estimate made.';
 
 // The ref IS the spec in this library (ET-CCR-D-350-2CH-01 = CC, 350mA, 2CH), so
 // the next free one is composed from the ratings being entered rather than a
