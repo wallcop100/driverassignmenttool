@@ -26,6 +26,10 @@ names and badge. `dat-autodeploy.timer` keeps Connected on Pages' build. The hos
 
 ## Log
 
+### 2026-11-03 — Emergency and feed marks (uncommitted)
+- Emergency follows Erik's symbol_E.svg on Material's 24 grid: a teal (#08a8ac) triangle border, white inside, a black E, at 19px.
+- Feed is Erik's orange (#ff8200) five-point asterisk. Both are inline SVG (`MARK` in EstimatePage.jsx).
+
 ### 2026-11-03 — Filter (Select All) (uncommitted)
 - Each filter has an Excel-style (Select All) that ticks or clears every value, and shows part-ticked when some values are off. It replaces "Show all".
 - A filter's list only ever opens itself, so re-ticking everything no longer collapses it.

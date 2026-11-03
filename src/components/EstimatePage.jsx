@@ -27,7 +27,19 @@ const LIMIT = {
 // line flags are icons; the only chips are the driver ElementType and the PositionTypes
 // Material Symbols only, not in the Material Icons font this app ships
 const SYMBOL = { horizontal_align_right: 'M760-160v-640h80v640h-80ZM480-280l-56-56 104-104H120v-80h408L424-624l56-56 200 200-200 200Z' };
-const Icon = ({ name, cls, label }) => (SYMBOL[name]
+// supplied marks: E in a triangle = emergency, orange asterisk = feed
+const MARK = {
+  // symbol_E on Material's 24 grid: teal triangle border, white inside, black E
+  emergency: ['0 0 24 24', <>
+    <path fill="#08a8ac" d="M12 1.5 23 21H1z" />
+    <path fill="#fff" d="M12 5.6 19.56 19H4.44z" />
+    <path fill="#000" d="M9.6 10.4h4.6v1.5h-3v1.4h2.7v1.4h-2.7v1.4h3v1.5H9.6z" />
+  </>],
+  feed: ['0 0 407 351', <path fill="#ff8200" d="M180 44H230V142L315 93L340 136L255 185L304 271L261 296L205 199L149 296L106 271L155 185L70 136L95 93L180 142Z" />],
+};
+const Icon = ({ name, cls, label }) => (MARK[name]
+  ? <svg className={`est-ico est-svg ${cls}`} viewBox={MARK[name][0]} role="img" aria-label={label}>{MARK[name][1]}</svg>
+  : SYMBOL[name]
   ? <svg className={`est-ico est-svg ${cls}`} viewBox="0 -960 960 960" role="img" aria-label={label}><path d={SYMBOL[name]} fill="currentColor" /></svg>
   : <span className={`material-icons est-ico ${cls}`} role="img" aria-label={label}>{name}</span>);
 const PtChips = ({ pts }) => <span className="est-pills">{(pts?.length ? pts : ['-']).map((pt) => <span key={pt} className="est-pill est-pill-pt">{pt}</span>)}</span>;
@@ -775,7 +787,7 @@ export default function EstimatePage({ state, dispatch, zone }) {
                         <Icon name="emergency" cls="est-em" label="May be emergency" />
                       </Tooltip>
                     )}
-                    {l.positionTypes?.length > 0 && l.positionTypes.every(isFeed) && <Tooltip content="Feed"><Icon name="power" cls="est-feed" label="Feed" /></Tooltip>}
+                    {l.positionTypes?.length > 0 && l.positionTypes.every(isFeed) && <Tooltip content="Feed"><Icon name="feed" cls="est-feed" label="Feed" /></Tooltip>}
                     {l.forced && (
                       <Tooltip content={l.mismatch ? `Forced, and does not match: ${l.mismatch}` : l.forcedIssue ?? `Forced on this line instead of the automatic pick`}>
                         <Icon name={l.mismatch || l.forcedIssue ? 'report_problem' : 'push_pin'} cls={`est-forced${l.mismatch || l.forcedIssue ? ' bad' : ''}`} label="Forced" />
@@ -822,7 +834,7 @@ export default function EstimatePage({ state, dispatch, zone }) {
                     <span className="est-caret">{isOpen ? '▾' : '▸'}</span>
                     <span className="dp-ref-id">{amount(u.qty, u.rows)}</span>
                     {u.feed && <PtChips pts={u.positionTypes} />}
-                    {u.feed && <Tooltip content="Feed"><Icon name="power" cls="est-feed" label="Feed" /></Tooltip>}
+                    {u.feed && <Tooltip content="Feed"><Icon name="feed" cls="est-feed" label="Feed" /></Tooltip>}
                     <span className={u.feed ? 'dp-ref-spec' : 'dp-fault'}>{u.feed ? 'No driver' : u.reason ?? 'No ElementType in the DesignDB can take these'}</span>
                   </div>
                   {isOpen && <div className="est-body">{(!u.skipped || u.key.startsWith('no-power-type')) && <ForceType k={k} l={u} />}<RowTable refs={u.rows ?? []} /></div>}
