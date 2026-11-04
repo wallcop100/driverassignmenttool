@@ -28,7 +28,7 @@ names and badge. `dat-autodeploy.timer` keeps Connected on Pages' build. The hos
 
 ### 2026-11-04 — Driver types from the assessment
 - The estimate's Driver types menu has "Edit driver types…", which opens the shared Types page (no zone, so it lists the whole library); Back returns to the estimate. An unmatched lot's kebab has "New driver type for these…": the shared NewTypeDialog, seeded from the rows (power type, CC current, control type, outputs = channels).
-- The estimate patch now carries an ElementTypes section for edited design types and for invented types that a line uses (`estimatePatchTypes`, the same `patchablePresets`/`typeSection` as the assignment patch).
+- The estimate patch now carries an ElementTypes section for every edited and every new type, used by a line or not (`estimatePatchTypes`, the same `patchablePresets`/`typeSection` as the assignment patch).
 - Skipped: picked / could-fit / unused badges on the Types page.
 
 ### 2026-11-04 — Channel-aware sizing and Control Type badges

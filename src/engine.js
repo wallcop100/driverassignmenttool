@@ -1836,12 +1836,12 @@ export function estimatePatchRows(estimates, { perDriver = false } = {}) {
   }));
 }
 
-// Driver type edits made from the estimate, by the assignment patch's rule: an
-// edit to a design type always, an invented type only once a line uses it.
-export const estimatePatchTypes = (estimates, { model, presets } = {}) => patchablePresets([{
-  model, presets: Object.values(presets || {}),
-  addedDrivers: (estimates || []).flatMap((z) => z.lines.map((l) => ({ typeRef: l.typeRef }))),
-}]);
+// Driver types defined from the estimate: every edit and every new type, used or
+// not, because at tender the point is to define the types.
+export const estimatePatchTypes = (_estimates, { model, presets } = {}) => {
+  const list = Object.values(presets || {});
+  return patchablePresets([{ model, presets: list, addedDrivers: list }]);
+};
 
 export function generateEstimatePatch(estimates, patchOpts = {}) {
   const adds = estimatePatchRows(estimates, patchOpts);

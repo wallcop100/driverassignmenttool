@@ -1657,13 +1657,13 @@ test('estimate: a tunable fitting takes one output per channel, all on one drive
   assert.equal(q.lines[0].working.slots, 2);
 });
 
-test('the estimate patch carries invented types only when a line uses them', () => {
+test('the estimate patch defines every new type, used or not', () => {
   const est = [{ zone: 'HUB-J', lines: [{ typeRef: 'T-NEW', count: 1 }] }];
   const presets = { a: preset({ typeRef: 'T-NEW', invented: true }), b: preset({ typeRef: 'T-UNUSED', invented: true }) };
   const out = engine.generateEstimatePatch(est, { model: { inventory: [] }, presets });
   assert.match(out, /"ref":"T-NEW"/);
-  assert.ok(!out.includes('T-UNUSED'));
-  assert.equal(engine.estimatePatchTypes(est, { model: { inventory: [] }, presets }).length, 1);
+  assert.match(out, /"ref":"T-UNUSED"/);
+  assert.equal(engine.estimatePatchTypes(est, { model: { inventory: [] }, presets }).length, 2);
   // no presets: no type section at all
   assert.ok(!engine.generateEstimatePatch(est).includes('"ref":"T-NEW"'));
 });
