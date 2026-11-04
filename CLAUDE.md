@@ -115,6 +115,7 @@ On a UI change, retake the documentation images in one pass so they cannot drift
 node docs/screens.mjs      # -> docs/*.html
 node docs/shoot.mjs        # -> docs/img/*.png
 node docs/hub-layout-shots.mjs
+node docs/companion-shots.mjs  # mocked companion; PW_CHROMIUM=<path> to use a browser already on disk
 ```
 
 ## Gotchas
@@ -177,3 +178,4 @@ node docs/hub-layout-shots.mjs
 - 2026-11-03: The SP assessment in use is DJ 100874, not 100053. Its column names differ (`SecondaryPowerType`, `PositionVoltage`/`PositionCurrent` with 0 for n/a, `Unit_ControlAddressCount`, `Link_SecondaryPowerExtRef`). parseAssessment accepts both, and the zone is BestRef = ExtRef or Ref. A missing column there fails silently, giving powerType null and 0 drivers, not an error.
 - 2026-11-03: Playwright's `setInputFiles` copies the file, so a File in the page never sees a later change on disk. To test the DesignDB refresh, stub `DataTransferItem.prototype.getAsFileSystemHandle` and dispatch a synthetic drop. `getAsFileSystemHandle()` has to be called inside the drop handler, before any await.
 - 2026-11-04: `SetupWizard`'s `only` must be a Set fixed when it opens (`TypesPage`'s `setup` state). Recomputed per render, a type filled in mid-walk drops out of `steps` and shifts the index under you.
+- 2026-11-04: In `identify()`'s `rest`, `spec: null` on a named type means the part itself is in doubt (an `&` Name matching one product, or Parameters' output count disagreeing), so the review opens the questions with the part cleared. A no-Name type is guessed into a family only when the Ref says `-NCH`, because a FEED-PROV's nodes would otherwise match.

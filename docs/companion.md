@@ -61,6 +61,57 @@ In the app (`setSharedParts` in `src/catalogue.js`):
 - **Share as a catalogue part…** / **Suggest a correction to X…** sits under the type editor;
   "Describe it yourself" in New type reaches it when no part matches.
 
+### Filling in a driver type
+
+Every place a suggested part shows up while a type is filled in, retaken against a mocked
+companion by `node docs/companion-shots.mjs`. The mock sends one agreed part, one still to check,
+an agreed correction to the LinearDrive 220D that names its supply, an unchecked correction to the
+SoloDrive 360/A that disagrees with the datasheet, and a supply to check.
+
+In the Driver attributes questions, a part people sent is marked **suggested** once two people
+agree it, and **to check** until then. A part that says nothing about its ControlType or outputs
+stays in when those are answered:
+
+![Part buttons](img/companion-wizard-parts.png)
+
+Picking one still to check asks about it. Nothing fills in from it until a second person agrees:
+
+![Check a part](img/companion-wizard-check.png)
+
+An agreed part fills in, with Suggested and a flag to report it:
+
+![Suggested](img/companion-wizard-suggested.png)
+
+An agreed supply for a DC/DC driver is filled in for you as a crumb. Click it to choose another,
+and a supply still to check is marked:
+
+![Suggested supply](img/companion-wizard-supply.png)
+
+![Supply buttons](img/companion-wizard-supplies.png)
+
+By hand, an agreed value the datasheet lacks is offered under its field, and the part can be
+corrected:
+
+![Suggested in the editor](img/companion-editor-suggested.png)
+
+![Suggest a correction](img/companion-share-card.png)
+
+When no part fits, the hand-fill form can send it as a new part:
+
+![Suggest a catalogue part](img/companion-share-new.png)
+
+A correction still to check is asked about in the type editor, and says where it disagrees with
+the datasheet:
+
+![Check a correction](img/companion-editor-check.png)
+
+New type marks the parts people sent with the sparkle:
+
+![New type](img/companion-new-type.png)
+
+On Pages none of these appear: the questions, the editor and New type offer the static
+catalogue only.
+
 ## Build names
 
 `vite.config.js` stamps every HTML entry with `build-commit`, `build-tree` and `build-name`. The
