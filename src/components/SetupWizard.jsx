@@ -1,7 +1,7 @@
 import { useMemo, useState, useSyncExternalStore } from 'react';
-import { NO_SUPPLY, allParts, atCurrent, checkOf, combine, driverTypes, matchParts, resolveSpec, sharedSupply } from '../engine.js';
+import { NO_SUPPLY, allParts, atCurrent, combine, driverTypes, matchParts, resolveSpec, sharedSupply } from '../engine.js';
 import { onSharedParts, sharedSnapshot } from '../catalogue.js';
-import SharedCheck, { ReportSuggestion } from './SharedCheck.jsx';
+import { disputed, observation, ownValues, pickKey, pickedFamily, send, vote, votePicks } from '../learn.js';
 import PresetEditor, { draftFrom, draftFromPart, toPreset } from './PresetEditor.jsx';
 import { FamilyStep, Pill, Review } from './Families.jsx';
 import {
@@ -45,15 +45,22 @@ export default function SetupWizard({ model, presets, dispatch, onClose, only })
     () => (only ? model.inventory.filter((t) => only.has(t.typeRef)) : model.inventory),
     [model.inventory, only],
   );
-  // a check of a shared part changes what can be identified
-  const sharedSet = useSyncExternalStore(onSharedParts, sharedSnapshot);
-  const { families, rest } = useMemo(() => identify(inventory, resolveSpec), [inventory, sharedSet]);
+  // Identified once per opening: a yes sends a vote and the shared set comes back
+  // changed, which must not reshuffle the families under the person mid-walk.
+  const { families: found, rest } = useMemo(() => identify(inventory, resolveSpec), [inventory]);
+  // another project's unchecked corrections to each family's datasheets, fixed for
+  // the walk too: answering one votes, and it must not vanish while still on screen
+  const asked = useMemo(() => found.map((fam) => disputed([fam.part, fam.supply])), [found]);
+  const [picks, setPicks] = useState({});
+  const families = found.map((fam, i) => pickedFamily(fam, asked[i], picks));
   const [at, setAt] = useState(0);             // families.length is the review
   const [out, setOut] = useState(() => new Set());
   const [ask, setAsk] = useState(null);        // { types, fresh?, hand? }
   const done = inventory.filter((t) => presets[t.typeRef]).length;
 
   const f = families[at];
+  const rows = asked[at] ?? [];
+  const open = rows.filter((r) => !picks[pickKey(r)]).length;
   const kept = f ? f.types.filter((x) => !out.has(x.t.typeRef)) : [];
   const aside = families.flatMap((fam) => fam.types.filter((x) => out.has(x.t.typeRef)).map((x) => ({ ...x, f: fam })));
   const toggle = (ref) => { const s = new Set(out); if (s.has(ref)) s.delete(ref); else s.add(ref); setOut(s); };
@@ -61,6 +68,8 @@ export default function SetupWizard({ model, presets, dispatch, onClose, only })
 
   const yes = () => {
     for (const x of kept) set(x.preset);
+    vote([f.part, f.supply], 'confirmed');   // another project's part, and now a second person's word
+    votePicks(rows, picks);
     setAt(at + 1);
   };
   const n = kept.length;
@@ -90,15 +99,20 @@ export default function SetupWizard({ model, presets, dispatch, onClose, only })
               </button>
             </div>
             {f
-              ? <FamilyStep f={f} out={out} toggle={toggle} />
+              ? <FamilyStep f={f} out={out} toggle={toggle} rows={rows} picks={picks}
+                  onPick={(r, v) => setPicks({ ...picks, [pickKey(r)]: v })} />
               : <Review aside={aside} rest={rest} presets={presets} onAsk={setAsk}
-                  onOwn={(x) => set(fixPreset(x.t, x.f.spec, 'fill', x.currentA))}
+                  onOther={(x) => { vote([x.f.part], 'rejected'); setAsk({ types: [x.t], fresh: true }); }}
+                  onOwn={(x, reasons) => {
+                    set({ ...fixPreset(x.t, x.f.spec, 'fill', x.currentA), name: x.preset.name });
+                    send(ownValues(x.t, x.preset, x.f.spec, reasons));
+                  }}
                   onBack={(x) => { set(x.preset); toggle(x.t.typeRef); }} />}
             <div className="tr-foot">
               {at > 0 && <button className="btn btn-sm btn-link" onClick={() => setAt(at - 1)}>Back</button>}
               {f
-                ? <button className="btn btn-primary ms-auto" onClick={n ? yes : () => setAt(at + 1)}>
-                    {n ? `Yes, ${n === 1 ? (f.types.length === 1 ? 'it is' : 'this one is') : n === f.types.length ? `all ${n} are` : `these ${n} are`} ${f.part.name}` : 'None of these'} →
+                ? <button className="btn btn-primary ms-auto" disabled={!!(n && open)} onClick={n ? yes : () => setAt(at + 1)}>
+                    {n && open ? `Answer the ${open === 1 ? 'value' : `${open} values`} above first` : n ? `Yes, ${n === 1 ? (f.types.length === 1 ? 'it is' : 'this one is') : n === f.types.length ? `all ${n} are` : `these ${n} are`} ${f.part.name}` : 'None of these'}{n && open ? '' : ' →'}
                   </button>
                 : <button className="btn btn-primary ms-auto" onClick={onClose}>Done</button>}
             </div>
@@ -133,7 +147,6 @@ function Ask({ model, presets, dispatch, types, fresh, hand: byHand, onDone }) {
   const spec = part ? combine(part, part.kind === 'dcdc' ? psu : null) : null;
   const needsPsu = part?.kind === 'dcdc';
   const needsCurrent = spec?.powerType === 'CC' && !(spec.minA != null && spec.minA === spec.maxA);
-  const unchecked = [part, needsPsu ? psu : null].filter((p) => checkOf(p) === 'unchecked');
   const ready = !!spec && (!needsPsu || psu || picked.psu === NO_SUPPLY) && (!needsCurrent || Number(currentMa) > 0);
   const set = (patch) => setPicked({ ...picked, ...patch });
 
@@ -163,15 +176,15 @@ function Ask({ model, presets, dispatch, types, fresh, hand: byHand, onDone }) {
   };
 
   // The first type, then its lookalikes: from the part at their own current
-  // when there is one, or a copy of the columns filled in by hand.
+  // when there is one, or a copy of the columns filled in by hand, also at its own.
   const write = (first, fromPart) => {
-    dispatch({ type: 'SET_PRESET', preset: first });
-    for (const s of types.slice(1)) {
-      const preset = fromPart
-        ? familyPreset(s, spec, needsCurrent ? currentOptions(s, spec)[0]?.a ?? first.currentA : null)
-        : { ...first, typeRef: s.typeRef, name: s.name || first.name };
-      dispatch({ type: 'SET_PRESET', preset });
-    }
+    const all = [first, ...types.slice(1).map((s) => (fromPart
+      ? familyPreset(s, spec, needsCurrent ? currentOptions(s, spec)[0]?.a ?? first.currentA : null)
+      : { ...first, typeRef: s.typeRef, name: s.name || first.name,
+          currentA: first.powerType === 'CC' ? known(s).currentA?.[0] ?? first.currentA : first.currentA }))];
+    for (const preset of all) dispatch({ type: 'SET_PRESET', preset });
+    if (fromPart) vote([part, psu], 'confirmed');
+    else if (!part) send([observation(types[0].name, all)].filter(Boolean).map((p) => ({ part: p })));
     onDone();
   };
 
@@ -189,20 +202,9 @@ function Ask({ model, presets, dispatch, types, fresh, hand: byHand, onDone }) {
           <>
             <Questions key={key} {...{ step, parts, picked, set, part, psu, needsPsu, needsCurrent, spec, currentMa, prec, hand }} />
 
-            {unchecked.map((p) => (
-              <SharedCheck key={p.name} part={p} />
-            ))}
-
             {ready ? (
               <div className="sw-preview">
-                <div className="fld-sec">This writes
-                  {fromShared(spec) && !unchecked.length && (
-                    <span className="sw-sug" title="Not from a spec page: other projects use these values, agreed by two people">
-                      <span className="material-icons">auto_awesome</span>Suggested
-                      <ReportSuggestion what={part.name} />
-                    </span>
-                  )}
-                </div>
+                <div className="fld-sec">This writes</div>
                 <table className="table table-sm mb-0">
                   <tbody>
                     {[
@@ -247,9 +249,8 @@ function Ask({ model, presets, dispatch, types, fresh, hand: byHand, onDone }) {
             Fill it in by hand
           </button>
           <button className="btn btn-sm btn-outline-secondary" onClick={onDone}>Back to the review</button>
-          <button className="btn btn-sm btn-primary" disabled={!ready || unchecked.length > 0}
-            onClick={() => write({ ...proposed(), origin: fromShared(spec) ? 'shared' : 'datasheet' }, true)}
-            title={unchecked.length ? 'A suggested part needs a second person to check it first' : undefined}>
+          <button className="btn btn-sm btn-primary" disabled={!ready}
+            onClick={() => write({ ...proposed(), origin: fromShared(spec) ? 'shared' : 'datasheet' }, true)}>
             {types.length > 1 ? `Use this for all ${types.length}` : 'Use this'}
           </button>
         </div>
@@ -278,19 +279,13 @@ const LABEL = {
 const used = (n) => (n ? `used by ${n} type${n === 1 ? '' : 's'} here` : '');
 const COMMON_MA = [350, 500, 700, 1050];
 
-// A part someone using the tool sent: "suggested" once two people agree it,
-// "to check" until then (it is asked about in the card once picked).
-const sug = (p) => p?.shared && (checkOf(p) === 'unchecked' ? 'to check' : 'suggested');
-
 function Opt({ label, sub, tag, top, part, onClick }) {
-  const s = sug(part);
   return (
     <button type="button" className={`q-opt ${top ? 'is-top' : ''}`} onClick={onClick}>
       <b>{label}</b>
       {sub && <span>{sub}</span>}
       {tag && <span className="q-tag">{tag}</span>}
-      {s && <span className="q-sug"><span className="material-icons">auto_awesome</span>{s}</span>}
-      {!s && part?.discontinued && <span>discontinued</span>}
+      {part?.discontinued && <span>discontinued</span>}
     </button>
   );
 }
@@ -430,9 +425,7 @@ function Questions({ step, parts, picked, set, part, psu, needsPsu, needsCurrent
         <div className="q-crumbs">
           {crumbs.map((c) => (
             <button key={c.k} type="button" className="q-crumb" title="Change this" onClick={c.go}>
-              {c.label}{c.from === 'suggestion'
-                ? <em className="q-sug"><span className="material-icons">auto_awesome</span>suggested</em>
-                : c.from && <em>from the {c.from}</em>}
+              {c.label}{c.from && c.from !== 'suggestion' && <em>from the {c.from}</em>}
             </button>
           ))}
         </div>

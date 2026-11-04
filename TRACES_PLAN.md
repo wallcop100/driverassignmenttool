@@ -126,7 +126,8 @@ These go:
   buttons and New type.
 
 `SharedCheck` stays on the Types page card only if a §7 confirmation can't reach a type any other
-way. Decide in phase 3.
+way. Decide in phase 3. (2026-11-04: it went. An unchecked correction is asked about per value in
+the family step and the type editor, `src/components/Disputes.jsx`.)
 
 ## 7. The companion, hidden
 
@@ -134,16 +135,17 @@ The companion is never visible unless it needs the person's input. There is no o
 setting, no sparkle on parts and no "suggested" badge. The only trace of it is that a family's
 source reads *from another project* rather than the spec page.
 
-It reuses the endpoints that already exist (`/companion/parts`: `{part}` and `{vote}`). The only
-server change is the reason code.
+It reuses the endpoint that already exists (`/companion/parts`: `{part}` and `{vote}`). The only
+server change is the reason code: `{reason}`, alone or as `{part, reason}`.
 
 | The person does | Sent |
 |---|---|
 | Says yes to a family built on a shared part | `{vote: yes}` for that part's `rev` |
 | Says yes to a family built on a spec page | nothing |
-| Answers "its own values are right" | `{part}`: the amendment, built by `partFromDraft`, with the reason code |
+| Answers "its own values are right" | `{reason}`: a code per differing value (derated, variant, datasheet); with `{part}`, the amendment, only for values the datasheet has wrong |
 | Fills in a type by hand that matches no part | `{part}`: a new observation, built by `partFromDraft` |
 | Answers "it's a different product" on a shared part | `{vote: no}` |
+| Picks between the datasheet and another project's unchecked correction (family step, type editor) | `{vote}`: theirs `confirmed`, the datasheet's `rejected`, not sure `unsure`; any datasheet pick on a part makes it `rejected` |
 
 **A part only one other person has entered** still forms a family. Saying yes to it is the second
 vote. There is no separate check.
@@ -173,12 +175,13 @@ The rest still holds: never a CSV, the session, or free text.
 - [x] 4. The family steps, in `src/components/Families.jsx`, driven by `SetupWizard.jsx`. `sw-all`
   and the pip rail are gone.
 - [x] 5. The review: set aside, the three §4 answers, and the groups with no product found. A
-  group is asked about once and the answer written to each, at its own current. Not done: the
-  per-value reason ("derated on purpose"...), which only matters once phase 6 sends it.
-- [ ] 6. Implicit companion: the votes, amendments and observations from §7; remove SharePart, SharedCheck in the wizard, and the tags. Needs §8 agreed.
-- [ ] 7. The reason code on the server: datajoin `/gateway/dat/parts` and dat_bridge. Without it,
-  phase 6 sends the part and drops the code.
-- [ ] 8. Retake `docs/companion-shots.mjs` and rewrite the "Filling in a driver type" section of
+  group is asked about once and the answer written to each, at its own current. The per-value
+  reason came with phase 6.
+- [x] 6. Implicit companion: the votes, amendments, reason codes and observations from §7, in
+  `src/learn.js` (2026-11-04). The removals: SharePart, SharedCheck in the wizard, and the tags.
+- [x] 7. The reason code on the server: datajoin `/gateway/dat/parts` stores it in
+  `dat_part_reasons` (branch `dat-part-reasons`). dat_bridge relays the body unchanged.
+- [x] 8. Retake `docs/companion-shots.mjs` and rewrite the "Filling in a driver type" section of
   `docs/companion.md` (the current shots show the surfaces this removes). Update CLAUDE.md, the
   hard constraint and the gotchas.
 
@@ -211,7 +214,7 @@ Its six live lighting sets carry driver types that are blank apart from `Paramet
 
 ## 10. Open decisions 🛑
 
-1. The §8 wording.
+1. ~~The §8 wording.~~ Agreed (2026-11-04); it is the CLAUDE.md hard constraint.
 2. Where a value that "differs" ends and one that is "wrong" begins. The proposal: "wrong" when the
    value is beyond what the part can do at all (power above its max, current out of range), and
    "differs" otherwise. Both now take the datasheet's value unless the type is set aside, so this

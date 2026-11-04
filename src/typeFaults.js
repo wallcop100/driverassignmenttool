@@ -220,7 +220,8 @@ export const nameStem = (name) => String(name ?? '').toLowerCase()
   .replace(/[\s\-–:,]+$/, '').replace(/\s+/g, ' ').trim();
 
 // { families: [{ key, spec, part, supply, types: [{ t, currentA, preset, note }] }],
-//   rest: [{ types, spec, why }] }, biggest family first.
+//   rest: [{ types, spec, why }] }, biggest family first. A part only one other
+// person has sent still forms a family: saying yes to it is the second vote (learn.js).
 export function identify(types, resolve) {
   const fams = new Map();
   const rest = [];
@@ -247,9 +248,7 @@ export function identify(types, resolve) {
     const name = t.name || '';
     const spec = name ? resolve(name) : null;
     const part = spec?.driver ?? spec;
-    const aside = (why) => rest.push({ types: [t], spec, why });
     if (!part) { rest.push({ types: [t], spec: null, why: name ? 'No known product has this Name.' : 'It has no Name.' }); continue; }
-    if ([part, spec.supply].some((p) => checkOf(p) === 'unchecked')) { aside('Another project sent this part, and nobody has checked it yet.'); continue; }
     // "HLG-185H-24A & LTEC LT-995 DMX Decoder" matches the supply and nothing else
     // the part itself is in doubt in these two, so the questions start without it (spec: null)
     if (/[&+]/.test(name) && (spec.parts?.length ?? 1) < 2) { rest.push({ types: [t], spec: null, why: `The Name names a second product beside the ${part.name}.` }); continue; }
@@ -266,7 +265,7 @@ export function identify(types, resolve) {
   for (const { t, part } of pairs) {
     const sib = [...fams.values()].find((f) => f.part.name === part.name && f.supply);
     const usual = sharedSupply(part);
-    const psu = sib?.supply ?? (checkOf(usual) === 'unchecked' ? null : usual);
+    const psu = sib?.supply ?? usual;
     if (psu) place(t, combine(part, psu), `Its supply, ${psu.name}, as ${sib ? 'the other types here have it' : 'people use it'}`);
     else rest.push({ types: [t], spec: part, why: 'Its Name names no supply.' });
   }
