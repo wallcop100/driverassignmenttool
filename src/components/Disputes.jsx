@@ -12,7 +12,7 @@ export default function Disputes({ rows, picks, onPick, fills }) {
   if (!rows.length) return null;
   const pair = new Set(rows.map((r) => r.part)).size > 1;
   return (
-    <div className="disputes" role="group" aria-label="Values another project corrected">
+    <div className="companion-card disputes" role="group" aria-label="Values another project corrected">
       <div className="dp-head">
         <span className="material-icons" aria-hidden="true">rate_review</span>
         {rows.length === 1 ? 'One value needs your eye' : `${rows.length} values need your eye`}
@@ -22,9 +22,9 @@ export default function Disputes({ rows, picks, onPick, fills }) {
       </div>
       {rows.map((r) => {
         const k = pickKey(r);
-        const btn = (v, label, sub, cls = 'btn-outline-secondary') => (
+        const btn = (v, label, sub, cls = 'btn-outline-primary') => (
           <button type="button" aria-pressed={picks[k] === v} onClick={() => onPick(r, v)}
-            className={`btn btn-sm ${picks[k] === v ? 'btn-primary' : cls}`}>
+            className={`btn btn-sm ${picks[k] === v ? 'btn-info' : cls}`}>
             {label}{sub && <small>{sub}</small>}
           </button>
         );
