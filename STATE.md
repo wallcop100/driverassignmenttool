@@ -7,8 +7,8 @@ Updated: 2026-11-03
 
 ## Now
 
-`main` is 86b4ae8 (#13, 2026-10-27), shipping #10–#12: the estimate rework, forced driver types and
-E/Em own lines. The self-hosting app side (#9) has the companion probe, sent bug reports, build
+`main` is 597784d (#43, 2026-11-04), shipping #22–#42, up to the working-trace redesign (#41) and
+channel-aware sizing with the Control Type column (#42). The self-hosting app side (#9) has the companion probe, sent bug reports, build
 names and badge. `dat-autodeploy.timer` keeps Connected on Pages' build. The host side, `/data/projects/dat_bridge`, is live on
 `drivers.erikrees.co.uk` and `drivers-dev.wallcop.org`. Reports land in datajoin (#19 live
 2026-10-27).
