@@ -13,16 +13,19 @@ import { fmt } from '../typeFaults.js';
 
 const anyOf = (v, ...vals) => vals.some((x) => x === v);
 
-export default function NewTypeDialog({ zone, inventory, dispatch, onClose, onCreated }) {
+// `seed` starts the filters from what some fittings need (the estimate's "New type
+// for these"): { powerType, currentA, minW, outputs, controlType }.
+export default function NewTypeDialog({ zone, inventory, dispatch, onClose, onCreated, seed = {} }) {
   const parts = allParts();   // the datasheets, then any shared additions
-  const [powerType, setPowerType] = useState('any');
-  const [minA, setMinA] = useState('');       // mA, as people say it
-  const [minW, setMinW] = useState('');
-  const [outputs, setOutputs] = useState('any');
+  const mA = seed.currentA ? String(Math.round(seed.currentA * 1000)) : '';
+  const [powerType, setPowerType] = useState(seed.powerType ?? 'any');
+  const [minA, setMinA] = useState(mA);       // mA, as people say it
+  const [minW, setMinW] = useState(seed.minW ? String(Math.ceil(seed.minW)) : '');
+  const [outputs, setOutputs] = useState(seed.outputs ? String(seed.outputs) : 'any');
   const [q, setQ] = useState('');
   const [chosen, setChosen] = useState(null); // part name
   const [psu, setPsu] = useState('');
-  const [currentA, setCurrentA] = useState('');
+  const [currentA, setCurrentA] = useState(mA);
   const [advanced, setAdvanced] = useState(null); // a draft, once the editor is opened
   const [showAll, setShowAll] = useState(false);
 
@@ -72,7 +75,9 @@ export default function NewTypeDialog({ zone, inventory, dispatch, onClose, onCr
     if (!part) return null;
     const d = draftFromPart(part, needsPsu ? supply : null);
     const a = needsCurrent ? Number(currentA) / 1000 : (spec?.minA ?? '');
-    const withCurrent = { ...d, currentA: a === '' || Number.isNaN(a) ? '' : a };
+    // a datasheet that states no control type takes the fittings' one, or nothing matches
+    const withCurrent = { ...d, currentA: a === '' || Number.isNaN(a) ? '' : a,
+      controlType: d.controlType || seed.controlType || '' };
     return {
       ...withCurrent,
       typeRef: nextTypeRef(inventory, {
@@ -83,7 +88,7 @@ export default function NewTypeDialog({ zone, inventory, dispatch, onClose, onCr
         stem: withCurrent.stem,
       }),
     };
-  }, [part, supply, currentA, needsPsu, needsCurrent, inventory]);
+  }, [part, supply, currentA, needsPsu, needsCurrent, inventory, seed.controlType]);
 
   const create = (alsoAdd) => {
     const preset = toPreset(advanced ?? draft);
@@ -136,7 +141,7 @@ export default function NewTypeDialog({ zone, inventory, dispatch, onClose, onCr
           <div className="nt-filter">
             <span>Outputs</span>
             <div className="nt-seg">
-              {['1', '2', 'any'].map((v) => (
+              {['1', '2', ...(Number(outputs) > 2 ? [outputs] : []), 'any'].map((v) => (
                 <button key={v} className={outputs === v ? 'is-on' : ''}
                   onClick={() => setOutputs(v)}>{v}</button>
               ))}

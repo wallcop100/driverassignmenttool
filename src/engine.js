@@ -1836,11 +1836,21 @@ export function estimatePatchRows(estimates, { perDriver = false } = {}) {
   }));
 }
 
-export function generateEstimatePatch(estimates, patchOpts) {
+// Driver types defined from the estimate: every edit and every new type, used or
+// not, because at tender the point is to define the types.
+export const estimatePatchTypes = (_estimates, { model, presets } = {}) => {
+  const list = Object.values(presets || {});
+  return patchablePresets([{ model, presets: list, addedDrivers: list }]);
+};
+
+export function generateEstimatePatch(estimates, patchOpts = {}) {
   const adds = estimatePatchRows(estimates, patchOpts);
+  const types = estimatePatchTypes(estimates, patchOpts).map(typeRow);
   const warn = `// ${ESTIMATE_WARNING}\n`;
-  if (!adds.length) return warn + script('');
-  return warn + script(`${header(ELEMENT_SHEET, 'E', ELEM_COLS)}\n${addSection(adds)}`);
+  if (!adds.length && !types.length) return warn + script('');
+  return warn + script(`${types.length ? header(TYPE_SHEET, 'ET', TYPE_COLS, V46_COLS) : ''}`
+    + `${adds.length ? header(ELEMENT_SHEET, 'E', ELEM_COLS) : ''}\n`
+    + `${types.length ? typeSection(types) : ''}${adds.length ? addSection(adds) : ''}`);
 }
 
 export function generatePatchScript(model, assignments, addedDrivers, presets, context) {

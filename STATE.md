@@ -7,8 +7,8 @@ Updated: 2026-11-03
 
 ## Now
 
-`main` is 86b4ae8 (#13, 2026-10-27), shipping #10–#12: the estimate rework, forced driver types and
-E/Em own lines. The self-hosting app side (#9) has the companion probe, sent bug reports, build
+`main` is 597784d (#43, 2026-11-04), shipping #22–#42, up to the working-trace redesign (#41) and
+channel-aware sizing with the Control Type column (#42). The self-hosting app side (#9) has the companion probe, sent bug reports, build
 names and badge. `dat-autodeploy.timer` keeps Connected on Pages' build. The host side, `/data/projects/dat_bridge`, is live on
 `drivers.erikrees.co.uk` and `drivers-dev.wallcop.org`. Reports land in datajoin (#19 live
 2026-10-27).
@@ -25,6 +25,11 @@ names and badge. `dat-autodeploy.timer` keeps Connected on Pages' build. The hos
 
 
 ## Log
+
+### 2026-11-04 — Driver types from the assessment
+- The estimate's Driver types menu has "Edit driver types…", which opens the shared Types page (no zone, so it lists the whole library); Back returns to the estimate. An unmatched lot's kebab has "New driver type for these…": the shared NewTypeDialog, seeded from the rows (power type, CC current, control type, outputs = channels).
+- The estimate patch now carries an ElementTypes section for every edited and every new type, used by a line or not (`estimatePatchTypes`, the same `patchablePresets`/`typeSection` as the assignment patch).
+- Skipped: picked / could-fit / unused badges on the Types page.
 
 ### 2026-11-04 — Channel-aware sizing and Control Type badges
 - `channelsOf(r)` = MAX_SecondaryPowerNodes (min 1). A fitting takes one output per channel, all on one driver, and each channel is sized for the whole fitting (W and fV), since one channel may be the only one lit. The driver becomes `floor(outputs / ch)` sets; every set is sized like one output. A type with fewer outputs than channels is no candidate, and forcing one says so.
