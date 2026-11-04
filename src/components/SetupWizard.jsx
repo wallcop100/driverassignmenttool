@@ -1,7 +1,7 @@
 import { useMemo, useState, useSyncExternalStore } from 'react';
 import { NO_SUPPLY, allParts, atCurrent, combine, driverTypes, matchParts, resolveSpec, sharedSupply } from '../engine.js';
 import { onSharedParts, sharedSnapshot } from '../catalogue.js';
-import { observation, ownValues, send, vote } from '../learn.js';
+import { disputed, observation, ownValues, pickKey, pickedFamily, send, vote, votePicks } from '../learn.js';
 import PresetEditor, { draftFrom, draftFromPart, toPreset } from './PresetEditor.jsx';
 import { FamilyStep, Pill, Review } from './Families.jsx';
 import {
@@ -47,13 +47,20 @@ export default function SetupWizard({ model, presets, dispatch, onClose, only })
   );
   // Identified once per opening: a yes sends a vote and the shared set comes back
   // changed, which must not reshuffle the families under the person mid-walk.
-  const { families, rest } = useMemo(() => identify(inventory, resolveSpec), [inventory]);
+  const { families: found, rest } = useMemo(() => identify(inventory, resolveSpec), [inventory]);
+  // another project's unchecked corrections to each family's datasheets, fixed for
+  // the walk too: answering one votes, and it must not vanish while still on screen
+  const asked = useMemo(() => found.map((fam) => disputed([fam.part, fam.supply])), [found]);
+  const [picks, setPicks] = useState({});
+  const families = found.map((fam, i) => pickedFamily(fam, asked[i], picks));
   const [at, setAt] = useState(0);             // families.length is the review
   const [out, setOut] = useState(() => new Set());
   const [ask, setAsk] = useState(null);        // { types, fresh?, hand? }
   const done = inventory.filter((t) => presets[t.typeRef]).length;
 
   const f = families[at];
+  const rows = asked[at] ?? [];
+  const open = rows.filter((r) => !picks[pickKey(r)]).length;
   const kept = f ? f.types.filter((x) => !out.has(x.t.typeRef)) : [];
   const aside = families.flatMap((fam) => fam.types.filter((x) => out.has(x.t.typeRef)).map((x) => ({ ...x, f: fam })));
   const toggle = (ref) => { const s = new Set(out); if (s.has(ref)) s.delete(ref); else s.add(ref); setOut(s); };
@@ -62,6 +69,7 @@ export default function SetupWizard({ model, presets, dispatch, onClose, only })
   const yes = () => {
     for (const x of kept) set(x.preset);
     vote([f.part, f.supply], 'confirmed');   // another project's part, and now a second person's word
+    votePicks(rows, picks);
     setAt(at + 1);
   };
   const n = kept.length;
@@ -91,7 +99,8 @@ export default function SetupWizard({ model, presets, dispatch, onClose, only })
               </button>
             </div>
             {f
-              ? <FamilyStep f={f} out={out} toggle={toggle} />
+              ? <FamilyStep f={f} out={out} toggle={toggle} rows={rows} picks={picks}
+                  onPick={(r, v) => setPicks({ ...picks, [pickKey(r)]: v })} />
               : <Review aside={aside} rest={rest} presets={presets} onAsk={setAsk}
                   onOther={(x) => { vote([x.f.part], 'rejected'); setAsk({ types: [x.t], fresh: true }); }}
                   onOwn={(x, reasons) => {
@@ -102,8 +111,8 @@ export default function SetupWizard({ model, presets, dispatch, onClose, only })
             <div className="tr-foot">
               {at > 0 && <button className="btn btn-sm btn-link" onClick={() => setAt(at - 1)}>Back</button>}
               {f
-                ? <button className="btn btn-primary ms-auto" onClick={n ? yes : () => setAt(at + 1)}>
-                    {n ? `Yes, ${n === 1 ? (f.types.length === 1 ? 'it is' : 'this one is') : n === f.types.length ? `all ${n} are` : `these ${n} are`} ${f.part.name}` : 'None of these'} →
+                ? <button className="btn btn-primary ms-auto" disabled={!!(n && open)} onClick={n ? yes : () => setAt(at + 1)}>
+                    {n && open ? `Answer the ${open === 1 ? 'value' : `${open} values`} above first` : n ? `Yes, ${n === 1 ? (f.types.length === 1 ? 'it is' : 'this one is') : n === f.types.length ? `all ${n} are` : `these ${n} are`} ${f.part.name}` : 'None of these'}{n && open ? '' : ' →'}
                   </button>
                 : <button className="btn btn-primary ms-auto" onClick={onClose}>Done</button>}
             </div>

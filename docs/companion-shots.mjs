@@ -101,6 +101,12 @@ await shot('companion-family');
 await click('button', 'Yes, all 2');
 assert.deepEqual(sent(), [{ vote: { name: 'TCI MP 32 HV K2', rev: 'r1', vote: 'confirmed' } }]);
 
+// the SoloDrive's datasheet was overruled by another project: its one value is
+// asked about in the family, and the yes waits for the answer
+await f.locator('.disputes').waitFor();
+await shot('companion-family-dispute');
+assert.equal(await f.locator('.tr-foot .btn-primary').isDisabled(), true);
+
 // a SoloDrive that says DMX: set aside, then "its own values are right" asks why, per value
 await click('.nt-dialog button', 'Not right');
 await click('.nt-dialog button', 'None of these');
@@ -125,8 +131,6 @@ await click('.nt-dialog button', 'Save');
 assert.deepEqual(sent(), [{ part: { name: 'Acme Widget 40', aliases: [], kind: 'driver', powerType: 'CC', maxPowerW: 20,
   minA: 0.4, maxA: 0.8, outputs: 1, controlType: 'DALI' } }]);
 
-// an unchecked amendment is asked about in the type editor, and says where it
-// disagrees with the datasheet
 await click('.nt-dialog button', 'Done');
 const edit = async (ref) => {
   await f.evaluate((ref) => [...document.querySelectorAll('.tp-card')]
@@ -140,11 +144,17 @@ await edit('ET-CVR-01');
 await shot('companion-editor-suggested', '.tp-card.is-editing');
 await click('.tp-card.is-editing button', 'Cancel');
 
-await edit('ET-CCR-D-1050-1CH-01');
-await f.locator('.shared-check').scrollIntoViewIfNeeded();
-await shot('companion-editor-check', '.tp-card.is-editing');
-
 assert.deepEqual(sent(), [], 'looking sends nothing');
+
+// the same correction in the type editor: their value fills the field, and Save is the vote
+await edit('ET-CCR-D-1050-1CH-01');
+await click('.disputes button', '36 W');
+assert.equal(await f.locator('.preset-editor input').nth(0).inputValue(), '36');
+await shot('companion-editor-dispute', '.tp-card.is-editing');
+await f.locator('.preset-editor input').nth(1).fill('1.05');   // CurrentRange, blank in the harness
+await click('.tp-card.is-editing button', 'Save');
+assert.deepEqual(sent(), [{ vote: { name: 'EldoLED SoloDrive 360/A', rev: 'r4', vote: 'confirmed' } }]);
+
 assert.deepEqual(errors, []);
 console.log('done');
 await browser.close();

@@ -2,7 +2,9 @@ import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
 import { PARTS, combine, resolveSpec, setSharedParts } from '../src/catalogue.js';
 import { identify, familyPreset } from '../src/typeFaults.js';
-import { observation, ownValues, productName, reasonsFor, send, vote, votesFor } from '../src/learn.js';
+import {
+  disputed, observation, ownValues, pickKey, pickVotes, pickedFamily, pickedSpec, productName, reasonsFor, send, vote, votesFor,
+} from '../src/learn.js';
 import { resetCompanion } from '../src/companion.js';
 
 afterEach(() => { setSharedParts([]); resetCompanion(); delete globalThis.fetch; });
@@ -71,6 +73,48 @@ test('a part rated per current is amended at the current the type runs at', () =
   const [b] = ownValues(ty, familyPreset(ty, spec, 0.35), spec, { maxPowerW: 'datasheet' });
   assert.deepEqual(b.part.windows, [{ a: 0.35, w: 17, fv: 54 }, { a: 0.7, w: 32, fv: 46 }]);
   assert.equal(b.part.aliases.length, 0, 'its own name is not sent back as an alias');
+});
+
+test("another project's unchecked correction: one row per value it changes, the pick fills and votes", () => {
+  const solo = PARTS.find((p) => p.name === 'EldoLED SoloDrive 360/A');
+  const fix = { name: solo.name, powerType: 'CC', maxPowerW: 36, controlType: solo.controlType, rev: 'a1', votes: one };
+  setSharedParts([fix]);
+  const rows = disputed([solo, null], {});
+  assert.deepEqual(rows.map((r) => [r.key, r.datasheet, r.theirs]), [['maxPowerW', 30, 36]], 'only what differs');
+  assert.deepEqual(disputed([solo], { a1: 'rejected' }), [], 'checked here once already');
+
+  const ty = t('ET-CCR-D-500-1CH-01', 'EldoLED SoloDrive 360/A 500mA', { powerType: 'CC', currentA: 0.5 });
+  const fam = { spec: solo, types: [{ t: ty, currentA: 0.5, preset: { ...familyPreset(ty, solo, 0.5), name: 'kept' } }] };
+  assert.equal(pickedFamily(fam, rows, {}), fam, 'no pick yet: the datasheet');
+  assert.equal(pickedFamily(fam, rows, { [pickKey(rows[0])]: 'unsure' }), fam, 'not sure: the datasheet');
+  const theirs = pickedFamily(fam, rows, { [pickKey(rows[0])]: 'theirs' });
+  assert.deepEqual([theirs.types[0].preset.maxPowerW, theirs.types[0].preset.name], [36, 'kept']);
+  assert.equal(solo.maxPowerW, 30, 'the catalogue is untouched');
+
+  assert.deepEqual(pickVotes(rows, {}), [], 'nothing until every row is answered');
+  assert.deepEqual(pickVotes(rows, { [pickKey(rows[0])]: 'theirs' }), [{ name: solo.name, vote: 'confirmed' }]);
+  assert.deepEqual(pickVotes(rows, { [pickKey(rows[0])]: 'datasheet' }), [{ name: solo.name, vote: 'rejected' }]);
+  assert.deepEqual(pickVotes(rows, { [pickKey(rows[0])]: 'unsure' }), [{ name: solo.name, vote: 'unsure' }]);
+
+  // agreed, yours, or a part no datasheet has: nothing to ask here
+  setSharedParts([{ ...fix, votes: { ...one, yes: 2, origins: 2 } }]);
+  assert.deepEqual(disputed([solo], {}), []);
+  setSharedParts([{ ...fix, own: true }]);
+  assert.deepEqual(disputed([solo], {}), []);
+  setSharedParts([mp32]);
+  assert.deepEqual(disputed([resolveSpec(mp32.name)], {}), []);
+});
+
+test("a correction to a pair's supply is combined again, capping the pair", () => {
+  const lin = PARTS.find((p) => p.kind === 'dcdc' && p.nodeCurrentA == null);
+  const psu = PARTS.find((p) => p.kind === 'supply' && p.maxPowerW > 60);
+  setSharedParts([{ name: psu.name, powerType: 'CV', maxPowerW: 50, rev: 's1', votes: one }]);
+  const spec = combine(lin, psu);
+  const rows = disputed([spec.driver, spec.supply], {});
+  assert.deepEqual(rows.map((r) => [r.part, r.key]), [[psu.name, 'maxPowerW']]);
+  const p = pickedSpec(spec, rows, { [pickKey(rows[0])]: 'theirs' });
+  assert.equal(p.maxPowerW, Math.min(lin.maxPowerW, 50));
+  assert.equal(p.supply.maxPowerW, 50);
 });
 
 test('filled in by hand: the product, its currents as the range, and watts per current', () => {

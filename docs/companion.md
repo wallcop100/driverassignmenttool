@@ -92,9 +92,18 @@ In the type editor, an agreed amendment's value is offered under its field:
 
 ![Suggested in the editor](img/companion-editor-suggested.png)
 
-An unchecked one is asked about there instead. The card names whose numbers it asks about (another project's, never this DesignDB's) and puts them beside the datasheet's:
+An unchecked amendment exists only because another project said the datasheet was wrong. In a
+later session it is asked about where the part is used, one row per value it changes: the
+datasheet's, their correction, or not sure (which uses the datasheet's). The DesignDB's own values
+are never part of this question. In the wizard the family's yes waits for the answer, and the pick
+fills its types:
 
-![Check a correction](img/companion-editor-check.png)
+![A correction in a family](img/companion-family-dispute.png)
+
+In the type editor the pick fills the field, and Save sends it as the vote: their value
+`confirmed`, the datasheet's `rejected`, not sure `unsure`. It is asked once per version:
+
+![A correction in the editor](img/companion-editor-dispute.png)
 
 ## Build names
 

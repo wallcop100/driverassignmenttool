@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { allParts, atCurrent, checkOf, combine, nextTypeRef, reachableW, resolveSpec, sharedAmendment } from '../engine.js';
-import SharedCheck from './SharedCheck.jsx';
+import Disputes from './Disputes.jsx';
+import { disputed, pickKey, pickedSpec, votePicks } from '../learn.js';
 
 // The driver type editor, shared by the Add-driver modal and the Driver types
 // page. A preset is a rating nobody declared, supplied here and patched into the
@@ -80,6 +81,12 @@ export const toPreset = (d) => ({
 const isComplete = (d) => !!d.typeRef.trim() && numOrNull(d.maxPowerW) > 0
   && (d.powerType === 'CC' ? numOrNull(d.currentA) > 0 : numOrNull(d.outputVoltageV) > 0);
 
+// The draft field each disputed spec value is written to; a current range is a check, not a field.
+const FIELD = {
+  powerType: 'powerType', maxPowerW: 'maxPowerW', outputV: 'outputVoltageV', maxFvV: 'nodeMaxFvV',
+  nodeMaxLoadW: 'nodeMaxLoadW', nodeCurrentA: 'nodeCurrentA', outputs: 'outputs', addresses: 'addresses', controlType: 'controlType',
+};
+
 export default function PresetEditor({ draft, setDraft, inventory, onSave, onCancel, onDelete }) {
   const parts = allParts();   // the datasheets, then any shared additions
   const set = (patch) => setDraft({ ...draft, ...patch });
@@ -90,9 +97,15 @@ export default function PresetEditor({ draft, setDraft, inventory, onSave, onCan
   // it advises, never edits.
   const chosen = parts.find((p) => p.name === draft.part);
   const chosenPsu = parts.find((p) => p.name === draft.psu);
-  const part = atCurrent(draft.invented && chosen
+  const found = atCurrent(draft.invented && chosen
     ? combine(chosen, chosenPsu)
     : resolveSpec(draft.name || draft.typeRef), numOrNull(draft.currentA));
+  // another project's unchecked correction to that datasheet, fixed while this is
+  // open: the pick is the vote, cast on Save, and the row must stay until then
+  const names = [found?.driver?.name ?? found?.name, found?.supply?.name].join('|');
+  const rows = useMemo(() => disputed([found?.driver ?? found, found?.supply]), [names]);
+  const [picks, setPicks] = useState({});
+  const part = pickedSpec(found, rows, picks);
 
   useEffect(() => {
     if (!draft.invented || ownRef) return;
@@ -118,9 +131,18 @@ export default function PresetEditor({ draft, setDraft, inventory, onSave, onCan
     controlType: part?.controlType,
   };
 
+  // A pick writes its value into the field, as the pair gives it once combined.
+  const pick = (r, v) => {
+    const next = { ...picks, [pickKey(r)]: v };
+    setPicks(next);
+    const k = FIELD[r.key];
+    const p = pickedSpec(found, rows, next);
+    if (k && p?.[r.key] != null) set({ [k]: p[r.key] });
+  };
+
   // What people have sent for this datasheet part, offered beside the page and
   // never in its place (report AUSTHZ). A part that is itself shared says so.
-  // An unchecked one is asked about (SharedCheck), never offered: a suggestion is only what the companion is sure of.
+  // An unchecked one is asked about (Disputes), never offered: a suggestion is only what the companion is sure of.
   const amend = sharedAmendment((part?.driver ?? part)?.name);
   // your own sending is not "another project"
   const sure = checkOf(amend) !== 'unchecked' && !amend?.own ? amend : null;
@@ -130,6 +152,8 @@ export default function PresetEditor({ draft, setDraft, inventory, onSave, onCan
     nodeCurrentA: sure?.nodeCurrentA,
   };
   const from = part?.shared ? 'another project' : 'spec page';
+  // a value taken from their correction is offered as theirs, not the spec page's
+  const theirs = new Set(rows.filter((r) => picks[pickKey(r)] === 'theirs').map((r) => FIELD[r.key]));
 
   // One field: the schema's own column name above a box that looks like a box,
   // and - where the datasheet says otherwise - an offer you can take rather than
@@ -151,8 +175,8 @@ export default function PresetEditor({ draft, setDraft, inventory, onSave, onCan
         {(off || blank) && (
           <span className="fld-sug">
             <button type="button" className={`fld-ds${part.shared ? ' is-shared' : ''}`} onClick={() => set({ [k]: want })}
-              title={`Take ${g(want)} from the ${part.name} ${from}`}>
-              {off ? `${from}: ${g(want)}` : `use ${g(want)}`}
+              title={`Take ${g(want)} from the ${part.name} ${theirs.has(k) ? 'correction' : from}`}>
+              {off ? `${theirs.has(k) ? 'their correction' : from}: ${g(want)}` : `use ${g(want)}`}
             </button>
           </span>
         )}
@@ -187,10 +211,7 @@ export default function PresetEditor({ draft, setDraft, inventory, onSave, onCan
 
   return (
     <div className="preset-editor">
-      {/* an amendment is checked here too: its size, boxes and supply fill the layout once agreed */}
-      {[part?.driver ?? part, part?.supply, amend].filter(Boolean).map((p, n) => (
-        <SharedCheck key={`${n}${p.name}`} part={p} />
-      ))}
+      <Disputes rows={rows} picks={picks} onPick={pick} fills="this type" />
       {draft.invented ? (
         <div className="spec-pick">
           <label>
@@ -300,7 +321,7 @@ export default function PresetEditor({ draft, setDraft, inventory, onSave, onCan
       )}
 
       <div className="fld-foot">
-        <button className="btn btn-sm btn-primary" disabled={!isComplete(draft)} onClick={onSave}>Save</button>
+        <button className="btn btn-sm btn-primary" disabled={!isComplete(draft)} onClick={() => { votePicks(rows, picks); onSave(); }}>Save</button>
         <button className="btn btn-sm btn-link" onClick={onCancel}>Cancel</button>
         <span className="fld-foot-note">
           Saved here, and written to the workbook when you copy the patch

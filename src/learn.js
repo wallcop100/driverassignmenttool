@@ -6,15 +6,15 @@
 // browser - never a CSV, the session or free text (CLAUDE.md, the hard constraint).
 // The builders are pure, so `node --test` covers what would be sent; the senders
 // are quiet, and on Pages (no companion) they do nothing.
-import { checkOf, resolveSpec, setSharedParts, sharedAmendment } from './catalogue.js';
+import { checkOf, combine, resolveSpec, setSharedParts, sharedAmendment } from './catalogue.js';
 import { getCompanion } from './companion.js';
-import { judge } from './typeFaults.js';
+import { familyPreset, judge } from './typeFaults.js';
 
 const norm = (s) => String(s ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
 const numOrNull = (v) => (v === '' || v == null ? null : Number(v));
 
 // The votes already given, by rev: a vote counts once per version, whether it
-// came from a family's yes or the Types page's check (SharedCheck).
+// came from a family's yes or a pick between the datasheet and a correction.
 const KEY = 'dat.sharedCheck';
 export const said = () => { try { return JSON.parse(localStorage.getItem(KEY) ?? '{}') ?? {}; } catch { return {}; } };
 export const remember = (rev, v) => {
@@ -52,6 +52,86 @@ const votable = (p) => !!p?.shared && p.shared !== 'confirmed' && typeof p.rev =
 export const votesFor = (parts, vote, given = said()) => [...new Set(parts)]
   .filter((p) => votable(p) && !given[p.rev])
   .map((p) => ({ name: p.name, rev: p.rev, vote }));
+
+// ---- another project's correction, asked about where the part is used ----
+
+// A correction exists only because someone said the datasheet was wrong
+// (ownValues). Until a second person agrees, each value it changes is one row:
+// the datasheet's, theirs, or not sure. The pick fills the types and is the vote.
+const DISPUTED = [
+  ['powerType', 'PowerType', ''],
+  ['maxPowerW', 'Max power', 'W'],
+  ['current', 'Current', 'A'],
+  ['outputV', 'Output voltage', 'V'],
+  ['maxFvV', 'Forward voltage', 'V'],
+  ['nodeMaxLoadW', 'Power per output', 'W'],
+  ['nodeCurrentA', 'Current per output', 'A'],
+  ['outputs', 'Outputs', ''],
+  ['addresses', 'Addresses', ''],
+  ['controlType', 'ControlType', ''],
+];
+const valueOf = (p, key) => (key !== 'current' ? p[key] : p.minA == null ? null : `${p.minA}–${p.maxA}`);
+
+/**
+ * Each value an unchecked correction from another project changes on these
+ * datasheet parts: [{ part, rev, key, col, unit, datasheet, theirs }]. A value
+ * the datasheet lacks is not a disagreement, and a correction already checked
+ * here (`given`, by rev) is not asked about again.
+ */
+export function disputed(parts, given = said()) {
+  const out = [];
+  for (const p of new Set(parts.filter(Boolean))) {
+    const a = !p.shared && sharedAmendment(p.name);
+    if (!a || a.own || !a.rev || checkOf(a) !== 'unchecked' || given[a.rev]) continue;
+    for (const [key, col, unit] of DISPUTED) {
+      const ds = valueOf(p, key);
+      const theirs = valueOf(a, key);
+      if (ds == null || theirs == null || String(ds).toLowerCase() === String(theirs).toLowerCase()) continue;
+      out.push({ part: p.name, rev: a.rev, key, col, unit, datasheet: ds, theirs });
+    }
+  }
+  return out;
+}
+
+export const pickKey = (r) => `${r.part}|${r.key}`;
+
+/** The spec with every value picked as 'theirs' taken from the correction; a pair is combined again. */
+export function pickedSpec(spec, rows, picks) {
+  if (!spec || !rows.some((r) => picks[pickKey(r)] === 'theirs')) return spec;
+  const fix = (p) => {
+    if (!p) return p;
+    const q = { ...p };
+    for (const r of rows) {
+      if (r.part !== p.name || picks[pickKey(r)] !== 'theirs') continue;
+      if (r.key !== 'current') q[r.key] = r.theirs;
+      else ({ minA: q.minA, maxA: q.maxA } = sharedAmendment(p.name));
+    }
+    return q;
+  };
+  if (spec.driver && spec.supply) return { ...combine(fix(spec.driver), fix(spec.supply)), parts: spec.parts };
+  if (spec.supply && !spec.driver) return { ...fix(spec), supply: fix(spec.supply) };
+  return fix(spec);
+}
+
+/** A family with its presets written from the picked spec, each keeping the name it was given. */
+export function pickedFamily(f, rows, picks) {
+  const spec = pickedSpec(f.spec, rows, picks);
+  if (spec === f.spec) return f;
+  return { ...f, spec, types: f.types.map((x) => ({ ...x, preset: { ...familyPreset(x.t, spec, x.currentA), name: x.preset.name } })) };
+}
+
+/** Per correction, the vote its picks make: any datasheet pick says no, all theirs says yes. */
+export function pickVotes(rows, picks) {
+  const by = new Map();
+  for (const r of rows) by.set(r.part, [...(by.get(r.part) ?? []), picks[pickKey(r)]]);
+  return [...by].filter(([, v]) => v.every(Boolean)).map(([name, v]) => ({
+    name, vote: v.includes('datasheet') ? 'rejected' : v.every((x) => x === 'theirs') ? 'confirmed' : 'unsure',
+  }));
+}
+
+/** Send what the picks say about each correction, once per version. */
+export const votePicks = (rows, picks) => Promise.all(pickVotes(rows, picks)
+  .map(({ name, vote: v }) => vote([sharedAmendment(name)], v)));
 
 // ---- "its own values are right" ----
 
@@ -175,7 +255,7 @@ export function observation(name, presets) {
 const parts = async () => (await getCompanion())?.parts ?? null;
 const took = (r) => { if (r?.parts) setSharedParts(r.parts); };
 
-/** Cast each vote once, remembering it so neither here nor SharedCheck asks again. */
+/** Cast each vote once, remembering it so nothing asks again. */
 export async function vote(list, v) {
   const api = await parts();
   if (!api) return;

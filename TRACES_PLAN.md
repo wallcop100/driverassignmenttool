@@ -126,7 +126,8 @@ These go:
   buttons and New type.
 
 `SharedCheck` stays on the Types page card only if a §7 confirmation can't reach a type any other
-way. Decide in phase 3.
+way. Decide in phase 3. (2026-11-04: it went. An unchecked correction is asked about per value in
+the family step and the type editor, `src/components/Disputes.jsx`.)
 
 ## 7. The companion, hidden
 
@@ -144,6 +145,7 @@ server change is the reason code: `{reason}`, alone or as `{part, reason}`.
 | Answers "its own values are right" | `{reason}`: a code per differing value (derated, variant, datasheet); with `{part}`, the amendment, only for values the datasheet has wrong |
 | Fills in a type by hand that matches no part | `{part}`: a new observation, built by `partFromDraft` |
 | Answers "it's a different product" on a shared part | `{vote: no}` |
+| Picks between the datasheet and another project's unchecked correction (family step, type editor) | `{vote}`: theirs `confirmed`, the datasheet's `rejected`, not sure `unsure`; any datasheet pick on a part makes it `rejected` |
 
 **A part only one other person has entered** still forms a family. Saying yes to it is the second
 vote. There is no separate check.

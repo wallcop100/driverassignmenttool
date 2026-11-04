@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import { fmt, fromShared, judge } from '../typeFaults.js';
 import { REASONS, reasonsFor } from '../learn.js';
+import Disputes from './Disputes.jsx';
 import Tooltip from './Tooltip.jsx';
 
 // One product family per step: the product on the left, a curve to every type
@@ -39,7 +40,7 @@ function What({ x, spec, shared }) {
   );
 }
 
-export function FamilyStep({ f, out, toggle }) {
+export function FamilyStep({ f, out, toggle, rows = [], picks = {}, onPick }) {
   const map = useRef(null);
   const [wires, setWires] = useState(null);
 
@@ -81,6 +82,7 @@ export function FamilyStep({ f, out, toggle }) {
         </p>
       </div>
       <div className="tr-body">
+        <Disputes rows={rows} picks={picks} onPick={onPick} fills={n === 1 ? 'this type' : `these ${n} types`} />
         <div className="tr-map" ref={map}>
           <svg aria-hidden="true">
             {wires?.paths.map((w, i) => (
