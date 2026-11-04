@@ -26,6 +26,8 @@ names and badge. `dat-autodeploy.timer` keeps Connected on Pages' build. The hos
 
 ## Log
 
+- **2026-11-04 (resume):** Erik's "still showing all types / 13.4 fittings" was on Russet Newt (#45), before #46/#47. A real gap was found too: a resumed standalone session kept the saved model, so a session first opened by an older build never got UoMs or segments. Resume now re-applies them from the DesignDB handle when the browser still grants read. Without that grant, re-dropping the files is the only way.
+
 - **2026-11-04 (row table):** The line's row table gets "Qty × fV each" when any row has fV. ControlGroup is now the first column, and it's hidden when drivers are kept apart by ControlGroup (Erik).
 
 - **2026-11-04 (segments):** Linear lines are now packed from the DesignDB's segments. A segment is a measured Position inside a run, such as C01r in C01, and its `Dim` cannot be split across outputs (Erik). Segments are matched to assessment rows by hub|LocationRef|ControlGroup|PositionType. The hub is inherited from the run and then the Location. If the segments don't add up to SumQuantity, the line is flagged and sized both ways, and the count that needs more drivers wins (Erik). Runs with no segments keep plain division. On the test db.xlsx 13 of 29 measured rows match, and 7 of those don't add up: the DB is older than the CSV.
