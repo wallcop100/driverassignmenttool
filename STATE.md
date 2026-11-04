@@ -26,6 +26,11 @@ names and badge. `dat-autodeploy.timer` keeps Connected on Pages' build. The hos
 
 ## Log
 
+### 2026-11-04 — Driver types from the assessment
+- The estimate's Driver types menu has "Edit driver types…", which opens the shared Types page (no zone, so it lists the whole library); Back returns to the estimate. An unmatched lot's kebab has "New driver type for these…": the shared NewTypeDialog, seeded from the rows (power type, CC current, control type, outputs = channels).
+- The estimate patch now carries an ElementTypes section for edited design types and for invented types that a line uses (`estimatePatchTypes`, the same `patchablePresets`/`typeSection` as the assignment patch).
+- Skipped: picked / could-fit / unused badges on the Types page.
+
 ### 2026-11-04 — Channel-aware sizing and Control Type badges
 - `channelsOf(r)` = MAX_SecondaryPowerNodes (min 1). A fitting takes one output per channel, all on one driver, and each channel is sized for the whole fitting (W and fV), since one channel may be the only one lit. The driver becomes `floor(outputs / ch)` sets; every set is sized like one output. A type with fewer outputs than channels is no candidate, and forcing one says so.
 - `channelClass` also counts MAX nodes > 2 as `multi` (RGBW 1+/4−). Rows now keep `posNodes` / `negNodes` (+ve/−ve).

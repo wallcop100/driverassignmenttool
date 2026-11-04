@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import * as api from '../api.js';
 import { listSessions } from '../persist.js';
-import { compareEstimate, ESTIMATE_WARNING, isFeed, estimatePatchRows, filterRequirements, filterValue, PIVOT_COLUMNS, generateEstimatePatch, isOwnLine, channelClass, channelsOf, resolveSpec, zoneViews } from '../engine.js';
+import { compareEstimate, ESTIMATE_WARNING, isFeed, estimatePatchRows, filterRequirements, filterValue, PIVOT_COLUMNS, generateEstimatePatch, estimatePatchTypes, isOwnLine, channelClass, channelsOf, resolveSpec, zoneViews } from '../engine.js';
 import { effectiveDrivers } from '../state.js';
 import { ratingsOf } from '../typeFaults.js';
 import { openReport } from '../bugReports.js';
 import { isEmbedded } from '../embed.js';
 import KebabMenu from './KebabMenu.jsx';
+import NewTypeDialog from './NewTypeDialog.jsx';
 import Tooltip from './Tooltip.jsx';
 import ViewToggle from './ViewToggle.jsx';
 
@@ -92,7 +93,7 @@ const ROW_MODES = [
 ];
 
 // `others`: hubs saved in this branch+set (overlay only), ticked into the same patch.
-function PatchDialog({ opts, zone, others, perDriver, onPerDriver, onCopy, onClose }) {
+function PatchDialog({ opts, zone, others, perDriver, onPerDriver, onCopy, onClose, model, presets }) {
   const [estimates, setEstimates] = useState([]);
   const [picked, setPicked] = useState(() => new Set(others.map((s) => s.key)));
   useEffect(() => {
@@ -102,6 +103,7 @@ function PatchDialog({ opts, zone, others, perDriver, onPerDriver, onCopy, onClo
     return () => { stale = true; };
   }, [JSON.stringify(opts), zone, picked]);
   const rows = estimatePatchRows(estimates, { perDriver });
+  const types = estimatePatchTypes(estimates, { model, presets }).length;
   const tick = (key) => setPicked((p) => { const n = new Set(p); if (!n.delete(key)) n.add(key); return n; });
 
   return (
@@ -144,8 +146,9 @@ function PatchDialog({ opts, zone, others, perDriver, onPerDriver, onCopy, onClo
           </table>
         </div>
         <div className="fd-foot">
-          <span className="est-meta">{rows.length} row{rows.length === 1 ? '' : 's'} appended, each needing a Ref</span>
-          <button className="btn btn-sm btn-primary ms-auto" onClick={() => onCopy(generateEstimatePatch(estimates, { perDriver }))}
+          <span className="est-meta">{rows.length} row{rows.length === 1 ? '' : 's'} appended, each needing a Ref
+            {types > 0 && ` · ${types} driver type${types === 1 ? '' : 's'} added or changed`}</span>
+          <button className="btn btn-sm btn-primary ms-auto" onClick={() => onCopy(generateEstimatePatch(estimates, { perDriver, model, presets }))}
             disabled={!rows.length}>Copy patch</button>
         </div>
       </div>
@@ -318,6 +321,7 @@ export default function EstimatePage({ state, dispatch, zone }) {
   const [open, setOpen] = useState(() => new Set());
   // one working at a time, in a dialog: several open inline was too busy (report TZY2VC)
   const [working, setWorking] = useState(null);
+  const [newFor, setNewFor] = useState(null); // an unmatched lot's rows, for New type for these
   // the driver type select stays out of the way until asked for from ⋮ (SSCMMX)
   const [forcing, setForcing] = useState(null);
   // one driver type for every line a PositionType is on (5SVFZX)
@@ -716,6 +720,9 @@ export default function EstimatePage({ state, dispatch, zone }) {
         )}
       </td>
       <td className="text-end" data-code={l.typeRef}>
+        {unmatched && !l.skipped && (
+          <KebabMenu title="Line actions" items={[{ label: 'New driver type for these…', icon: 'add_circle_outline', onClick: () => setNewFor(l.rows) }]} />
+        )}
         {!unmatched && <KebabMenu title="Line actions" items={[...(l.working ? [{
           label: `How ${l.count} was worked out`, icon: 'calculate',
           onClick: () => setWorking(k),
@@ -829,8 +836,18 @@ export default function EstimatePage({ state, dispatch, zone }) {
       {patchOpen && (
         <PatchDialog opts={opts} zone={zone} others={otherHubs} perDriver={!!prefs.patchPerDriver}
           onPerDriver={(v) => setPref({ patchPerDriver: v })}
-          onCopy={copyPatch} onClose={() => setPatchOpen(false)} />
+          onCopy={copyPatch} onClose={() => setPatchOpen(false)} model={model} presets={state.presets} />
       )}
+      {newFor && (() => {
+        const rs = newFor.map((ref) => reqByRef.get(ref)).filter(Boolean);
+        const one = (f) => { const v = [...new Set(rs.map(f).filter((x) => x != null && x !== ''))]; return v.length === 1 ? v[0] : undefined; };
+        const ch = Math.max(1, ...rs.map(channelsOf));
+        return (
+          <NewTypeDialog inventory={model.inventory} dispatch={dispatch} onClose={() => setNewFor(null)}
+            seed={{ powerType: one((r) => r.powerType), currentA: one((r) => (r.powerType === 'CC' ? r.currentA : null)),
+              controlType: one((r) => r.controlType), outputs: ch > 1 ? ch : undefined }} />
+        );
+      })()}
 
       {!agreed && (
         <div className="nt-backdrop">
@@ -965,6 +982,10 @@ export default function EstimatePage({ state, dispatch, zone }) {
           %
           <Info text={`Capacity left free on every driver and output, for late changes. At ${marginPct}% each is filled to ${100 - marginPct}% of its rating.`} />
         </label>
+        <button type="button" className="btn btn-sm btn-link est-c p-0"
+          onClick={() => dispatch({ type: 'SET_VIEW', view: { page: 'types', back: state.view } })}>
+          <span className="material-icons small-icon">tune</span> Edit driver types…
+        </button>
             </div>
           )}
         </span>

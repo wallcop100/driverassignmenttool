@@ -1836,11 +1836,21 @@ export function estimatePatchRows(estimates, { perDriver = false } = {}) {
   }));
 }
 
-export function generateEstimatePatch(estimates, patchOpts) {
+// Driver type edits made from the estimate, by the assignment patch's rule: an
+// edit to a design type always, an invented type only once a line uses it.
+export const estimatePatchTypes = (estimates, { model, presets } = {}) => patchablePresets([{
+  model, presets: Object.values(presets || {}),
+  addedDrivers: (estimates || []).flatMap((z) => z.lines.map((l) => ({ typeRef: l.typeRef }))),
+}]);
+
+export function generateEstimatePatch(estimates, patchOpts = {}) {
   const adds = estimatePatchRows(estimates, patchOpts);
+  const types = estimatePatchTypes(estimates, patchOpts).map(typeRow);
   const warn = `// ${ESTIMATE_WARNING}\n`;
-  if (!adds.length) return warn + script('');
-  return warn + script(`${header(ELEMENT_SHEET, 'E', ELEM_COLS)}\n${addSection(adds)}`);
+  if (!adds.length && !types.length) return warn + script('');
+  return warn + script(`${types.length ? header(TYPE_SHEET, 'ET', TYPE_COLS, V46_COLS) : ''}`
+    + `${adds.length ? header(ELEMENT_SHEET, 'E', ELEM_COLS) : ''}\n`
+    + `${types.length ? typeSection(types) : ''}${adds.length ? addSection(adds) : ''}`);
 }
 
 export function generatePatchScript(model, assignments, addedDrivers, presets, context) {
