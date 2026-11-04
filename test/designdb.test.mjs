@@ -37,10 +37,12 @@ test('keeps live drivers, parts and placed types; drops the rest', () => {
   assert.equal(a.nodes.length, 1);
 });
 
-test('positionUoms: live PositionTypes with a UoM only', () => {
+test('positionUoms: own UoM only, no ParentRef inheritance; deleted types count, live wins', () => {
   assert.deepEqual(positionUoms([
-    { Ref: 'C01r', UoM: 'm' }, { Ref: 'B02w', UoM: '' }, { Ref: 'X', UoM: 'm', IsDeleted: 'Y' }, { Ref: 'P1', UoM: 'm2' },
-  ]), { C01r: 'm', P1: 'm2' });
+    { Ref: 'LINEAR', UoM: 'm' }, { Ref: 'C01r', UoM: '', ParentRef: 'LINEAR' }, { Ref: 'B02w', UoM: '' },
+    { Ref: 'X', UoM: 'm', IsDeleted: 'Y' }, { Ref: 'P1', UoM: 'm2' },
+    { Ref: 'D', UoM: 'm', IsDeleted: 'Y' }, { Ref: 'D', UoM: '' },
+  ]), { LINEAR: 'm', X: 'm', P1: 'm2' });
 });
 
 // Hub Spacing from the DesignDB alone: hubs by the safer rule, each with its rows.

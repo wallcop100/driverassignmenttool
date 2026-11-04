@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import * as api from '../api.js';
 import { listSessions } from '../persist.js';
-import { compareEstimate, ESTIMATE_WARNING, isFeed, estimatePatchRows, filterRequirements, filterValue, PIVOT_COLUMNS, generateEstimatePatch, estimatePatchTypes, isOwnLine, channelClass, channelsOf, resolveSpec, zoneViews } from '../engine.js';
+import { compareEstimate, ESTIMATE_WARNING, isFeed, estimatePatchRows, filterRequirements, filterValue, PIVOT_COLUMNS, generateEstimatePatch, estimatePatchTypes, isOwnLine, channelClass, channelsOf, isDriverType, resolveSpec, zoneViews } from '../engine.js';
 import { effectiveDrivers } from '../state.js';
 import { ratingsOf } from '../typeFaults.js';
 import { openReport } from '../bugReports.js';
@@ -438,7 +438,7 @@ export default function EstimatePage({ state, dispatch, zone }) {
 
   // Every driver type in the library, the ones that fit these fittings first.
   // Anything may be forced: an emergency driver, or a case-by-case call.
-  const driverTypes = useMemo(() => (model.inventory ?? []).filter((t) => t.nodes?.length)
+  const driverTypes = useMemo(() => (model.inventory ?? []).filter(isDriverType)
     .map((t) => t.typeRef).sort(), [model]);
   const ForceType = ({ k, l }) => {
     const fits = l.fitTypes ?? [];
