@@ -1631,3 +1631,28 @@ test('estimate: tunable (2 nodes or 2 addresses) and multi-address (>2) fittings
   const keys = [...p.lines, ...p.unmatched].map((l) => l.key);
   assert.equal(keys.length, 5, keys.join(' | ')); // the plain row, plus one line each for the other four
 });
+
+test('estimate: a tunable fitting takes one output per channel, all on one driver', () => {
+  const head = '"Link_SecondaryPowerRef","ControlTypeRef","PositionTypeRef","SumQuantity","Unit_ControlAddressCount","SecondaryPowerNodes_+ve","SecondaryPowerNodes_-ve","MAX_SecondaryPowerNodes","SecondaryPowerType","PositionVoltage","PositionCurrent","SumVf","SumPower"';
+  const requirements = engine.parseAssessment(`${head}
+"H1","DALI","TW","3","1","1","2","2","CV","24","0","0","30"
+"H1","DALI","RGBW","1","1","1","4","4","CV","24","0","0","10"
+`);
+  assert.equal(requirements[0].negNodes, 2);
+  assert.deepEqual(requirements.map(engine.channelsOf), [2, 4]);
+  const cv = (typeRef, n) => ({ typeRef, powerType: 'CV', outputVoltageV: 24, maxPowerW: 100, controlType: 'DALI',
+    nodes: Array.from({ length: n }, (_, i) => ({ name: `OP.${i + 1}`, maxLoadW: 100 })) });
+  // a 1CH would take 3 TW fittings on one output - their second channel left nowhere
+  const p = engine.planFromRequirements({ requirements, inventory: [cv('ONE', 1), cv('TWO', 2)] }, 'H1');
+  const tw = p.lines.find((l) => l.positionTypes.includes('TW'));
+  assert.equal(tw.typeRef, 'TWO');
+  assert.equal(tw.count, 1);
+  assert.equal(tw.outputs, 2);
+  assert.equal(tw.working.channels, 2);
+  // RGBW needs 4 outputs on one driver; neither type has them
+  assert.ok(p.unmatched.some((u) => u.positionTypes?.includes('RGBW')));
+  // a 4CH holds two TW sets
+  const q = engine.planFromRequirements({ requirements: [{ ...requirements[0], qty: 6, loadW: 60 }], inventory: [cv('FOUR', 4)] }, 'H1');
+  assert.equal(q.lines[0].count, 1);
+  assert.equal(q.lines[0].working.slots, 2);
+});

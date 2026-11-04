@@ -359,6 +359,9 @@ export function parseAssessment(text, zoneAlias = {}) {
       controlType: s(row.ControlTypeRef),
       addressCount: num(row.ControlAddressCount ?? row.Unit_ControlAddressCount),
       nodes: num(row.MAX_SecondaryPowerNodes),
+      // +ve / -ve terminals: 1/2 is common-anode tunable white, 2/2 two separate channels
+      posNodes: num(row['SecondaryPowerNodes_+ve']),
+      negNodes: num(row['SecondaryPowerNodes_-ve']),
       // every column as exported, so the estimate can be filtered on any of them like a pivot
       cols: Object.fromEntries(Object.entries(row).map(([k, v]) => [k, s(v)])),
       // per fitting - what actually has to fit on a node
@@ -1032,6 +1035,8 @@ function mismatchOf(t, links, allowLocal) {
   if (links.some((l) => l.powerType !== t.powerType)) return `a ${t.powerType ?? '?'} driver for ${links[0].powerType} fittings`;
   if (!links.every((l) => fingerprintCompatible(l, t))) return 'its current or voltage does not match the fittings';
   if (!links.every((l) => controlTypeOk(l, t))) return 'its control type does not match the fittings';
+  const ch = Math.max(...links.map(channelsOf));
+  if (ch > (t.nodes?.length ?? 0)) return `${t.nodes?.length ?? 0} output${t.nodes?.length === 1 ? '' : 's'} for a ${ch}-channel fitting`;
   return 'its ratings are incomplete';
 }
 
@@ -1043,7 +1048,7 @@ function sizingCandidates(inventory, links, allowLocal = false) {
     if (t.powerType === 'CC' && t.currentA == null) return false;
     if (t.powerType === 'CV' && t.outputVoltageV == null) return false;
     return links.every((l) => l.powerType === t.powerType && fingerprintCompatible(l, t)
-      && controlTypeOk(l, t));
+      && controlTypeOk(l, t) && channelsOf(l) <= t.nodes.length);
   });
 }
 
@@ -1157,8 +1162,10 @@ export const PICK_BY = {
 // A PositionTypeRef suffixed E or Em (the emergency variant) gets a line of its
 // own unless toggled back into the bundle; any other type only when toggled out.
 // Tunable (2 nodes or 2 addresses) and multi-address (>2) fittings get a line per row, for checking
-export const channelClass = (r) => (r.addressCount > 2 ? 'multi'
+export const channelClass = (r) => (r.addressCount > 2 || r.nodes > 2 ? 'multi'
   : r.nodes === 2 || r.addressCount === 2 ? 'tunable' : null);
+// Channels one fitting needs: each is its own output, and all of them on one driver.
+export const channelsOf = (r) => Math.max(1, r?.nodes || 1);
 export const isOwnLine = (pt, ownLine = []) => !!pt && /Em?$/.test(pt) !== ownLine.includes(pt);
 
 // Fittings of different sizes, packed as they are (MBTBA2): largest first onto
@@ -1309,6 +1316,7 @@ export function planFromRequirements(model, zone, opts = {}) {
     }, new Map()).values()];
     const mixed = group.some((r) => r.wPer !== group[0].wPer || (r.fvPer ?? 0) !== (group[0].fvPer ?? 0));
     const wPer = Math.max(...runs.map((r) => r.wPer));
+    const ch = Math.max(...group.map(channelsOf));
 
     // Rank candidates by the count THIS arithmetic gives, not by pickType's,
     // which ranks on watts. When forward voltage binds - and it usually does - 
@@ -1319,6 +1327,11 @@ export function planFromRequirements(model, zone, opts = {}) {
     const size = (t) => {
       if (t.maxPowerW == null || !t.nodes?.length) return null;
       const node = t.nodes[0] ?? {};
+      // A tunable or colour fitting takes one output per channel, all on one driver,
+      // and each channel is sized for the whole fitting (it may be the only one lit).
+      // So the driver is `slots` sets of `ch` outputs, and every set is sized as one output.
+      const slots = Math.floor(t.nodes.length / ch);
+      if (!slots) return null;
       const fit = (run) => {
         const perNodeFv = run.fvPer > 0 && node.maxFvV != null
           ? Math.floor((node.maxFvV * keep) / run.fvPer) : Infinity;
@@ -1336,12 +1349,12 @@ export function planFromRequirements(model, zone, opts = {}) {
       let byWatts = null;
       let packed = null;
       if (mixed) {
-        packed = packLine(runs, t, keep);
+        packed = packLine(runs, ch > 1 ? { ...t, nodes: t.nodes.slice(0, slots) } : t, keep);
         if (!packed) return null;
         ({ count, outputs } = packed);
         perDriver = Math.ceil(qty / count);
       } else if (runs.length === 1) {
-        perDriver = Math.min(perNode * t.nodes.length, perDriverW);
+        perDriver = Math.min(perNode * slots, perDriverW);
         if (!(perDriver > 0)) return null;
         count = Math.ceil(qty / perDriver);
         outputs = Math.ceil(qty / Math.min(perNode, perDriverW));
@@ -1356,7 +1369,7 @@ export function planFromRequirements(model, zone, opts = {}) {
         outputs = runList.reduce((n, r) => n + r.outputs, 0);
         // whole fittings, not watts: 10 x 30W on a 100W driver is 4 drivers of 3, not 3.
         byWatts = perDriverW > 0 ? Math.ceil(qty / perDriverW) : Infinity;
-        count = Math.max(Math.ceil(outputs / t.nodes.length), byWatts);
+        count = Math.max(Math.ceil(outputs / slots), byWatts);
         perDriver = Math.ceil(qty / count);
       }
 
@@ -1364,14 +1377,14 @@ export function planFromRequirements(model, zone, opts = {}) {
         t,
         count,
         perDriver,
-        outputs,
+        outputs: outputs * ch,
         perNode: !mixed && Number.isFinite(perNode) ? perNode : null,
         em: isEmergency(t.typeRef) ? 1 : 0,
         waste: count * t.maxPowerW * keep - totalW,
-        spareOutputs: count * t.nodes.length - outputs,
+        spareOutputs: count * t.nodes.length - outputs * ch,
         // the inputs behind count, so the page can show its working rather than redo it
         working: {
-          keep, maxPowerW: t.maxPowerW, outputs: t.nodes.length,
+          keep, maxPowerW: t.maxPowerW, outputs: t.nodes.length, channels: ch, slots,
           maxFvV: node.maxFvV ?? null, maxLoadW: node.maxLoadW ?? null,
           wPer, fvPer: Math.max(...runs.map((r) => r.fvPer)) || null, runs: runs.length,
           mixed,
@@ -1384,11 +1397,11 @@ export function planFromRequirements(model, zone, opts = {}) {
           totalW, runList, byWatts,
         },
         // the limit that actually bound it, in the reader's terms
-        limit: packed ? (count > Math.ceil(outputs / t.nodes.length) ? 'driver W'
+        limit: packed ? (count > Math.ceil(outputs / slots) ? 'driver W'
           : runs.length > 1 ? 'outputs' : packed.bound)
-          : byWatts != null && byWatts > Math.ceil(outputs / t.nodes.length) ? 'driver W'
+          : byWatts != null && byWatts > Math.ceil(outputs / slots) ? 'driver W'
           : runList ? 'outputs'
-          : perNode * t.nodes.length <= perDriverW
+          : perNode * slots <= perDriverW
           ? (perNodeFv <= perNodeW ? 'fV' : 'node W')
           : 'driver W',
       };
@@ -1431,7 +1444,9 @@ export function planFromRequirements(model, zone, opts = {}) {
 
     if (!best) {
       unmatched.push({ key, qty, rows: group.map((r) => r.ref),
-        reason: 'No ElementType in the DesignDB can take these' });
+        positionTypes: [...new Set(group.map((r) => r.positionType).filter(Boolean))],
+        reason: ch > 1 ? `No ElementType in the DesignDB can take these ${ch}-channel fittings (${ch} outputs on one driver)`
+          : 'No ElementType in the DesignDB can take these' });
       continue;
     }
 

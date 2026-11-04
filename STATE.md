@@ -26,7 +26,15 @@ names and badge. `dat-autodeploy.timer` keeps Connected on Pages' build. The hos
 
 ## Log
 
-### 2026-11-04 — "How N was worked out" redesign (branch `working-trace`, not merged)
+### 2026-11-04 — Channel-aware sizing and Control Type badges
+- `channelsOf(r)` = MAX_SecondaryPowerNodes (min 1). A fitting takes one output per channel, all on one driver, and each channel is sized for the whole fitting (W and fV), since one channel may be the only one lit. The driver becomes `floor(outputs / ch)` sets; every set is sized like one output. A type with fewer outputs than channels is no candidate, and forcing one says so.
+- `channelClass` also counts MAX nodes > 2 as `multi` (RGBW 1+/4−). Rows now keep `posNodes` / `negNodes` (+ve/−ve).
+- Before this, two 2-channel B02w went one per output onto a single 2CH driver. Now they take 2 drivers.
+- Flags show a labelled chip ("Tunable · 2 ch" amber, "Colour · 4 ch" pink); the tooltip gives +ve/−ve and the address count. The working shows the channel note, "N per set × M sets of ch outputs", and output chips per channel.
+- New Control Type column after Driver Type/Name, on by default (`pvCtl`), using the Kaizen badge colours (page 134871).
+- The P11 assessment (DJ 100874, 2026-11-04 export) has 358 tunable rows: 210 CV 1+/2−, 147 CC 2+/2−, 1 CV 2+/2−. The test DesignDB has none of its types, so it was checked with `~/.playwright-mcp/dat/assessment-tw.csv` (B02w as 2+/2−).
+
+### 2026-11-04 — "How N was worked out" redesign (#41)
 
 - `Working` is now one numbered rail: Fittings → Driver → Per driver (or Packing) → Drivers. The labels are terse.
 - Load is blue and capacity is black throughout. Per driver is a Load / Capacity / Fits table with the binding row marked "limit".
