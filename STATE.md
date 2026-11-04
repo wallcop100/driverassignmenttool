@@ -15,6 +15,10 @@ names and badge. `dat-autodeploy.timer` keeps Connected on Pages' build. The hos
 
 ## Next
 
+0. Driver traces (`TRACES_PLAN.md`, tracked in its §9): identify the product, judge the data,
+   ask only about the gaps; the companion made implicit. Phases 2–5 merged to `dev`
+   (2026-11-04). Next: phase 6 needs the §8 wording 🛑, and
+   `docs/companion-shots.mjs` (which clicks the old wizard) is retaken in phase 8.
 1. n8n overlay sync (plan §7): not built; needs the read/save gateway actions in datajoin first.
 2. AUSTHZ shared driver parts: app and datajoin are live; prod and dev bridges don't serve
    `parts` yet, so the feature stays off. Deploy dat_bridge `shared-parts`, then have Erik run
@@ -25,6 +29,9 @@ names and badge. `dat-autodeploy.timer` keeps Connected on Pages' build. The hos
 
 
 ## Log
+
+- **2026-11-04 (driver families):** The Driver attributes dialog now walks one product family per step (`src/components/Families.jsx`): the product and its datasheet values on the left, curves to each type, and on each type only what sets it apart (its current or voltage, a ~~was~~ → now correction, a guess); fills the whole family shares stay on the product. "Not right" sets a type aside; the review offers "a different product", "its own values are right" and "put it back", and groups with no product found get the questions once for the group. `identify`/`judge`/`familyPreset` in `typeFaults.js`. Styling is the v2 mock's, with the SP assessment's type pills. Checked in the harness against a 4746-style blank library: families, set aside, review, the `&` decoder starting fresh, the TCI group. `docs/companion-shots.mjs` is now stale.
+- **2026-11-04 (driver questions):** Branch `driver-questions`. The wizard's "Which driver is this?" dropdowns are now questions with buttons: CC or CV first, then ControlType or outputs (whichever splits the parts left, while more than 4), then the part, the supply (DC/DC) and the current (CC with a range). Buttons are ordered by what this project's filled-in types use (`precedent` in `typeFaults.js`). Each has an "Other…" box, and an answer no part fits opens the hand-fill form carrying the answers. What the Ref, Name or type already says is a crumb, and clicking it asks again. Checked in the harness: the CC path to preview, a CV DC/DC asking the supply, a re-ask and an unmatched part. Companion: suggested parts are tagged "suggested"/"to check" on the buttons, a picked part brings its own agreed supply (a "suggested" crumb), and a part with no ControlType or outputs isn't dropped by those answers. `docs/companion-shots.mjs` retakes every companion surface in type filling against a mocked companion, shown in `docs/companion.md`.
 
 - **2026-11-04 (types page reports):** Branch `fix/dat-reports-1104`. G78VGK: "N worth a look" is a filter toggle with ✕. KXA6KQ: the back button names its destination ("Estimate", the hub, "Zones"). VSGJFE: the setup banner and the wizard skip types filled in here, and the wizard's list is fixed when it opens. KKFPJV: the cause was that "Use the spec page" left a blank the page cannot fill (no current in the Ref/Name, or a DC/DC with no supply), and the dialog closed on a card still flagged. Now the dialog follows the type, stays open with what is left, and closes when nothing is. KWNT6U: the dialog asks the CC current inline, and "Answer the questions" opens the wizard for that one type.
 
