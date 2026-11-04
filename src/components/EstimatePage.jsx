@@ -204,18 +204,24 @@ export default function EstimatePage({ state, dispatch, zone }) {
   }, []);
   const marginPct = Math.round((prefs.margin ?? 0) * 100);
 
+  // hub by hub: only standalone over the whole job - the overlay already sends one hub
+  const canStep = !isEmbedded() && !zone && zones.length > 1;
+  const [hubAt, setHubAt] = useState(0);
+  const at = Math.min(hubAt, zones.length - 1);
+  // stepping, every figure is the shown hub's (JZAJZ7)
+  const stepped = canStep && prefs.hubByHub ? zones[at]?.zone : null;
   const totals = useMemo(() => {
     const byType = new Map();
     let drivers = 0;
     let unmatched = 0;
     let skipped = 0;
-    for (const z of zones) {
+    for (const z of stepped ? zones.filter((x) => x.zone === stepped) : zones) {
       drivers += z.drivers;
       for (const u of z.unmatched) if (u.feed) continue; else if (u.skipped) skipped += u.qty; else unmatched += u.qty;
       for (const l of z.lines) byType.set(l.typeRef, (byType.get(l.typeRef) ?? 0) + l.count);
     }
     return { drivers, unmatched, skipped, byType: [...byType.entries()].sort() };
-  }, [zones]);
+  }, [zones, stepped]);
 
   // Beside the hub's actual drivers, per type - only for one hub that has any.
   // An estimate-only hub has nothing to compare, and saying "0 in the hub" for
@@ -270,6 +276,7 @@ export default function EstimatePage({ state, dispatch, zone }) {
   const unmatchedLabel = (skipped = false) => {
     const byUnit = new Map();
     for (const z of zones) {
+      if (stepped && z.zone !== stepped) continue;
       for (const u of z.unmatched.filter((x) => !x.feed && !!x.skipped === skipped)) {
         for (const ref of u.rows ?? []) {
           const r = reqByRef.get(ref);
@@ -281,7 +288,7 @@ export default function EstimatePage({ state, dispatch, zone }) {
   };
 
   // scoped to one hub when routed from the landing page, whole job otherwise
-  const rows = zone ? model.requirements.filter((r) => r.zone === zone) : model.requirements;
+  const rows = zone || stepped ? model.requirements.filter((r) => r.zone === (zone || stepped)) : model.requirements;
   // a filter is only offered for a column this export has; values counted over the scope
   const columns = useMemo(() => [...new Set(rows.flatMap((r) => Object.keys(r.cols ?? {})))], [rows]);
   const pivots = PIVOT_COLUMNS.map((names) => names.find((c) => columns.includes(c))).filter(Boolean);
@@ -332,16 +339,37 @@ export default function EstimatePage({ state, dispatch, zone }) {
   const flash = nudge === 'flash';
   const [agreed, setAgreed] = useState(nudge !== 'confirm');
   const toggle = (set, k) => set((p) => { const n = new Set(p); if (!n.delete(k)) n.add(k); return n; });
-  // hub by hub: only standalone over the whole job - the overlay already sends one hub
-  const canStep = !isEmbedded() && !zone && zones.length > 1;
-  const [hubAt, setHubAt] = useState(0);
-  const at = Math.min(hubAt, zones.length - 1);
   const shown = (canStep && prefs.hubByHub ? zones.slice(at, at + 1) : zones).filter((z) => !notSized || groupsOf(z).length);
   // Total Power / Total Forward Voltage: hidden unless asked for from the header's ⋮
   const showP = !!prefs.pvPower;
   const showV = !!prefs.pvFv;
   const showN = !!prefs.pvName;   // Driver Name, beside Driver Type (RDTQNJ)
   const showC = prefs.pvCtl !== false; // Control Type, shown unless turned off
+  // click a header to sort the hubs and the groups in each, again to reverse; ⋮ resets (95QTPK)
+  const [sort, setSort] = useState(null);
+  const keyOf = ({ cg, items }, col) => {
+    const refs = items.flatMap((i) => i.l.rows ?? []);
+    const m = items.filter((i) => !i.unmatched);
+    const types = [...new Set(m.map((i) => i.l.typeRef))];
+    return {
+      name: cg, power: powerOf(refs), fv: rowsOf(refs).reduce((n, r) => n + (r.fvPer ?? 0) * r.qty, 0),
+      type: types.join(', '), dname: types.map(nameOf).join(', '),
+      ctl: [...new Set(rowsOf(refs).map((r) => r.controlType).filter(Boolean))].join(', '),
+      count: m.reduce((n, i) => n + i.l.count, 0), limit: items.length === 1 ? items[0].l.limit ?? '' : '',
+    }[col];
+  };
+  const hubKey = (z, col) => ({ name: z.zone, power: z.loadW, count: z.drivers })[col];
+  const cmp = (a, b) => (typeof a === 'number' && typeof b === 'number' ? a - b
+    : String(a ?? '').localeCompare(String(b ?? ''), undefined, { numeric: true }));
+  const sorted = (list, key) => (!sort || !list.length || key(list[0], sort.col) === undefined ? list
+    : [...list].sort((a, b) => cmp(key(a, sort.col), key(b, sort.col)) * sort.dir));
+  const Th = ({ col, className, children }) => (
+    <th className={className} aria-sort={sort?.col === col ? (sort.dir > 0 ? 'ascending' : 'descending') : undefined}>
+      <button type="button" className="pv-sort" onClick={() => setSort((o) => ({ col, dir: o?.col === col ? -o.dir : 1 }))}>
+        {children}{sort?.col === col && <span className="material-icons">{sort.dir > 0 ? 'arrow_upward' : 'arrow_downward'}</span>}
+      </button>
+    </th>
+  );
   const lineKeys = shown.flatMap((z) => groupsOf(z).flatMap(({ g, items }) => [g, ...items.map((i) => i.k)]));
 
   // the line's rows are one channelClass (the engine splits on it), so one chip says it all
@@ -521,6 +549,9 @@ export default function EstimatePage({ state, dispatch, zone }) {
     const ch = w.channels ?? 1;
     const sets = w.slots ?? n;
     const setsOf = (x) => (ch > 1 ? `${x} set${x === 1 ? '' : 's'} of ${ch} outputs` : outsOf(x));
+    // the type's own node names, {<OP.1,<OP.2} (J5KE96)
+    const nodes = (model.inventory ?? []).find((t) => t.typeRef === l.typeRef)?.nodes ?? [];
+    const outName = (j) => nodes[j]?.name || `O${j + 1}`;
 
     // Per driver, then per output: the packer's own split where there is one,
     // else fill order for plain division. Grouped runs have no split.
@@ -645,11 +676,11 @@ export default function EstimatePage({ state, dispatch, zone }) {
                 {n > 1 || d.outs.some((o) => o?.fv || o?.w) ? (
                   <div className="est-tr-outs">{d.outs.map((o, j) => (o ? (
                     <span className="est-tr-out" key={j}>
-                      O{j + 1} {o.label}
+                      {outName(j)} {o.label}
                       {o.fv && <> · {N(o.fv[0], 'V', true)} / {N(o.fv[1], 'V')}</>}
                       {o.w && (w.packing || !o.fv) && <> · {N(o.w[0], 'W', true)} / {N(o.w[1], 'W')}</>}
                     </span>
-                  ) : <span className="est-tr-out is-spare" key={j}>O{j + 1} spare</span>))}</div>
+                  ) : <span className="est-tr-out is-spare" key={j}>{outName(j)} spare</span>))}</div>
                 ) : null}
               </div>
             </div>
@@ -912,6 +943,12 @@ export default function EstimatePage({ state, dispatch, zone }) {
                   );
                 })}
                 <div className="hub-mdiv" />
+                {filtersOn > 0 && (
+                  <button type="button" className="hub-mi"
+                    onClick={() => filters.forEach(([col]) => dispatch({ type: 'SET_ROW_FILTER', field: col, values: pivots.includes(col) ? [] : null }))}>
+                    <span className="material-icons">filter_alt_off</span><span className="grow">Clear all filters</span>
+                  </button>
+                )}
                 <div className="hub-mi">
                   <span className="material-icons">add</span>
                   <select className="form-select form-select-sm" value="" aria-label="Filter on another column"
@@ -1066,9 +1103,10 @@ export default function EstimatePage({ state, dispatch, zone }) {
         <table className="est-pivot">
           <thead>
             <tr>
-              <th>Hub / ControlGroup</th>
-              {showP && <th className="n">Total Power</th>}{showV && <th className="n">Total Forward Voltage</th>}
-              <th>Driver Type</th>{showN && <th>Driver Name</th>}{showC && <th>Control Type</th>}<th className="n">Driver Count</th><th>Flags</th><th>Limited By</th>
+              <Th col="name">Hub / ControlGroup</Th>
+              {showP && <Th col="power" className="n">Total Power</Th>}{showV && <Th col="fv" className="n">Total Forward Voltage</Th>}
+              <Th col="type">Driver Type</Th>{showN && <Th col="dname">Driver Name</Th>}{showC && <Th col="ctl">Control Type</Th>}
+              <Th col="count" className="n">Driver Count</Th><th>Flags</th><Th col="limit">Limited By</Th>
               <th className="text-end">
                 {/* the totals are there to check against, not to read every time */}
                 <KebabMenu title="Columns" items={[
@@ -1076,12 +1114,13 @@ export default function EstimatePage({ state, dispatch, zone }) {
                   { label: 'Total Forward Voltage', icon: showV ? 'check_box' : 'check_box_outline_blank', onClick: () => setPref({ pvFv: !showV }) },
                   { label: 'Driver Name', icon: showN ? 'check_box' : 'check_box_outline_blank', onClick: () => setPref({ pvName: !showN }) },
                   { label: 'Control Type', icon: showC ? 'check_box' : 'check_box_outline_blank', onClick: () => setPref({ pvCtl: !showC }) },
+                  ...(sort ? [{ label: 'Reset sorting', icon: 'sort', onClick: () => setSort(null) }] : []),
                 ]} />
               </th>
             </tr>
           </thead>
-          {shown.map((z) => {
-            const groups = groupsOf(z);
+          {sorted(shown, hubKey).map((z) => {
+            const groups = sorted(groupsOf(z), keyOf);
             const hubTypes = new Set(z.lines.map((l) => l.typeRef));
             return (
               <tbody key={z.zone}>
