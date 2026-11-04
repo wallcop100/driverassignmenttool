@@ -69,7 +69,7 @@ export default function App({ domain = driversDomain }) {
     const pin = embedded && state.view.page === 'zone'
       && saved.model?.zones?.includes(state.view.zone) ? state.view : undefined;
     dispatch({ type: 'RESTORE', saved, view: pin, presets: loadTypes(), ...loadTypeExtras() });
-    if (!embedded) api.resumeDesignDb();
+    if (!embedded) api.resumeDesignDb(saved.model).then((m) => m && dispatch({ type: 'SET_MODEL', model: m }));
     setSaved(null);
   };
   const discard = () => { clearSession(); setSaved(null); };
