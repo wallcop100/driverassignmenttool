@@ -29,9 +29,9 @@ let ptUom = {};
 let ptPieces = {};
 const withUom = (m) => {
   for (const r of m?.requirements ?? []) {
-    if (!r.uom && ptUom[r.positionType]) r.uom = ptUom[r.positionType];
+    if (ptUom[r.positionType]) r.uom = ptUom[r.positionType];
     const p = ptPieces[[r.hubRef, r.cols?.LocationRef, r.controlGroup, r.positionType].join('|')];
-    if (p && !r.pieces) r.pieces = p;
+    if (p) r.pieces = p;
   }
   return m;
 };
@@ -159,7 +159,9 @@ export function watchDesignDb(file, handle = null) {
   saveDesignDbHandle(handle ? { handle, at: file.lastModified } : null);
 }
 // After a reload: the handle saved with the session, compared against the save it was read at.
-export async function resumeDesignDb() {
+// Given the resumed model, returns a copy with UoMs and segments from the DesignDB as it is now
+// (a session saved by an older build has neither), or null when the workbook can't be read.
+export async function resumeDesignDb(resumed = null) {
   const v = await loadDesignDbHandle();
   source = v?.handle ? { file: null, handle: v.handle, at: v.at } : null;
   // the hub rows aren't in the session, so read them back while the handle still may
@@ -167,7 +169,10 @@ export async function resumeDesignDb() {
   try {
     const db = await readDesignDb(await v.handle.getFile());
     setDriverExtras({ compositions: db.compositions, elements: db.hubs });
+    ({ uom: ptUom, pieces: ptPieces } = db);
+    if (resumed?.requirements) return withUom({ ...resumed, requirements: resumed.requirements.map((r) => ({ ...r })) });
   } catch { /* unreadable now: the refresh banner takes it from here */ }
+  return null;
 }
 // A handle restored after a reload needs the user's say-so (a click) before it reads again.
 export async function allowDesignDb(handle) {
