@@ -117,20 +117,45 @@ export const positionUoms = (rows) => Object.fromEntries(Object.entries(Object.f
   [...rows.filter((r) => !live(r)), ...rows.filter(live)].map((r) => [s(r.Ref), s(r.UoM)])))
   .filter(([ref, u]) => ref && u));
 
+// The segments of each run, keyed the way the assessment rolls Positions up:
+// hub|location|control group|PositionType. A segment is a measured Position that
+// sits inside another Position (C01r in C01); it cannot be split across outputs.
+// A run with no segments gives nothing: at that level the division is estimate enough.
+export function positionPieces(rows, uom, locations = []) {
+  const ps = rows.filter(live);
+  const by = new Map([...locations.filter(live), ...ps].map((r) => [s(r.Ref), r]));
+  const parent = (r) => by.get(s(r.ContextRef));
+  // own value, else the parent's: the run, then its Location and theirs (links are inherited)
+  const inh = (r, col, n = 0) => s(r[col]) || (parent(r) && n < 20 ? inh(parent(r), col, n + 1) : '');
+  const isPos = new Set(ps.map((r) => s(r.Ref)));
+  const loc = (r, n = 0) => (isPos.has(s(r.ContextRef)) && n < 20 ? loc(parent(r), n + 1) : s(r.ContextRef));
+  const out = {};
+  for (const r of ps) {
+    const len = Number(r.Dim);
+    if (!uom[s(r.TypeRef)] || !isPos.has(s(r.ContextRef)) || !(len > 0)) continue;
+    const hub = inh(r, 'Link_SecondaryPowerRef') || inh(r, 'LinkVia_SecondaryPowerRef');
+    const k = [hub, loc(r), inh(r, 'ControlGroupText'), s(r.TypeRef)].join('|');
+    (out[k] ??= []).push(len);
+  }
+  return out;
+}
+
 export const isWorkbook = (file) => /\.xls[xm]$/i.test(file.name);
 
 // SheetJS is only loaded when somebody drops a workbook, so the CSV path stays light.
 export async function readDesignDb(file) {
   const XLSX = await import('xlsx');
-  const wb = XLSX.read(await file.arrayBuffer(), { sheets: ['ElementTypes', 'Elements', 'Positions', 'PositionTypes'] });
+  const wb = XLSX.read(await file.arrayBuffer(), { sheets: ['ElementTypes', 'Elements', 'Positions', 'PositionTypes', 'Locations'] });
   if (!wb.SheetNames.includes('ElementTypes')) {
     throw new Error(`${file.name} has no ElementTypes sheet - is it a DesignDB?`);
   }
   const rows = (n) => (wb.Sheets[n] ? XLSX.utils.sheet_to_json(wb.Sheets[n], { defval: '' }) : []);
   const sheets = { ElementTypes: rows('ElementTypes'), Elements: rows('Elements'), Positions: rows('Positions') };
+  const uom = positionUoms(rows('PositionTypes'));
   return {
     types: typesCsvFromSheets(sheets),
-    uom: positionUoms(rows('PositionTypes')),
+    uom,
+    pieces: positionPieces(sheets.Positions, uom, rows('Locations')),
     ...hubsFromSheets(sheets),
   };
 }

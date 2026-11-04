@@ -1667,3 +1667,22 @@ test('the estimate patch defines every new type, used or not', () => {
   // no presets: no type section at all
   assert.ok(!engine.generateEstimatePatch(est).includes('"ref":"T-NEW"'));
 });
+
+test('DesignDB segments are packed whole; when they disagree with the assessment the bigger count wins', () => {
+  const inventory = [{ typeRef: 'CV-100', controlType: 'DALI', powerType: 'CV', outputVoltageV: 24, maxPowerW: 100,
+    nodes: [{ name: 'OP.1', maxLoadW: 100 }] }];
+  const row = (qty, pieces) => ({ ref: 'R1', zone: 'Z', qty, powerType: 'CV', voltageV: 24, loadW: 24 * qty,
+    wPer: 24, fvPer: null, controlType: 'DALI', uom: 'm', pieces });
+  const plan = (r) => engine.planFromRequirements({ inventory, requirements: [r] }, 'Z').lines[0];
+  // 6 m divides into 2 drivers of 3 m, but three 2 m segments (48 W) can't pair inside 95 W
+  assert.equal(plan(row(6)).count, 2);
+  const a = plan(row(6, [2, 2, 2]));
+  assert.equal(a.count, 3);
+  assert.equal(a.pieceIssue, null);
+  assert.equal(a.working.segments.used, 'segments');
+  // the assessment says 12 m: dividing that needs 4, more than the segments' 3
+  const b = plan(row(12, [2, 2, 2]));
+  assert.equal(b.count, 4);
+  assert.match(b.pieceIssue, /total 6 but the assessment says 12/);
+  assert.equal(b.working.segments.used, 'assessment');
+});
