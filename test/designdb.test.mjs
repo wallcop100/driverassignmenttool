@@ -83,3 +83,14 @@ test('hubsFromSheets: a hub holds a driver or is named as secondary power', () =
   assert.deepEqual(m.zones, ['H2', 'H3', 'HUB-A']);
   assert.equal(m.mode, 'empty');
 });
+
+test('positionPieces: segments inside a run, keyed hub|location|group|type, inheriting from the run', async () => {
+  const { positionPieces } = await import('../src/designdb.js');
+  assert.deepEqual(positionPieces([
+    { Ref: 'P9', TypeRef: 'C01', ContextRef: 'L102', Dim: 14.2, ControlGroupText: 'G' },
+    { Ref: 'P10', TypeRef: 'C01r', ContextRef: 'P9', Dim: 1.7 },
+    { Ref: 'P11', TypeRef: 'C01r', ContextRef: 'P9', Dim: 0.2, ControlGroupText: 'G' },
+    { Ref: 'P12', TypeRef: 'C01r', ContextRef: 'P9', Dim: 1.7, IsDeleted: 'Y' },
+    { Ref: 'P13', TypeRef: 'B02w', ContextRef: 'P9', Dim: 3 }, // counted, not measured
+  ], { C01: 'm', C01r: 'm' }, [{ Ref: 'L102', ContextRef: 'L1', Link_SecondaryPowerRef: 'P1' }]), { 'P1|L102|G|C01r': [1.7, 0.2] });
+});

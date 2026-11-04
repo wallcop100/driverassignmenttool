@@ -25,8 +25,14 @@ let raw = { form: null, links: null, types: null, assessment: null, empty: null 
 let applied = '[]';
 // PositionType -> UoM from the DesignDB, for assessments without a UoM column (DJ 100874)
 let ptUom = {};
+// assessment row key -> segment lengths, from the DesignDB's Positions
+let ptPieces = {};
 const withUom = (m) => {
-  for (const r of m?.requirements ?? []) if (!r.uom && ptUom[r.positionType]) r.uom = ptUom[r.positionType];
+  for (const r of m?.requirements ?? []) {
+    if (!r.uom && ptUom[r.positionType]) r.uom = ptUom[r.positionType];
+    const p = ptPieces[[r.hubRef, r.cols?.LocationRef, r.controlGroup, r.positionType].join('|')];
+    if (p && !r.pieces) r.pieces = p;
+  }
   return m;
 };
 // Hub Ref -> hub label, from the host's context: the assessment names a hub by
@@ -78,11 +84,13 @@ export async function parseAuto(files) {
   }
   const book = all.find(isWorkbook);
   ptUom = {};
+  ptPieces = {};
   setDriverExtras();
   const db = book ? await readDesignDb(book) : null;
   if (db) {
     found.types ??= db.types;
     ptUom = db.uom;
+    ptPieces = db.pieces;
     setDriverExtras({ compositions: db.compositions, elements: db.hubs });
   }
   // the DesignDB alone: its hubs, their drivers and stored layouts, for the space layout
@@ -133,7 +141,7 @@ function needsTypes(message) {
 // the app. Rebuilt as if it had been dropped with the CSVs.
 export async function attachDesignDb(file, presets, handle = null) {
   const db = await readDesignDb(file);
-  ({ types: raw.types, uom: ptUom } = db);
+  ({ types: raw.types, uom: ptUom, pieces: ptPieces } = db);
   if (!embed.isEmbedded()) setDriverExtras({ compositions: db.compositions, elements: db.hubs });
   // opened from the DesignDB alone, so a save may have added or removed a hub
   if (Array.isArray(raw.empty)) raw.empty = Object.keys(db.hubs).sort();

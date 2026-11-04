@@ -397,19 +397,25 @@ export default function EstimatePage({ state, dispatch, zone }) {
     return cts.map((ct) => <span key={ct} className="est-ct" style={{ background: CT_BG[ct.toLowerCase()] ?? '#64748b' }}>{ct.toUpperCase()}</span>);
   };
 
-  const RowTable = ({ refs }) => (
+  const RowTable = ({ refs }) => {
+    const rs = refs.map((ref) => reqByRef.get(ref)).filter(Boolean);
+    const hasFv = rs.some((r) => r.fvPer > 0);
+    // a driver kept to one ControlGroup says it once, on the line
+    const showCg = !prefs.restrictControlGroup;
+    return (
     <table className="est-rowtable">
-      <thead><tr><th>PositionType</th><th>Room</th><th>ControlGroup</th><th className="text-end">Qty × W each</th><th>Drive</th><th /></tr></thead>
+      <thead><tr>{showCg && <th>ControlGroup</th>}<th>PositionType</th><th>Room</th><th className="text-end">Qty × W each</th>{hasFv && <th className="text-end">Qty × fV each</th>}<th>Drive</th><th /></tr></thead>
       <tbody>
-        {refs.map((ref) => reqByRef.get(ref)).filter(Boolean).map((r) => {
+        {rs.map((r) => {
           const part = resolveSpec(r.positionType);
           const u = r.uom ? ` ${r.uom}` : '';
           return (
             <tr key={r.ref} data-code={r.ref}>
+              {showCg && <td className="est-mono">{r.controlGroup}</td>}
               <td className="est-type">{r.positionType}{part && <small>{part.name}</small>}</td>
               <td>{r.location}</td>
-              <td className="est-mono">{r.controlGroup}</td>
               <td className="est-load">{fmt(r.qty)}{u} × {fmt(r.wPer)} W{r.uom ? `/${r.uom}` : ''} = <b>{fmt(r.loadW)} W</b></td>
+              {hasFv && <td className="est-load">{r.fvPer > 0 && <>{fmt(r.qty)}{u} × {fmt(r.fvPer)} V{r.uom ? `/${r.uom}` : ''} = <b>{fmt(r.qty * r.fvPer)} V</b></>}</td>}
               <td>
                 <span className={`est-drive is-${(r.powerType ?? '').toLowerCase()}`}>
                   {!r.powerType ? 'no CC/CV' : r.powerType === 'CV' ? `CV ${r.voltageV ?? ''} V`
@@ -435,6 +441,7 @@ export default function EstimatePage({ state, dispatch, zone }) {
       </tbody>
     </table>
   );
+  };
 
   // Every driver type in the library, the ones that fit these fittings first.
   // Anything may be forced: an emergency driver, or a case-by-case call.
@@ -521,7 +528,7 @@ export default function EstimatePage({ state, dispatch, zone }) {
       estimate: {
         zone: z, typeRef: l.typeRef, count: l.count, qty: l.qty, perDriver: l.perDriver, outputs: l.outputs,
         perNode: l.perNode, limit: l.limit, loadW: l.loadW, controlGroup: l.controlGroup,
-        positionTypes: l.positionTypes, rows: l.rows, working: w, forced: l.forced, mismatch: l.mismatch,
+        positionTypes: l.positionTypes, rows: l.rows, working: w, forced: l.forced, mismatch: l.mismatch, pieceIssue: l.pieceIssue,
         // the forced map's keys can carry room names
         opts: { ...opts, forced: undefined },
       },
@@ -557,7 +564,7 @@ export default function EstimatePage({ state, dispatch, zone }) {
     // else fill order for plain division. Grouped runs have no split.
     const drivers = w.packing
       ? w.packing.drivers.map((d) => ({ w: d.w, outs: d.outs.map((o) => ({
-        label: o.items.map((it) => `${it.pt ?? '-'}${it.q < 1 ? ` (${fmt(it.q)})` : ''}`).join(' + '),
+        label: o.items.map((it) => `${it.pt ?? '-'}${it.q !== 1 ? ` (${fmt(it.q)}${u})` : ''}`).join(' + '),
         fv: o.fv > 0 && w.packing.fvCap != null ? [o.fv, w.packing.fvCap] : null,
         w: [o.w, w.packing.wCap],
       })) }))
@@ -586,6 +593,13 @@ export default function EstimatePage({ state, dispatch, zone }) {
             </div>
           ))}
           <div className="est-tr-sub">Σ {N(l.loadW, 'W', true)}{w.mixed ? ' · each packed at its own size' : ''}</div>
+          {w.segments && (
+            <div className="est-tr-sub">
+              {w.segments.n} segment{w.segments.n === 1 ? '' : 's'} in the DesignDB, {fmt(w.segments.total)}{u} · each kept whole on one output
+              {w.segments.used === 'assessment' && ' · not used: the assessment quantity needs more drivers'}
+            </div>
+          )}
+          {l.pieceIssue && <div className="est-tr-sub est-tr-warn">{l.pieceIssue}{u}: sized on whichever needs more drivers.</div>}
           {ch > 1 && <div className="est-tr-sub est-tr-ch"><ChannelIcon refs={l.rows} /> {ch} outputs per fitting, on one driver · each sized for the whole fitting</div>}
         </Step>
 
@@ -737,6 +751,11 @@ export default function EstimatePage({ state, dispatch, zone }) {
           </Tooltip>
         )}
         {l.positionTypes?.length > 0 && l.positionTypes.every(isFeed) && <Tooltip content="Feed"><Icon name="feed" cls="est-feed" label="Feed" /></Tooltip>}
+        {l.pieceIssue && (
+          <Tooltip content={[['Segments don\u2019t add up', ''], `${l.pieceIssue}. Sized on whichever needs more drivers.`]}>
+            <Icon name="report_problem" cls="est-forced bad" label="Segments don't add up" />
+          </Tooltip>
+        )}
         {l.forced && (
           <Tooltip content={[['Forced', ''], l.mismatch ? `Does not match: ${l.mismatch}` : l.forcedIssue ?? 'On this line instead of the automatic pick.']}>
             <Icon name={l.mismatch || l.forcedIssue ? 'report_problem' : 'push_pin'} cls={`est-forced${l.mismatch || l.forcedIssue ? ' bad' : ''}`} label="Forced" />
