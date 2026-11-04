@@ -19,6 +19,10 @@ export default function FaultDialog({ t, spec, faults, onClose, onFix, onAsk }) 
   const a = Number(ma) > 0 ? Number(ma) / 1000 : undefined;
   // anything else left blank - no match, or a DC/DC driver with no supply - is the wizard's to ask
   const blanks = faults.some((f) => f[2] !== 'disagrees');
+  // A fix that leaves another fault keeps the dialog open; without this it looked
+  // as if the button did nothing (9GYN2L).
+  const [fixed, setFixed] = useState(false);
+  const fix = (mode, a) => { onFix(mode, a); setFixed(true); };
 
   return (
     <div className="nt-backdrop" onClick={(e) => e.target === e.currentTarget && onClose()}>
@@ -38,6 +42,13 @@ export default function FaultDialog({ t, spec, faults, onClose, onFix, onAsk }) 
             nodeMaxFvV: spec.maxFvV,
           })}{spec.minA != null ? ` · ${spec.minA}–${spec.maxA}A` : ''}</span>}
         </div>
+
+        {fixed && (
+          <div className="fd-fixed">
+            <span className="material-icons" aria-hidden="true">check</span>
+            Filled from the {spec?.name} spec page. {faults.length === 1 ? 'This is' : 'These are'} still left:
+          </div>
+        )}
 
         <ul className="fd-list">
           {faults.map(([short, full]) => (
@@ -63,12 +74,12 @@ export default function FaultDialog({ t, spec, faults, onClose, onFix, onAsk }) 
 
         <div className="fd-foot">
           {fill && (
-            <button className="btn btn-sm btn-outline-primary" onClick={() => onFix('fill', a)}>
+            <button className="btn btn-sm btn-outline-primary" onClick={() => fix('fill', a)}>
               Fill blanks from {spec.name}
             </button>
           )}
           {replace && (
-            <button className="btn btn-sm btn-outline-warning" onClick={() => onFix('replace', a)}>
+            <button className="btn btn-sm btn-outline-warning" onClick={() => fix('replace', a)}>
               Use the spec page ({fmt(spec.maxPowerW)}W)
             </button>
           )}
@@ -76,7 +87,7 @@ export default function FaultDialog({ t, spec, faults, onClose, onFix, onAsk }) 
               corrected to match and the Ref is left alone */}
           {onFix && opts.length > 1 && opts.map((o) => (
             <button key={o.from} className="btn btn-sm btn-outline-secondary"
-              onClick={() => onFix('fill', o.a)}>
+              onClick={() => fix('fill', o.a)}>
               Set CurrentRange to {o.a}A <em className="text-secondary">per the {o.from}</em>
             </button>
           ))}

@@ -15,8 +15,8 @@ names and badge. `dat-autodeploy.timer` keeps Connected on Pages' build. The hos
 
 ## Next
 
-0. Driver traces (`TRACES_PLAN.md` §9): phases 1–8 done. The app side is on branch
-   `drop-share-surfaces` (PR #52, to `dev`). The server side is datajoin branch `dat-part-reasons`:
+0. Driver traces (`TRACES_PLAN.md` §9): phases 1–8 done. The app side is on `dev` (PR #52,
+   merged 2026-11-04). The server side is datajoin branch `dat-part-reasons`:
    its tests haven't been run, then it needs a PR and Erik's merge. Until it is live, a `{reason}`
    body gets a 400 and is dropped, which the app tolerates.
 1. n8n overlay sync (plan §7): not built; needs the read/save gateway actions in datajoin first.
@@ -29,6 +29,8 @@ names and badge. `dat-autodeploy.timer` keeps Connected on Pages' build. The hos
 
 
 ## Log
+
+- **2026-11-04 (report 9GYN2L):** "does not work" in What to check, on cdc4bef. Every button acts in the harness. The likely cause is the state KKFPJV left: a fill that leaves another fault, such as a DC/DC driver with no supply still lacking OutputVoltage, keeps the dialog open looking unchanged. The dialog now says "Filled from the X spec page. This is still left:" above what remains. Uncommitted; resolve the report once it ships.
 
 - **2026-11-04 (implicit companion, phases 6–8):** The wizard's answers now send, through `src/learn.js`. A yes to a family on another project's part votes `confirmed` once per rev, and "a different product" on it votes `rejected`. "Its own values are right" asks why, per value that differs (derated on purpose, a different variant, the datasheet's wrong) and sends `{reason}`. Only "the datasheet's wrong" also amends the part, and only from the datasheet, or from an earlier amendment that is agreed or the sender's. A type filled in by hand that matches no part is sent as an observation, its currents giving the range. The CLAUDE.md hard constraint now has the §8 wording. SharedCheck is gone, after Erik's complaint that "Are these ratings right" didn't say whose numbers it asked about. In its place, an unchecked amendment from another project gets one row per value it changes, in the wizard's family step and in the type editor (`Disputes.jsx`): datasheet / their correction / not sure. The pick fills the types and is the vote (`disputed`, `pickedSpec`, `pickedFamily` and `pickVotes` in `learn.js`). The family's yes waits for the answer. `partRows`/`conflicts` were removed. `docs/companion-shots.mjs` was rewritten. It asserts every body sent, and its images were retaken. `npm test` 383 passing.
 - **2026-11-04 (companion surfaces out):** Removed what §6 of `TRACES_PLAN.md` replaces: SharePart ("Suggest a correction to X…" / "Suggest a catalogue part…") from the type editor, SharedCheck and the "Suggested" badge from the wizard's questions, the "suggested"/"to check" tags on part and supply buttons and crumbs, and the sparkle on New type. A shared part's field offer reads "another project: N". "Use this" no longer waits on a second person's check. Nothing is sent from type filling until phase 6. The SharedCheck card on the Types page editor stays, as the only way an unchecked part gets checked until then.
