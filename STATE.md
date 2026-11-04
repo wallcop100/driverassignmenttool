@@ -1,6 +1,6 @@
 # driverassignmenttool — state
 
-Updated: 2026-11-03
+Updated: 2026-11-04
 
 <!-- Now / Next / Blocked are rewritten in place and never grow. Finish something, delete the
      line. Only Log appends. Format: /srv/projects/FORMAT.md -->
@@ -25,6 +25,8 @@ names and badge. `dat-autodeploy.timer` keeps Connected on Pages' build. The hos
 
 
 ## Log
+
+- **2026-11-04 (types page reports):** Branch `fix/dat-reports-1104`. G78VGK: "N worth a look" is a filter toggle with ✕. KXA6KQ: the back button names its destination ("Estimate", the hub, "Zones"). VSGJFE: the setup banner and the wizard skip types filled in here, and the wizard's list is fixed when it opens. KKFPJV: the cause was that "Use the spec page" left a blank the page cannot fill (no current in the Ref/Name, or a DC/DC with no supply), and the dialog closed on a card still flagged. Now the dialog follows the type, stays open with what is left, and closes when nothing is. KWNT6U: the dialog asks the CC current inline, and "Answer the questions" opens the wizard for that one type.
 
 - **2026-11-04 (resume):** Erik's "still showing all types / 13.4 fittings" was on Russet Newt (#45), before #46/#47. A real gap was found too: a resumed standalone session kept the saved model, so a session first opened by an older build never got UoMs or segments. Resume now re-applies them from the DesignDB handle when the browser still grants read. Without that grant, re-dropping the files is the only way.
 
