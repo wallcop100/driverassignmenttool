@@ -521,7 +521,7 @@ export default function EstimatePage({ state, dispatch, zone }) {
       estimate: {
         zone: z, typeRef: l.typeRef, count: l.count, qty: l.qty, perDriver: l.perDriver, outputs: l.outputs,
         perNode: l.perNode, limit: l.limit, loadW: l.loadW, controlGroup: l.controlGroup,
-        positionTypes: l.positionTypes, rows: l.rows, working: w, forced: l.forced, mismatch: l.mismatch,
+        positionTypes: l.positionTypes, rows: l.rows, working: w, forced: l.forced, mismatch: l.mismatch, pieceIssue: l.pieceIssue,
         // the forced map's keys can carry room names
         opts: { ...opts, forced: undefined },
       },
@@ -557,7 +557,7 @@ export default function EstimatePage({ state, dispatch, zone }) {
     // else fill order for plain division. Grouped runs have no split.
     const drivers = w.packing
       ? w.packing.drivers.map((d) => ({ w: d.w, outs: d.outs.map((o) => ({
-        label: o.items.map((it) => `${it.pt ?? '-'}${it.q < 1 ? ` (${fmt(it.q)})` : ''}`).join(' + '),
+        label: o.items.map((it) => `${it.pt ?? '-'}${it.q !== 1 ? ` (${fmt(it.q)}${u})` : ''}`).join(' + '),
         fv: o.fv > 0 && w.packing.fvCap != null ? [o.fv, w.packing.fvCap] : null,
         w: [o.w, w.packing.wCap],
       })) }))
@@ -586,6 +586,13 @@ export default function EstimatePage({ state, dispatch, zone }) {
             </div>
           ))}
           <div className="est-tr-sub">Σ {N(l.loadW, 'W', true)}{w.mixed ? ' · each packed at its own size' : ''}</div>
+          {w.segments && (
+            <div className="est-tr-sub">
+              {w.segments.n} segment{w.segments.n === 1 ? '' : 's'} in the DesignDB, {fmt(w.segments.total)}{u} · each kept whole on one output
+              {w.segments.used === 'assessment' && ' · not used: the assessment quantity needs more drivers'}
+            </div>
+          )}
+          {l.pieceIssue && <div className="est-tr-sub est-tr-warn">{l.pieceIssue}{u}: sized on whichever needs more drivers.</div>}
           {ch > 1 && <div className="est-tr-sub est-tr-ch"><ChannelIcon refs={l.rows} /> {ch} outputs per fitting, on one driver · each sized for the whole fitting</div>}
         </Step>
 
@@ -737,6 +744,11 @@ export default function EstimatePage({ state, dispatch, zone }) {
           </Tooltip>
         )}
         {l.positionTypes?.length > 0 && l.positionTypes.every(isFeed) && <Tooltip content="Feed"><Icon name="feed" cls="est-feed" label="Feed" /></Tooltip>}
+        {l.pieceIssue && (
+          <Tooltip content={[['Segments don\u2019t add up', ''], `${l.pieceIssue}. Sized on whichever needs more drivers.`]}>
+            <Icon name="report_problem" cls="est-forced bad" label="Segments don't add up" />
+          </Tooltip>
+        )}
         {l.forced && (
           <Tooltip content={[['Forced', ''], l.mismatch ? `Does not match: ${l.mismatch}` : l.forcedIssue ?? 'On this line instead of the automatic pick.']}>
             <Icon name={l.mismatch || l.forcedIssue ? 'report_problem' : 'push_pin'} cls={`est-forced${l.mismatch || l.forcedIssue ? ' bad' : ''}`} label="Forced" />

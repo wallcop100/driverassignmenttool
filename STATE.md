@@ -26,6 +26,8 @@ names and badge. `dat-autodeploy.timer` keeps Connected on Pages' build. The hos
 
 ## Log
 
+- **2026-11-04 (segments):** Linear lines are now packed from the DesignDB's segments. A segment is a measured Position inside a run, such as C01r in C01, and its `Dim` cannot be split across outputs (Erik). Segments are matched to assessment rows by hub|LocationRef|ControlGroup|PositionType. The hub is inherited from the run and then the Location. If the segments don't add up to SumQuantity, the line is flagged and sized both ways, and the count that needs more drivers wins (Erik). Runs with no segments keep plain division. On the test db.xlsx 13 of 29 measured rows match, and 7 of those don't add up: the DB is older than the CSV.
+
 - **2026-11-04 (Russet Newt):** Driver types page and the estimate's type list now hold drivers only (`isDriverType`, the OP.n rule), not every ElementType. UoM comes from the type's own PositionTypes row, deleted rows included (live wins). No ParentRef inheritance, because the UoM never sits on a parent (Erik). The qty-based 'm' guess from #45 is gone.
 
 ### 2026-11-04 — Estimate reports AHA2MY, J5KE96, JZAJZ7, 95QTPK, 3NC4S3
