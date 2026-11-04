@@ -175,7 +175,7 @@ The rest still holds: never a CSV, the session, or free text.
 - [x] 5. The review: set aside, the three §4 answers, and the groups with no product found. A
   group is asked about once and the answer written to each, at its own current. Not done: the
   per-value reason ("derated on purpose"...), which only matters once phase 6 sends it.
-- [ ] 6. Implicit companion: the votes, amendments and observations from §7; remove SharePart, SharedCheck in the wizard, and the tags. Needs §8 agreed.
+- [ ] 6. Implicit companion: the votes, amendments and observations from §7. Needs §8 agreed. The removals are done (2026-11-04): SharePart, SharedCheck in the wizard, and the tags.
 - [ ] 7. The reason code on the server: datajoin `/gateway/dat/parts` and dat_bridge. Without it,
   phase 6 sends the part and drops the code.
 - [ ] 8. Retake `docs/companion-shots.mjs` and rewrite the "Filling in a driver type" section of

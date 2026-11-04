@@ -1,7 +1,6 @@
 import { useMemo, useState, useSyncExternalStore } from 'react';
-import { NO_SUPPLY, allParts, atCurrent, checkOf, combine, driverTypes, matchParts, resolveSpec, sharedSupply } from '../engine.js';
+import { NO_SUPPLY, allParts, atCurrent, combine, driverTypes, matchParts, resolveSpec, sharedSupply } from '../engine.js';
 import { onSharedParts, sharedSnapshot } from '../catalogue.js';
-import SharedCheck, { ReportSuggestion } from './SharedCheck.jsx';
 import PresetEditor, { draftFrom, draftFromPart, toPreset } from './PresetEditor.jsx';
 import { FamilyStep, Pill, Review } from './Families.jsx';
 import {
@@ -133,7 +132,6 @@ function Ask({ model, presets, dispatch, types, fresh, hand: byHand, onDone }) {
   const spec = part ? combine(part, part.kind === 'dcdc' ? psu : null) : null;
   const needsPsu = part?.kind === 'dcdc';
   const needsCurrent = spec?.powerType === 'CC' && !(spec.minA != null && spec.minA === spec.maxA);
-  const unchecked = [part, needsPsu ? psu : null].filter((p) => checkOf(p) === 'unchecked');
   const ready = !!spec && (!needsPsu || psu || picked.psu === NO_SUPPLY) && (!needsCurrent || Number(currentMa) > 0);
   const set = (patch) => setPicked({ ...picked, ...patch });
 
@@ -189,20 +187,9 @@ function Ask({ model, presets, dispatch, types, fresh, hand: byHand, onDone }) {
           <>
             <Questions key={key} {...{ step, parts, picked, set, part, psu, needsPsu, needsCurrent, spec, currentMa, prec, hand }} />
 
-            {unchecked.map((p) => (
-              <SharedCheck key={p.name} part={p} />
-            ))}
-
             {ready ? (
               <div className="sw-preview">
-                <div className="fld-sec">This writes
-                  {fromShared(spec) && !unchecked.length && (
-                    <span className="sw-sug" title="Not from a spec page: other projects use these values, agreed by two people">
-                      <span className="material-icons">auto_awesome</span>Suggested
-                      <ReportSuggestion what={part.name} />
-                    </span>
-                  )}
-                </div>
+                <div className="fld-sec">This writes</div>
                 <table className="table table-sm mb-0">
                   <tbody>
                     {[
@@ -247,9 +234,8 @@ function Ask({ model, presets, dispatch, types, fresh, hand: byHand, onDone }) {
             Fill it in by hand
           </button>
           <button className="btn btn-sm btn-outline-secondary" onClick={onDone}>Back to the review</button>
-          <button className="btn btn-sm btn-primary" disabled={!ready || unchecked.length > 0}
-            onClick={() => write({ ...proposed(), origin: fromShared(spec) ? 'shared' : 'datasheet' }, true)}
-            title={unchecked.length ? 'A suggested part needs a second person to check it first' : undefined}>
+          <button className="btn btn-sm btn-primary" disabled={!ready}
+            onClick={() => write({ ...proposed(), origin: fromShared(spec) ? 'shared' : 'datasheet' }, true)}>
             {types.length > 1 ? `Use this for all ${types.length}` : 'Use this'}
           </button>
         </div>
@@ -278,19 +264,13 @@ const LABEL = {
 const used = (n) => (n ? `used by ${n} type${n === 1 ? '' : 's'} here` : '');
 const COMMON_MA = [350, 500, 700, 1050];
 
-// A part someone using the tool sent: "suggested" once two people agree it,
-// "to check" until then (it is asked about in the card once picked).
-const sug = (p) => p?.shared && (checkOf(p) === 'unchecked' ? 'to check' : 'suggested');
-
 function Opt({ label, sub, tag, top, part, onClick }) {
-  const s = sug(part);
   return (
     <button type="button" className={`q-opt ${top ? 'is-top' : ''}`} onClick={onClick}>
       <b>{label}</b>
       {sub && <span>{sub}</span>}
       {tag && <span className="q-tag">{tag}</span>}
-      {s && <span className="q-sug"><span className="material-icons">auto_awesome</span>{s}</span>}
-      {!s && part?.discontinued && <span>discontinued</span>}
+      {part?.discontinued && <span>discontinued</span>}
     </button>
   );
 }
@@ -430,9 +410,7 @@ function Questions({ step, parts, picked, set, part, psu, needsPsu, needsCurrent
         <div className="q-crumbs">
           {crumbs.map((c) => (
             <button key={c.k} type="button" className="q-crumb" title="Change this" onClick={c.go}>
-              {c.label}{c.from === 'suggestion'
-                ? <em className="q-sug"><span className="material-icons">auto_awesome</span>suggested</em>
-                : c.from && <em>from the {c.from}</em>}
+              {c.label}{c.from && c.from !== 'suggestion' && <em>from the {c.from}</em>}
             </button>
           ))}
         </div>
