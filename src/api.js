@@ -25,12 +25,8 @@ let raw = { form: null, links: null, types: null, assessment: null, empty: null 
 let applied = '[]';
 // PositionType -> UoM from the DesignDB, for assessments without a UoM column (DJ 100874)
 let ptUom = {};
-// No DesignDB: a PositionType with a part quantity is measured, so metres (AHA2MY).
-// shortcut: assumes 'm' is the only fractional UoM; upgrade if another one appears.
 const withUom = (m) => {
-  const rs = m?.requirements ?? [];
-  const measured = new Set(rs.filter((r) => r.qty != null && !Number.isInteger(r.qty)).map((r) => r.positionType));
-  for (const r of rs) if (!r.uom) r.uom = ptUom[r.positionType] ?? (measured.has(r.positionType) ? 'm' : null);
+  for (const r of m?.requirements ?? []) if (!r.uom && ptUom[r.positionType]) r.uom = ptUom[r.positionType];
   return m;
 };
 // Hub Ref -> hub label, from the host's context: the assessment names a hub by

@@ -78,7 +78,8 @@ export default function TypesPage({ state, dispatch, zone }) {
   // From a hub, the type you want is usually one this hub already uses; on the
   // catalogue, the reason you opened it is the flagged ones.
   const needle = q.trim().toLowerCase();
-  const cards = useMemo(() => model.inventory
+  // drivers only, by the OP.n rule: the library also carries control gear (isDriverType)
+  const cards = useMemo(() => inUse
     .map((t) => {
       const spec = resolveSpec(t.name || t.typeRef);
       return { t, spec, f: faults(t, spec) };
@@ -90,7 +91,7 @@ export default function TypesPage({ state, dispatch, zone }) {
         || (usage.get(b.t.typeRef)?.count ?? 0) - (usage.get(a.t.typeRef)?.count ?? 0)
       : (b.f.length > 0) - (a.f.length > 0))
       || a.t.typeRef.localeCompare(b.t.typeRef)),
-  [model.inventory, needle, zone, inHub, usage]);
+  [inUse, needle, zone, inHub, usage]);
 
   const flagged = cards.filter((c) => c.f.length).length;
   const closeEdit = () => { setEditKey(null); setDraft(null); };
@@ -113,7 +114,7 @@ export default function TypesPage({ state, dispatch, zone }) {
             type library alongside this hub's drivers - so if this says the hub's
             own count, the library did not arrive and that is the thing to chase. */}
         <span className="text-secondary small">
-          {model.inventory.length} type{model.inventory.length === 1 ? '' : 's'}
+          {inUse.length} driver type{inUse.length === 1 ? '' : 's'}
           {zone ? ` available · ${inHub.size} already in ${zone}` : ' in the design'}
         </span>
         {flagged > 0 && (

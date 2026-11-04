@@ -26,6 +26,8 @@ names and badge. `dat-autodeploy.timer` keeps Connected on Pages' build. The hos
 
 ## Log
 
+- **2026-11-04 (Russet Newt):** Driver types page and the estimate's type list now hold drivers only (`isDriverType`, the OP.n rule), not every ElementType. UoM comes from the type's own PositionTypes row, deleted rows included (live wins). No ParentRef inheritance, because the UoM never sits on a parent (Erik). The qty-based 'm' guess from #45 is gone.
+
 ### 2026-11-04 — Estimate reports AHA2MY, J5KE96, JZAJZ7, 95QTPK, 3NC4S3
 - AHA2MY: with no UoM from the DesignDB, a PositionType with a part quantity is taken as metres (`withUom` in api.js), so the working says "13.4 m", not "13.4 fittings".
 - J5KE96: the working names outputs after the type's own nodes (OP.1, OP.2), falling back to O1.

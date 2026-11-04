@@ -111,8 +111,11 @@ export function hubsFromSheets({ ElementTypes = [], Elements = [], Positions = [
 }
 
 // PositionType Ref -> UoM ('m', 'm2'), for an assessment exported without the UoM column
-export const positionUoms = (rows) => Object.fromEntries(rows.filter(live)
-  .map((r) => [s(r.Ref), s(r.UoM)]).filter(([ref, u]) => ref && u));
+// A deleted PositionType still counts (positions in the assessment can use it);
+// a live row with the same Ref wins.
+export const positionUoms = (rows) => Object.fromEntries(Object.entries(Object.fromEntries(
+  [...rows.filter((r) => !live(r)), ...rows.filter(live)].map((r) => [s(r.Ref), s(r.UoM)])))
+  .filter(([ref, u]) => ref && u));
 
 export const isWorkbook = (file) => /\.xls[xm]$/i.test(file.name);
 
