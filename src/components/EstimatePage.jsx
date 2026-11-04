@@ -397,19 +397,25 @@ export default function EstimatePage({ state, dispatch, zone }) {
     return cts.map((ct) => <span key={ct} className="est-ct" style={{ background: CT_BG[ct.toLowerCase()] ?? '#64748b' }}>{ct.toUpperCase()}</span>);
   };
 
-  const RowTable = ({ refs }) => (
+  const RowTable = ({ refs }) => {
+    const rs = refs.map((ref) => reqByRef.get(ref)).filter(Boolean);
+    const hasFv = rs.some((r) => r.fvPer > 0);
+    // a driver kept to one ControlGroup says it once, on the line
+    const showCg = !prefs.restrictControlGroup;
+    return (
     <table className="est-rowtable">
-      <thead><tr><th>PositionType</th><th>Room</th><th>ControlGroup</th><th className="text-end">Qty × W each</th><th>Drive</th><th /></tr></thead>
+      <thead><tr>{showCg && <th>ControlGroup</th>}<th>PositionType</th><th>Room</th><th className="text-end">Qty × W each</th>{hasFv && <th className="text-end">Qty × fV each</th>}<th>Drive</th><th /></tr></thead>
       <tbody>
-        {refs.map((ref) => reqByRef.get(ref)).filter(Boolean).map((r) => {
+        {rs.map((r) => {
           const part = resolveSpec(r.positionType);
           const u = r.uom ? ` ${r.uom}` : '';
           return (
             <tr key={r.ref} data-code={r.ref}>
+              {showCg && <td className="est-mono">{r.controlGroup}</td>}
               <td className="est-type">{r.positionType}{part && <small>{part.name}</small>}</td>
               <td>{r.location}</td>
-              <td className="est-mono">{r.controlGroup}</td>
               <td className="est-load">{fmt(r.qty)}{u} × {fmt(r.wPer)} W{r.uom ? `/${r.uom}` : ''} = <b>{fmt(r.loadW)} W</b></td>
+              {hasFv && <td className="est-load">{r.fvPer > 0 && <>{fmt(r.qty)}{u} × {fmt(r.fvPer)} V{r.uom ? `/${r.uom}` : ''} = <b>{fmt(r.qty * r.fvPer)} V</b></>}</td>}
               <td>
                 <span className={`est-drive is-${(r.powerType ?? '').toLowerCase()}`}>
                   {!r.powerType ? 'no CC/CV' : r.powerType === 'CV' ? `CV ${r.voltageV ?? ''} V`
@@ -435,6 +441,7 @@ export default function EstimatePage({ state, dispatch, zone }) {
       </tbody>
     </table>
   );
+  };
 
   // Every driver type in the library, the ones that fit these fittings first.
   // Anything may be forced: an emergency driver, or a case-by-case call.
