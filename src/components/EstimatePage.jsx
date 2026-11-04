@@ -452,28 +452,25 @@ export default function EstimatePage({ state, dispatch, zone }) {
     );
   };
 
-  // The engine's own inputs, laid out as the sum a person would check by hand.
+  // The engine's own inputs, as a short trace: fittings → driver → per driver →
+  // drivers. Blue is always load (what the fittings draw), black is capacity.
   const Working = ({ l, zone: z, k }) => {
     const w = l.working;
     if (!w) return null;
     const n = w.outputs;
     const unit = unitOf(l.rows);
-    const each = unit ? `per ${unit}` : 'each';
+    const u = unit ? ` ${unit}` : '';
     const W = unit ? `W/${unit}` : 'W';
-    const step = (label, body, note, cls = '') => (
-      <div className={`est-step${cls}`}>
-        <span className="est-step-l">{label}</span>
-        <span>{body}</span>
-        {note && <small>{note}</small>}
+    const N = (v, s, load) => <span className={`est-tr-n${load ? ' est-tr-load' : ''}`}>{fmt(v)}{s && ` ${s}`}</span>;
+    const Step = ({ i, title, children }) => (
+      <div className="est-tr-step">
+        <span className={`est-tr-dot${i === '=' ? ' is-end' : ''}`}>{i}</span>
+        <div className="est-tr-k">{title}</div>
+        {children}
       </div>
     );
-    const cap = l.count * w.maxPowerW * w.keep;
-    const pct = Math.round((l.loadW / cap) * 100);
-    // per-driver load: the packer's own split, or fill order for plain division; grouped runs have none
-    const dCap = w.packing?.dCap ?? w.maxPowerW * w.keep;
-    const split = w.packing ? w.packing.drivers.map((d) => d.w)
-      : !w.runList && !w.packed && w.wPer ? Array.from({ length: l.count }, (_, i) => Math.min(l.perDriver, l.qty - i * l.perDriver) * w.wPer)
-      : null;
+    const usable = w.maxPowerW * w.keep;
+    const cap = l.count * usable;
     const report = (e) => openReport(e.currentTarget.closest('td'), {
       // allowlisted: refs and numbers only, no location names
       estimate: {
@@ -484,116 +481,165 @@ export default function EstimatePage({ state, dispatch, zone }) {
         opts: { ...opts, forced: undefined },
       },
     });
-    // Left to right, with a fork wherever the engine chose: the options stack in
-    // one column, the one taken drawn solid and the rest faded.
-    const fork = (title, branches) => (branches.length === 1
-      ? step(branches[0].label, branches[0].body, branches[0].note, branches[0].cls ?? '')
-      : (
-        <div className="est-fork">
-          <span className="est-fork-l">{title}</span>
-          {branches.map((b) => (
-            <div key={b.key} className={b.taken ? '' : `est-off${b.pick ? ' est-take' : ''}`}
-              {...(b.pick && { role: 'button', tabIndex: 0, title: 'Use this driver type', onClick: b.pick,
-                onKeyDown: (e) => (e.key === 'Enter' || e.key === ' ') && b.pick() })}>
-              {step(b.label, b.body, b.note, b.taken ? b.cls ?? '' : '')}
+    const pt = (t) => <span className="est-pill est-pill-pt">{t || '-'}</span>;
+    const fittings = w.fittings?.length ? w.fittings
+      : [{ positionType: l.positionTypes?.join(', '), qty: l.qty, refs: l.rows, wPer: w.wPer, fvPer: w.fvPer }];
+    const taken = l.considered?.find((c) => c.taken);
+    const others = (l.considered ?? []).filter((c) => !c.taken);
+    const how = taken?.mismatch ? `forced · does not match: ${taken.mismatch}`
+      : l.forced && !l.forcedIssue ? 'forced' : `auto · ${PICK_LABEL[opts.pickBy]?.toLowerCase() ?? 'fit'}`;
+    const spare = `${Math.round((1 - w.keep) * 100)}% spare`;
+    const Row = ({ label, lim, load, capacity, fits }) => (
+      <tr className={lim ? 'is-limit' : ''}>
+        <td>{label}{lim && <span className="est-tr-lim"> limit</span>}</td>
+        <td>{load}</td><td>{capacity}</td><td><b>{fits}</b></td>
+      </tr>
+    );
+    const perOut = Math.min(w.perNodeFv ?? Infinity, w.perNodeW ?? Infinity);
+    // every number in a sum carries its unit, so no figure has to be decoded
+    const what = unit ? unit : 'fittings';
+    const up = (a, b) => (a % b ? ' (rounded up)' : '');
+    const outsOf = (x) => `${x} output${x === 1 ? '' : 's'}`;
+
+    // Per driver, then per output: the packer's own split where there is one,
+    // else fill order for plain division. Grouped runs have no split.
+    const drivers = w.packing
+      ? w.packing.drivers.map((d) => ({ w: d.w, outs: d.outs.map((o) => ({
+        label: o.items.map((it) => `${it.pt ?? '-'}${it.q < 1 ? ` (${fmt(it.q)})` : ''}`).join(' + '),
+        fv: o.fv > 0 && w.packing.fvCap != null ? [o.fv, w.packing.fvCap] : null,
+        w: [o.w, w.packing.wCap],
+      })) }))
+      : !w.runList && !w.packed && w.wPer
+        ? Array.from({ length: l.count }, (_, i) => {
+          const m = Math.max(0, Math.min(l.perDriver, l.qty - i * l.perDriver));
+          const per = Number.isFinite(perOut) ? perOut : Math.ceil(l.perDriver / n);
+          const outs = Array.from({ length: n }, (_, j) => Math.max(0, Math.min(per, m - j * per)));
+          return { w: m * w.wPer, outs: outs.map((c) => (c ? {
+            label: `${fittings[0].positionType || '-'} ×${fmt(c)}${u}`,
+            fv: w.fvPer && w.maxFvV ? [c * w.fvPer, w.maxFvV * w.keep] : null,
+            w: w.maxLoadW ? [c * w.wPer, w.maxLoadW * w.keep] : null,
+          } : null)) };
+        })
+        : null;
+
+    return (
+      <div className="est-tr">
+        <Step i="1" title="Fittings">
+          {fittings.map((f, i) => (
+            <div className="est-tr-line" key={i}>
+              {pt(f.positionType)}
+              <span className="est-tr-n est-tr-load">{fmt(f.qty)}{unitOf(f.refs) ? ` ${unitOf(f.refs)}` : ''} × {fmt(f.wPer)} {unitOf(f.refs) ? `W/${unitOf(f.refs)}` : 'W'}{f.fvPer ? ` · ${fmt(f.fvPer)} V each` : ''}</span>
             </div>
           ))}
-        </div>
-      ));
-    const arr = <span className="est-arr">→</span>;
-    const byOutputs = w.runList ? Math.ceil(l.outputs / n) : null;
-    return (
-      <div className="est-working">
-        {w.fittings?.length > 1
-          ? fork(`Fittings, each whole${w.mixed ? ' and packed at its own size' : ''}`, w.fittings.map((f, i) => ({
-            key: i, taken: true, label: f.positionType || '-',
-            body: `${amount(f.qty, f.refs)} · ${fmt(f.wPer)} W ${unitOf(f.refs) ? `per ${unitOf(f.refs)}` : 'each'}${f.fvPer ? ` · ${fmt(f.fvPer)} V each` : ''}`,
-          })))
-          : step('Fittings', `${l.positionTypes?.length ? `${l.positionTypes.join(', ')} · ` : ''}${amount(l.qty, l.rows)} · ${fmt(w.wPer)} W ${each}${w.fvPer ? ` · ${fmt(w.fvPer)} V each` : ''}`,
-            'each one whole: never split across outputs or drivers')}
-        {arr}
-        {l.forcedIssue && <>{step('Forced type not used', l.forcedIssue, 'sized on the automatic pick instead', ' warn')}{arr}</>}
-        {l.considered?.length > 1 && <>
-          {fork(`Driver type, ${l.forced && !l.forcedIssue ? 'forced on this line' : `by ${PICK_LABEL[opts.pickBy]?.toLowerCase() ?? 'fit'}`}`,
-            l.considered.map((c) => ({
-              key: c.typeRef, taken: c.taken, cls: c.mismatch ? ' run warn' : ' run',
-              pick: c.taken ? null : () => dispatch({ type: 'FORCE_TYPE', key: k, typeRef: c.auto ? null : c.typeRef }),
-              label: `${c.typeRef}${c.em ? ' (EM)' : ''}`,
-              body: c.count == null ? 'not sized'
-                : <>{c.count} × {c.outputs}-output · {c.spareOutputs} spare output{c.spareOutputs === 1 ? '' : 's'}</>,
-              note: c.mismatch ? `forced - does not match: ${c.mismatch}`
-                : c.taken && !c.auto ? `forced · ${c.spareW} W spare`
-                  : c.auto ? (c.taken ? `chosen · ${c.spareW} W spare` : `the automatic pick by ${PICK_LABEL[opts.pickBy]?.toLowerCase()}`)
-                    : `lost on ${c.lostOn}`,
-            })))}
-          {arr}
-        </>}
-        {step(`Driver, less ${Math.round((1 - w.keep) * 100)}% spare`,
-          `${fmt(w.maxPowerW * w.keep)} W · ${n} output${n === 1 ? '' : 's'}${w.maxFvV ? ` · ${fmt(w.maxFvV * w.keep)} V each` : ''}`,
-          `${l.name} · rated ${w.maxPowerW} W${w.maxFvV ? `, ${w.maxFvV} V` : ''}`)}
-        {arr}
-        {w.packing ? fork('Packed largest first: each fitting goes on the first output with room for its volts and watts',
-          w.packing.drivers.flatMap((d) => d.outs).map((o) => {
-            const { fvCap, wCap } = w.packing;
-            const sum = (k, unit) => `${o.items.length > 1 ? `${o.items.map((it) => fmt(it[k])).join(' + ')} = ` : ''}${fmt(o[k])} ${unit}`;
-            const { least } = o;
-            const roomV = fvCap != null ? fvCap - o.fv : Infinity;
-            const roomW = wCap - o.w;
-            const why = least.fv > roomV ? `${fmt(least.fv)} V` : least.w > roomW ? `${fmt(least.w)} W` : null;
-            return {
-              key: `${o.driver}.${o.output}`, taken: true, cls: ' run',
-              label: `Driver ${o.driver}${n > 1 ? `, output ${o.output}` : ''}${o.run ? ` · ${o.run}` : ''}`,
-              body: <>
-                <div>{o.items.map((it) => `${it.pt ?? '-'}${it.q < 1 ? ` (${fmt(it.q)})` : ''}`).join(' + ')}</div>
-                {fvCap != null && o.fv > 0 && <div>{sum('fv', 'V')} of {fmt(fvCap)} V</div>}
-                <div>{sum('w', 'W')} of {fmt(wCap)} W</div>
-              </>,
-              note: why
-                ? `${fmt(roomV === Infinity ? null : roomV) ?? '-'} V, ${fmt(roomW)} W left - the smallest fitting here (${least.pt ?? '-'}) needs ${why}`
-                : 'room left, but every fitting is placed',
-            };
-          })) : w.runList ? <>
-          {fork('Each group on its own outputs', w.runList.map((r) => ({
-            key: r.label, taken: true, cls: ' run',
-            label: r.label || '-',
-            body: <>{fmt(r.qty)} ÷ {r.per}{r.qty % r.per ? ' ↑' : ''} = <b>{r.outputs}</b> output{r.outputs === 1 ? '' : 's'}</>,
-            note: `${r.per} per output at ${fmt(r.wPer)} ${W}${r.fvPer ? `, ${fmt(r.fvPer)} V` : ''} each`,
-          })))}
-          {arr}
-          {fork('Enough drivers for both', [
-            { key: 'o', taken: byOutputs >= w.byWatts, cls: ' bind', label: 'By outputs',
-              body: <>{l.outputs} ÷ {n}{l.outputs % n ? ' ↑' : ''} = <b>{byOutputs}</b></> },
-            { key: 'w', taken: w.byWatts > byOutputs, cls: ' bind', label: 'By driver watts',
-              body: <>{fmt(l.qty)} ÷ {w.perDriverW}{l.qty % w.perDriverW ? ' ↑' : ''} = <b>{w.byWatts}</b></>,
-              note: `${w.perDriverW} whole ${unit ? unit : 'fittings'} per driver: ${fmt(w.maxPowerW * w.keep)} W ÷ ${fmt(w.wPer)} ${W}` },
-          ])}
-        </> : fork('Per driver, the tightest limit', [
-          w.perNodeFv != null && { key: 'fV', taken: l.limit === 'fV', cls: ' bind', label: 'Per output by voltage',
-            body: <>{fmt(w.maxFvV * w.keep)} V ÷ {fmt(w.fvPer)} V = <b>{w.perNodeFv}</b></>,
-            note: n > 1 ? `× ${n} outputs = ${w.perNodeFv * n}` : null },
-          w.perNodeW != null && { key: 'nW', taken: l.limit === 'node W', cls: ' bind', label: 'Per output by watts',
-            body: <>{fmt(w.maxLoadW * w.keep)} W ÷ {fmt(w.wPer)} {W} = <b>{w.perNodeW}</b></>,
-            note: n > 1 ? `× ${n} outputs = ${w.perNodeW * n}` : null },
-          { key: 'dW', taken: l.limit === 'driver W', cls: ' bind', label: 'Per driver by watts',
-            body: <>{fmt(w.maxPowerW * w.keep)} W ÷ {fmt(w.wPer)} {W} = <b>{w.perDriverW}</b></> },
-        ].filter(Boolean))}
-        {arr}
-        {step('Drivers', w.runList || w.packed
-          ? <><b>{l.count}</b> × {l.typeRef}</>
-          : <>{fmt(l.qty)} ÷ {l.perDriver}{l.qty % l.perDriver ? ' ↑' : ''} = <b>{l.count}</b></>,
-        w.packing ? (n > 1
-          ? w.packing.drivers.map((d, i) => `driver ${i + 1}: ${d.outs.length} of ${n} outputs, ${fmt(d.w)} of ${fmt(w.packing.dCap)} W`).join(' · ')
-          : `one output each, within ${fmt(w.packing.dCap)} W`)
-          : w.runList ? `${w.runs} groups kept on separate outputs` : `${l.perDriver} per driver`, ' result')}
-        {split && split.length > 1 && split.map((wd, i) => (
-          <div className="est-usage" key={i}>
-            <LoadBar load={wd} rated={w.maxPowerW} keep={w.keep} />
-            <span>Driver {i + 1}: {fmt(wd)} W of {fmt(dCap)} W · {fmt(w.maxPowerW)} W rated</span>
+          <div className="est-tr-sub">Σ {N(l.loadW, 'W', true)}{w.mixed ? ' · each packed at its own size' : ''}</div>
+        </Step>
+
+        <Step i="2" title="Driver">
+          <div className="est-tr-line">
+            <TypePill t={l.typeRef} />
+            <span className="est-tr-n">{fmt(usable)} W · {n} output{n === 1 ? '' : 's'}{w.maxFvV ? ` · ${fmt(w.maxFvV * w.keep)} V each` : ''}</span>
           </div>
-        ))}
-        <div className="est-usage">
-          <LoadBar load={l.loadW} rated={l.count * w.maxPowerW} keep={w.keep} />
-          <span>{fmt(l.loadW)} W of {fmt(cap)} W usable · {fmt(l.count * w.maxPowerW)} W rated · {pct}% loaded</span>
+          <div className="est-tr-sub">Rated {w.maxPowerW} W{w.maxFvV ? ` · ${w.maxFvV} V` : ''} − {spare} · {how}</div>
+          {l.forcedIssue && <div className="est-tr-sub est-tr-warn">Forced type not used: {l.forcedIssue}</div>}
+          {others.length > 0 && (
+            <details className="est-tr-alt">
+              <summary>{others.length} alternative{others.length === 1 ? '' : 's'}</summary>
+              <ul>
+                {others.map((c) => (
+                  <li key={c.typeRef}>
+                    <TypePill t={c.typeRef} />
+                    {c.count == null ? ' not sized' : ` ${c.count} drv · ${c.spareOutputs} output${c.spareOutputs === 1 ? '' : 's'} spare`}
+                    {' · '}{c.mismatch ? `does not match: ${c.mismatch}` : c.auto ? 'auto pick' : `lost on ${c.lostOn}`}
+                    <button type="button" className="btn btn-sm btn-link est-tr-use"
+                      onClick={() => dispatch({ type: 'FORCE_TYPE', key: k, typeRef: c.auto ? null : c.typeRef })}>use</button>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
+        </Step>
+
+        <Step i="3" title={w.packing ? 'Packing' : 'Per driver'}>
+          {w.packing ? (
+            <div className="est-tr-sub">
+              Largest first, onto the first output with room ·{' '}
+              {w.packing.fvCap != null && <>{N(w.packing.fvCap, 'V')} · </>}{N(w.packing.wCap, 'W')} per output · {N(w.packing.dCap, 'W')} per driver
+            </div>
+          ) : w.runList ? <>
+            <table className="est-tr-t">
+              <thead><tr><th>Group</th><th>Qty</th><th>Per output</th><th>Outputs</th></tr></thead>
+              <tbody>{w.runList.map((r) => (
+                <tr key={r.label}>
+                  <td>{r.label || '-'}</td><td>{N(r.qty, unit, true)}</td><td>{r.per}</td><td><b>{r.outputs}</b></td>
+                </tr>
+              ))}</tbody>
+            </table>
+            <table className="est-tr-t">
+              <tbody>
+                <tr className={l.limit === 'outputs' ? 'is-limit' : ''}>
+                  <td>By outputs{l.limit === 'outputs' && <span className="est-tr-lim"> limit</span>}</td>
+                  <td>{outsOf(l.outputs)} ÷ {n} per driver{up(l.outputs, n)}</td><td><b>{Math.ceil(l.outputs / n)}</b></td>
+                </tr>
+                <tr className={l.limit === 'driver W' ? 'is-limit' : ''}>
+                  <td>By W / driver{l.limit === 'driver W' && <span className="est-tr-lim"> limit</span>}</td>
+                  <td>{fmt(l.qty)} {what} ÷ {w.perDriverW} per driver{up(l.qty, w.perDriverW)}</td><td><b>{w.byWatts}</b></td>
+                </tr>
+              </tbody>
+            </table>
+          </> : <>
+            <table className="est-tr-t">
+              <thead><tr><th /><th>Load</th><th>Capacity</th><th>Fits</th></tr></thead>
+              <tbody>
+                {w.perNodeFv != null && <Row label="V / output" lim={l.limit === 'fV'}
+                  load={N(w.fvPer, 'V', true)} capacity={N(w.maxFvV * w.keep, 'V')} fits={w.perNodeFv} />}
+                {w.perNodeW != null && <Row label="W / output" lim={l.limit === 'node W'}
+                  load={N(w.wPer, W, true)} capacity={N(w.maxLoadW * w.keep, 'W')} fits={w.perNodeW} />}
+                <Row label="W / driver" lim={l.limit === 'driver W'}
+                  load={N(w.wPer, W, true)} capacity={N(usable, 'W')} fits={w.perDriverW} />
+              </tbody>
+            </table>
+            {Number.isFinite(perOut) && (
+              <div className="est-tr-sub">{perOut * n <= w.perDriverW
+                ? <>{perOut} per output × {outsOf(n)} = <b>{l.perDriver}</b>{u} per driver</>
+                : <>{perOut} per output × {outsOf(n)}, but W caps it at <b>{l.perDriver}</b>{u} per driver</>}</div>
+            )}
+          </>}
+        </Step>
+
+        <Step i="=" title="Drivers">
+          <div className="est-tr-eq">
+            {w.runList || w.packed ? <><b>{l.count}</b> drivers</>
+              : <>{fmt(l.qty)} {what} ÷ {l.perDriver} per driver{up(l.qty, l.perDriver)} = <b>{l.count}</b> driver{l.count === 1 ? '' : 's'}</>}
+          </div>
+          <div className="est-tr-legend"><span><i className="sw-used" />used</span><span><i className="sw-free" />free</span>{w.keep < 1 && <span><i className="sw-res" />{spare}</span>}</div>
+          {drivers ? drivers.map((d, i) => (
+            <div className="est-tr-drv" key={i}>
+              <span>D{i + 1}</span>
+              <div>
+                <LoadBar load={d.w} rated={w.maxPowerW} keep={w.keep} />
+                <div className="est-tr-sub">{N(d.w, 'W', true)} / {N(usable, 'W')}</div>
+                {n > 1 || d.outs.some((o) => o?.fv || o?.w) ? (
+                  <div className="est-tr-outs">{d.outs.map((o, j) => (o ? (
+                    <span className="est-tr-out" key={j}>
+                      O{j + 1} {o.label}
+                      {o.fv && <> · {N(o.fv[0], 'V', true)} / {N(o.fv[1], 'V')}</>}
+                      {o.w && (w.packing || !o.fv) && <> · {N(o.w[0], 'W', true)} / {N(o.w[1], 'W')}</>}
+                    </span>
+                  ) : <span className="est-tr-out is-spare" key={j}>O{j + 1} spare</span>))}</div>
+                ) : null}
+              </div>
+            </div>
+          )) : (
+            <div className="est-tr-drv">
+              <span>Σ</span>
+              <div><LoadBar load={l.loadW} rated={l.count * w.maxPowerW} keep={w.keep} /></div>
+            </div>
+          )}
+          <div className="est-tr-sub">Σ {N(l.loadW, 'W', true)} / {N(cap, 'W')} · {Math.round((l.loadW / cap) * 100)}%</div>
+        </Step>
+
+        <div className="est-tr-foot">
+          <span className="est-tr-load">Load</span> · Capacity
           <button type="button" className="btn btn-sm btn-link est-flag" onClick={report}
             title="Send this working with a note about what is wrong">
             <span className="material-icons">flag</span> Calculation looks wrong
@@ -660,7 +706,7 @@ export default function EstimatePage({ state, dispatch, zone }) {
           <div className="nt-backdrop text-start" onClick={(e) => e.target === e.currentTarget && setWorking(null)}>
             <div className="fd-dialog est-working-dialog" role="dialog" aria-label="How the count was worked out">
               <div className="fd-head">
-                <b>How {l.count} × {l.typeRef} was worked out</b>
+                <b className="est-tr-title">How {l.count} × <TypePill t={l.typeRef} /> was worked out</b>
                 <button className="btn btn-sm btn-link ms-auto p-0" onClick={() => setWorking(null)}>close</button>
               </div>
               <Working l={l} zone={z} k={k} />

@@ -26,8 +26,18 @@ names and badge. `dat-autodeploy.timer` keeps Connected on Pages' build. The hos
 
 ## Log
 
+### 2026-11-04 — "How N was worked out" redesign (branch `working-trace`, not merged)
+
+- `Working` is now one numbered rail: Fittings → Driver → Per driver (or Packing) → Drivers. The labels are terse.
+- Load is blue and capacity is black throughout. Per driver is a Load / Capacity / Fits table with the binding row marked "limit".
+- Each driver gets a bar plus output chips (`O1 B02w ×1 · 35 V / 52.3 V`), and a spare output is a dashed chip.
+- Alternatives sit behind a toggle with a "use" button. Every ET pill is a `TypePill`, so it shows hover facts.
+- The old `.est-step`, `.est-fork` and `.est-usage` CSS is removed.
+- Gotcha: the dialog renders inside a pivot `<td>`, so `.est-pivot th/td` rules leak in. The trace rules are scoped `.est-tr .est-tr-t tr …` to win.
+
 ### 2026-11-03 — Reports from 16:25–16:44 (#40)
 
+- All 24 open DAT reports were resolved by Erik's request (as "Claude (MCP)", via `psr_app.resolve_report` in `datajoin-mcp`), including the older ones fixed on `dev` by #24, #29, #31 and a8142bf. This breaks the earlier "open until prod" habit, so the fixes are on dev only until the next ship.
 - TRF856: Ctrl+Z / redo now cover `FORCE_TYPE` and `OWN_LINE`. Undo snapshots (`snapOf` in state.js) carry `forcedTypes` and `ownLine`; test in state.test.mjs.
 - 4Y859E: the options bar's menus are `position: fixed` from the button's rect (`menuAt`), capped to the viewport, and close when the page scrolls. A short page no longer clips them.
 - RDTQNJ: Driver Name (the ElementType's name) is a third column toggle in the header ⋮ (pref `pvName`).
