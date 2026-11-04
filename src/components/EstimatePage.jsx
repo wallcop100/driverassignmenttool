@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import * as api from '../api.js';
 import { listSessions } from '../persist.js';
-import { compareEstimate, ESTIMATE_WARNING, isFeed, estimatePatchRows, filterRequirements, filterValue, PIVOT_COLUMNS, generateEstimatePatch, isOwnLine, channelClass, resolveSpec, zoneViews } from '../engine.js';
+import { compareEstimate, ESTIMATE_WARNING, isFeed, estimatePatchRows, filterRequirements, filterValue, PIVOT_COLUMNS, generateEstimatePatch, isOwnLine, channelClass, channelsOf, resolveSpec, zoneViews } from '../engine.js';
 import { effectiveDrivers } from '../state.js';
 import { ratingsOf } from '../typeFaults.js';
 import { openReport } from '../bugReports.js';
@@ -337,19 +337,32 @@ export default function EstimatePage({ state, dispatch, zone }) {
   const showP = !!prefs.pvPower;
   const showV = !!prefs.pvFv;
   const showN = !!prefs.pvName;   // Driver Name, beside Driver Type (RDTQNJ)
+  const showC = prefs.pvCtl !== false; // Control Type, shown unless turned off
   const lineKeys = shown.flatMap((z) => groupsOf(z).flatMap(({ g, items }) => [g, ...items.map((i) => i.k)]));
 
-  // the line's rows are one channelClass (the engine splits on it); the popup is just the columns
+  // the line's rows are one channelClass (the engine splits on it), so one chip says it all
   const ChannelIcon = ({ refs }) => {
-    const rs = (refs ?? []).map((ref) => reqByRef.get(ref)).filter(Boolean);
-    const c = rs.length ? channelClass(rs[0]) : null;
+    const r = (refs ?? []).map((ref) => reqByRef.get(ref)).find(Boolean);
+    const c = r ? channelClass(r) : null;
     if (!c) return null;
-    const facts = [...new Set(rs.map((r) => `MAX_SecondaryPowerNodes ${r.nodes ?? '-'} · ControlAddressCount ${r.addressCount ?? '-'}`))];
+    const ch = channelsOf(r);
+    const label = `${c === 'multi' ? 'Colour' : 'Tunable'} · ${ch} ch`;
     return (
-      <Tooltip content={facts}>
-        <Icon name={c === 'multi' ? 'instant_mix' : 'tonality_2'} cls={`est-ch-${c}`} label={facts.join('; ')} />
+      <Tooltip content={[[c === 'multi' ? 'Colour change' : 'Tunable', ''],
+        ch > 1 ? `${ch} channels per fitting: one output each, all on one driver` : 'Check the channels by hand',
+        `+ve ${r.posNodes ?? '-'} · −ve ${r.negNodes ?? '-'}${r.posNodes === 1 && r.negNodes > 1 ? ' (common +)' : ''}`,
+        `ControlAddressCount ${r.addressCount ?? '-'}`]}>
+        <span className={`est-ch est-ch-${c}`} tabIndex={0}>
+          <Icon name={c === 'multi' ? 'instant_mix' : 'tonality_2'} label={label} />{label}
+        </span>
       </Tooltip>
     );
+  };
+  // ControlType badges, coloured as Kaizen's Bootstrap badges page (134871)
+  const CT_BG = { dali: '#ce2121', phase: '#487dcd', switch: '#921caa', local: '#e97100', dmx: '#e72ea0' };
+  const CtBadges = ({ refs }) => {
+    const cts = [...new Set((refs ?? []).map((ref) => reqByRef.get(ref)?.controlType).filter(Boolean))];
+    return cts.map((ct) => <span key={ct} className="est-ct" style={{ background: CT_BG[ct.toLowerCase()] ?? '#64748b' }}>{ct.toUpperCase()}</span>);
   };
 
   const RowTable = ({ refs }) => (
@@ -500,6 +513,10 @@ export default function EstimatePage({ state, dispatch, zone }) {
     const what = unit ? unit : 'fittings';
     const up = (a, b) => (a % b ? ' (rounded up)' : '');
     const outsOf = (x) => `${x} output${x === 1 ? '' : 's'}`;
+    // tunable / colour: a fitting is `ch` outputs, so the driver is `sets` of them
+    const ch = w.channels ?? 1;
+    const sets = w.slots ?? n;
+    const setsOf = (x) => (ch > 1 ? `${x} set${x === 1 ? '' : 's'} of ${ch} outputs` : outsOf(x));
 
     // Per driver, then per output: the packer's own split where there is one,
     // else fill order for plain division. Grouped runs have no split.
@@ -512,10 +529,12 @@ export default function EstimatePage({ state, dispatch, zone }) {
       : !w.runList && !w.packed && w.wPer
         ? Array.from({ length: l.count }, (_, i) => {
           const m = Math.max(0, Math.min(l.perDriver, l.qty - i * l.perDriver));
-          const per = Number.isFinite(perOut) ? perOut : Math.ceil(l.perDriver / n);
-          const outs = Array.from({ length: n }, (_, j) => Math.max(0, Math.min(per, m - j * per)));
-          return { w: m * w.wPer, outs: outs.map((c) => (c ? {
-            label: `${fittings[0].positionType || '-'} ×${fmt(c)}${u}`,
+          const per = Number.isFinite(perOut) ? perOut : Math.ceil(l.perDriver / sets);
+          const bySet = Array.from({ length: sets }, (_, j) => Math.max(0, Math.min(per, m - j * per)));
+          // each set's count on each of its channels, then any outputs left over
+          const outs = [...bySet.flatMap((c) => Array(ch).fill(c)), ...Array(n - sets * ch).fill(0)];
+          return { w: m * w.wPer, outs: outs.map((c, j) => (c ? {
+            label: `${fittings[0].positionType || '-'} ×${fmt(c)}${u}${ch > 1 ? ` · ch ${(j % ch) + 1}` : ''}`,
             fv: w.fvPer && w.maxFvV ? [c * w.fvPer, w.maxFvV * w.keep] : null,
             w: w.maxLoadW ? [c * w.wPer, w.maxLoadW * w.keep] : null,
           } : null)) };
@@ -532,6 +551,7 @@ export default function EstimatePage({ state, dispatch, zone }) {
             </div>
           ))}
           <div className="est-tr-sub">Σ {N(l.loadW, 'W', true)}{w.mixed ? ' · each packed at its own size' : ''}</div>
+          {ch > 1 && <div className="est-tr-sub est-tr-ch"><ChannelIcon refs={l.rows} /> {ch} outputs per fitting, on one driver · each sized for the whole fitting</div>}
         </Step>
 
         <Step i="2" title="Driver">
@@ -599,9 +619,9 @@ export default function EstimatePage({ state, dispatch, zone }) {
               </tbody>
             </table>
             {Number.isFinite(perOut) && (
-              <div className="est-tr-sub">{perOut * n <= w.perDriverW
-                ? <>{perOut} per output × {outsOf(n)} = <b>{l.perDriver}</b>{u} per driver</>
-                : <>{perOut} per output × {outsOf(n)}, but W caps it at <b>{l.perDriver}</b>{u} per driver</>}</div>
+              <div className="est-tr-sub">{perOut * sets <= w.perDriverW
+                ? <>{perOut} per {ch > 1 ? 'set' : 'output'} × {setsOf(sets)} = <b>{l.perDriver}</b>{u} per driver</>
+                : <>{perOut} per {ch > 1 ? 'set' : 'output'} × {setsOf(sets)}, but W caps it at <b>{l.perDriver}</b>{u} per driver</>}</div>
             )}
           </>}
         </Step>
@@ -672,6 +692,7 @@ export default function EstimatePage({ state, dispatch, zone }) {
       {showV && <td className="n">{fvLabel(l.rows)}</td>}
       <td>{unmatched ? <span className={l.feed ? 'pv-note' : 'dp-fault'}>{reasonOf(l)}</span> : <TypePill t={l.typeRef} />}</td>
       {showN && <td className="pv-name">{unmatched ? '' : nameOf(l.typeRef)}</td>}
+      {showC && <td className="pv-ct"><CtBadges refs={l.rows} /></td>}
       <td className="n">{unmatched ? '–' : l.count}</td>
       <td className="pv-flags">
         <ChannelIcon refs={l.rows} />
@@ -719,7 +740,7 @@ export default function EstimatePage({ state, dispatch, zone }) {
 
   const Detail = ({ l, k, unmatched }) => (
     <tr className="pv-detail">
-      <td colSpan={6 + showP + showV + showN}>
+      <td colSpan={6 + showP + showV + showN + showC}>
         <div className="est-body">
           {(unmatched ? canForce(l) : forcing === k || state.forcedTypes[k]) && <ForceType k={k} l={l} />}
           <RowTable refs={l.rows ?? []} />
@@ -1026,13 +1047,14 @@ export default function EstimatePage({ state, dispatch, zone }) {
             <tr>
               <th>Hub / ControlGroup</th>
               {showP && <th className="n">Total Power</th>}{showV && <th className="n">Total Forward Voltage</th>}
-              <th>Driver Type</th>{showN && <th>Driver Name</th>}<th className="n">Driver Count</th><th>Flags</th><th>Limited By</th>
+              <th>Driver Type</th>{showN && <th>Driver Name</th>}{showC && <th>Control Type</th>}<th className="n">Driver Count</th><th>Flags</th><th>Limited By</th>
               <th className="text-end">
                 {/* the totals are there to check against, not to read every time */}
                 <KebabMenu title="Columns" items={[
                   { label: 'Total Power', icon: showP ? 'check_box' : 'check_box_outline_blank', onClick: () => setPref({ pvPower: !showP }) },
                   { label: 'Total Forward Voltage', icon: showV ? 'check_box' : 'check_box_outline_blank', onClick: () => setPref({ pvFv: !showV }) },
                   { label: 'Driver Name', icon: showN ? 'check_box' : 'check_box_outline_blank', onClick: () => setPref({ pvName: !showN }) },
+                  { label: 'Control Type', icon: showC ? 'check_box' : 'check_box_outline_blank', onClick: () => setPref({ pvCtl: !showC }) },
                 ]} />
               </th>
             </tr>
@@ -1046,6 +1068,7 @@ export default function EstimatePage({ state, dispatch, zone }) {
                   <td>{z.zone}</td>{showP && <td className="n">{fmt(z.loadW)} W</td>}{showV && <td />}
                   <td>{hubTypes.size === 1 ? <TypePill t={[...hubTypes][0]} /> : null}</td>
                   {showN && <td className="pv-name">{hubTypes.size === 1 ? nameOf([...hubTypes][0]) : null}</td>}
+                  {showC && <td />}
                   <td className="n">{z.drivers}</td><td /><td /><td />
                 </tr>
                 {groups.map(({ cg, g, items }) => {
@@ -1071,6 +1094,7 @@ export default function EstimatePage({ state, dispatch, zone }) {
                         {showV && <td className="n">{fvLabel(refs)}</td>}
                         <td>{typeCell}</td>
                         {showN && <td className="pv-name">{types.length === 1 ? nameOf(types[0]) : null}</td>}
+                        {showC && <td className="pv-ct"><CtBadges refs={refs} /></td>}
                         <td className="n">{matched.reduce((n, i) => n + i.l.count, 0) || '–'}</td>
                         <td /><td /><td />
                       </>}
