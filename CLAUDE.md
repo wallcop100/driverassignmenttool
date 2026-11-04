@@ -48,11 +48,11 @@ npm run build                   # -> dist/
   never leaving the browser is a real property of a tool handling clients' design data, not a
   convenience. A backend would add deployment surface for no benefit — parsing, validation and
   bin-packing are pure functions over a few hundred rows. The one exception is the optional
-  companion (`src/companion.js`): the app must stay complete without it, and only what the person
-  chooses to send leaves the browser: a bug report built from allowlists in `remoteReport()`, or a
-  datasheet driver part they share (`partFromDraft` in `PresetEditor.jsx`), or their Yes/No/Not sure
-  check of someone else's (`SharedCheck.jsx`). Never send a CSV, the
-  session, or any free text from the screen.
+  companion (`src/companion.js`): the app must stay complete without it, and only what the person's
+  answers produce leaves the browser: a bug report built from allowlists in `remoteReport()`, and,
+  while filling in driver types, the part they settled on (`partFromDraft` in `src/learn.js`), a
+  reason code when they keep their own values, and a vote when they use another project's part.
+  Never a CSV, the session, or free text.
 - **`src/engine.js` stays plain exported functions over a `model`** — no classes, no internal mutable
   state, no singleton. That is exactly how `test/engine.test.mjs` uses them: build a synthetic model,
   assert on the output, no mocking. An OO layer would be pure indirection.
@@ -88,6 +88,7 @@ npm run build                   # -> dist/
 | `src/designdb.js` | DesignDB .xlsx → type library CSV; the overlay's section 0 ported to sheet rows |
 | `src/persist.js` | the only persistence — session autosave to localStorage, offered back as "Resume" |
 | `src/companion.js` | probes `./companion/capabilities` once; null on Pages. Reports and the shared parts catalogue |
+| `src/learn.js` | what the answers send: votes, reason codes, amendments and observations. The only caller of `parts.send` |
 | `src/build.js`, `src/buildNames.json` | build commit, channel and name (stamped by `vite.config.js`), shown as the bottom-right badge |
 | `test/` | `node:test`, no Jest/Vitest/jsdom — the engine and reducer are pure and need no DOM |
 | `docs/screens.mjs`, `docs/shoot.mjs` | re-render every surface and retake screenshots in one pass |
@@ -115,7 +116,7 @@ On a UI change, retake the documentation images in one pass so they cannot drift
 node docs/screens.mjs      # -> docs/*.html
 node docs/shoot.mjs        # -> docs/img/*.png
 node docs/hub-layout-shots.mjs
-node docs/companion-shots.mjs  # mocked companion; PW_CHROMIUM=<path> to use a browser already on disk
+node docs/companion-shots.mjs  # mocked companion, and asserts every body sent; PW_CHROMIUM=<path> for a browser on disk
 ```
 
 ## Gotchas
@@ -179,3 +180,9 @@ node docs/companion-shots.mjs  # mocked companion; PW_CHROMIUM=<path> to use a b
 - 2026-11-03: Playwright's `setInputFiles` copies the file, so a File in the page never sees a later change on disk. To test the DesignDB refresh, stub `DataTransferItem.prototype.getAsFileSystemHandle` and dispatch a synthetic drop. `getAsFileSystemHandle()` has to be called inside the drop handler, before any await.
 - 2026-11-04: `SetupWizard`'s `only` must be a Set fixed when it opens (`TypesPage`'s `setup` state). Recomputed per render, a type filled in mid-walk drops out of `steps` and shifts the index under you.
 - 2026-11-04: In `identify()`'s `rest`, `spec: null` on a named type means the part itself is in doubt (an `&` Name matching one product, or Parameters' output count disagreeing), so the review opens the questions with the part cleared. A no-Name type is guessed into a family only when the Ref says `-NCH`, because a FEED-PROV's nodes would otherwise match.
+- 2026-11-04: The wizard runs `identify()` once per opening (`useMemo` on the inventory). A yes sends a vote and the shared set comes back changed, which would otherwise reshuffle the families mid-walk.
+- 2026-11-04: Every send from the wizard goes through `src/learn.js`. A vote goes once per `rev`, remembered in localStorage `dat.sharedCheck`, which SharedCheck reads too, so whichever asks first counts. A family on a shared part fills blanks only, so it never "differs", and "its own values" sends nothing for it.
+- 2026-11-04: An amendment (`ownValues`) builds on an earlier one for the same part only when that one is agreed or the sender's own. Built on someone's unchecked amendment, it would pass their values off as this person's word.
+- 2026-11-04: The wizard walks only types with no numeric rating stated (`statedAttributes == 0`), so in it a value "differs" only through PowerType, ControlType or the address count. `docs/companion-shots.mjs` gives the harness a ControlType column to reach that. The harness's CSV parser is strict: an added column needs a value, even empty, in every row.
+- 2026-11-04: The installed Playwright wants chromium 1248, which isn't on disk. Run the shots with `PW_CHROMIUM=~/.cache/ms-playwright/chromium_headless_shell-1247/chrome-headless-shell-linux64/chrome-headless-shell`.
+- 2026-11-04: A companion card must say **whose** numbers it asks about. SharedCheck puts another project's values beside the datasheet's and says your answer changes nothing in the DesignDB fields below. "Are these ratings right?" alone read as a question about the DesignDB (Erik's complaint).

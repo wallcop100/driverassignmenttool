@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import { fmt, fromShared, judge } from '../typeFaults.js';
+import { REASONS, reasonsFor } from '../learn.js';
 import Tooltip from './Tooltip.jsx';
 
 // One product family per step: the product on the left, a curve to every type
@@ -128,9 +129,41 @@ export function FamilyStep({ f, out, toggle }) {
   );
 }
 
+// "Its own values are right", asked once more per value that differs: why. The
+// answer is a code, never text, and it is what the companion learns (learn.js).
+function Reasons({ x, onKeep, onCancel }) {
+  const diffs = judge(x.t, x.preset, x.f.spec).filter((e) => e.status !== 'fill');
+  const [ans, setAns] = useState({});
+  return (
+    <div className="rv-reasons">
+      {diffs.map((e) => (
+        <div key={e.key} className="rv-reason">
+          <span className="rv-val"><b>{e.col}</b> {val(e.was, e.unit)} here, {val(e.now, e.unit)} on the datasheet</span>
+          <span className="btns">
+            {reasonsFor(e).map((r) => (
+              <button key={r} type="button" aria-pressed={ans[e.key] === r}
+                className={`btn btn-sm ${ans[e.key] === r ? 'btn-primary' : 'btn-outline-secondary'}`}
+                onClick={() => setAns({ ...ans, [e.key]: r })}>{REASONS[r]}</button>
+            ))}
+          </span>
+        </div>
+      ))}
+      <div className="btns">
+        <button className="btn btn-sm btn-primary" disabled={diffs.some((e) => !ans[e.key])} onClick={() => onKeep(ans)}>
+          Keep its own values
+        </button>
+        <button className="btn btn-sm btn-link" onClick={onCancel}>Cancel</button>
+      </div>
+    </div>
+  );
+}
+
 // What was set aside, and what no product was found for. Each answer is one click.
-export function Review({ aside, rest, presets, onAsk, onOwn, onBack }) {
+export function Review({ aside, rest, presets, onAsk, onOther, onOwn, onBack }) {
+  const [asking, setAsking] = useState(null);   // the set-aside type being asked why
   const filled = (types) => types.every((t) => presets[t.typeRef]);
+  // with nothing differing there is nothing to ask: its blanks are filled and the rest kept
+  const own = (x) => (judge(x.t, x.preset, x.f.spec).some((e) => e.status !== 'fill') ? setAsking(x.t.typeRef) : onOwn(x, {}));
   const card = (key, types, why, btns) => (
     <div key={key} className="rv">
       <div className="rv-h">
@@ -151,10 +184,14 @@ export function Review({ aside, rest, presets, onAsk, onOwn, onBack }) {
       </div>
       <div className="tr-body">
         {aside.length > 0 && <div className="rv-sec">Set aside</div>}
-        {aside.map((x) => card(x.t.typeRef, [x.t], `You said this isn't right as a ${x.f.part.name}. What's wrong?`, (
+        {aside.map((x) => card(x.t.typeRef, [x.t], asking === x.t.typeRef
+          ? `Why is the DesignDB right? Each answer is kept with the ${x.f.part.name}.`
+          : `You said this isn't right as a ${x.f.part.name}. What's wrong?`, asking === x.t.typeRef ? (
+          <Reasons x={x} onKeep={(ans) => { setAsking(null); onOwn(x, ans); }} onCancel={() => setAsking(null)} />
+        ) : (
           <>
-            <button className="btn btn-sm btn-outline-primary" onClick={() => onAsk({ types: [x.t], fresh: true })}>It's a different product</button>
-            <button className="btn btn-sm btn-outline-secondary" onClick={() => onOwn(x)}>It is a {x.f.part.name}, but its own values are right</button>
+            <button className="btn btn-sm btn-outline-primary" onClick={() => onOther(x)}>It's a different product</button>
+            <button className="btn btn-sm btn-outline-secondary" onClick={() => own(x)}>It is a {x.f.part.name}, but its own values are right</button>
             <button className="btn btn-sm btn-link" onClick={() => onBack(x)}>Put it back with the {x.f.part.name}s</button>
           </>
         )))}

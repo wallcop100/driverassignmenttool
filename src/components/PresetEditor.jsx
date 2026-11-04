@@ -122,7 +122,8 @@ export default function PresetEditor({ draft, setDraft, inventory, onSave, onCan
   // never in its place (report AUSTHZ). A part that is itself shared says so.
   // An unchecked one is asked about (SharedCheck), never offered: a suggestion is only what the companion is sure of.
   const amend = sharedAmendment((part?.driver ?? part)?.name);
-  const sure = checkOf(amend) !== 'unchecked' ? amend : null;
+  // your own sending is not "another project"
+  const sure = checkOf(amend) !== 'unchecked' && !amend?.own ? amend : null;
   const said = {
     maxPowerW: sure?.maxPowerW, outputVoltageV: sure?.outputV, outputs: sure?.outputs,
     addresses: sure?.addresses, nodeMaxFvV: sure?.maxFvV, nodeMaxLoadW: sure?.nodeMaxLoadW,
@@ -311,27 +312,3 @@ export default function PresetEditor({ draft, setDraft, inventory, onSave, onCan
     </div>
   );
 }
-
-// The ratings above, sent to the shared catalogue as a datasheet part: a new one,
-// or an amendment to a part the page has wrong. Only with a companion, and only
-// these fields - never the Ref, the node names, or anything else of the design.
-export const partFromDraft = (d, { name, aliases, kind, minMa, maxMa, size = [], jboxes = '', psu = '' }) => ({
-  name: name.trim(),
-  aliases: aliases.split(',').map((a) => a.trim()).filter(Boolean),
-  kind, powerType: d.powerType,
-  maxPowerW: numOrNull(d.maxPowerW),
-  ...(d.powerType === 'CC'
-    ? { minA: numOrNull(minMa) == null ? null : numOrNull(minMa) / 1000,
-        maxA: numOrNull(maxMa) == null ? null : numOrNull(maxMa) / 1000 }
-    : { outputV: numOrNull(d.outputVoltageV) }),
-  outputs: Math.max(1, Number(d.outputs) || 1),
-  addresses: numOrNull(d.addresses),
-  maxFvV: numOrNull(d.nodeMaxFvV),
-  nodeMaxLoadW: numOrNull(d.nodeMaxLoadW),
-  nodeCurrentA: numOrNull(d.nodeCurrentA),
-  controlType: (d.controlType ?? '').trim() || null,
-  // what the layout needs to draw it: the case, its boxes, and a DC/DC driver's usual supply
-  ...(size.length === 3 && size.every((v) => numOrNull(v) > 0) && { sizeMm: size.map(Number) }),
-  ...(numOrNull(jboxes) != null && { jboxes: Math.round(Number(jboxes)) }),
-  ...(kind === 'dcdc' && psu && { psu }),
-});

@@ -424,9 +424,6 @@ body { background: #f6f8fb; }
 /* the shared catalogue (AUSTHZ): what people sent, told apart from a spec page */
 .fld-ds.is-shared { color: #7c3aed; display: inline-flex; align-items: center; gap: 4px; }
 .fld-sug { display: inline-flex; align-items: center; gap: 4px; }
-.sug-flag { border: 0; background: none; padding: 0; line-height: 1; color: #94a3b8; }
-.sug-flag:hover { color: #7c3aed; }
-.sug-flag .material-icons { font-size: 13px; color: inherit; }
 
 .preset-warn {
   font-size: 12px; color: #8a6d1f; background: #fdf6e3; border: 1px solid #e2d7b4;
@@ -875,6 +872,9 @@ body { background: #f6f8fb; }
 .rv-h { display: flex; gap: 6px 10px; align-items: baseline; flex-wrap: wrap; }
 .rv-why { font-size: 12.5px; color: #64748b; margin: 4px 0 8px; }
 .rv .btns { display: flex; flex-wrap: wrap; gap: 6px; }
+.rv-reasons { flex: 1 0 100%; display: flex; flex-direction: column; gap: 8px; }
+.rv-reason { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; padding-bottom: 8px; border-bottom: 1px solid #eef2f7; }
+.rv-val { font-size: 12.5px; min-width: 220px; flex: 1 1 220px; }
 .rv-sec { font-size: 11px; letter-spacing: .05em; text-transform: uppercase; color: #64748b; font-weight: 600; margin: 14px 0 8px; }
 @media (max-width: 760px) {
   .tr-map { grid-template-columns: 1fr; gap: 14px; }
@@ -1257,9 +1257,8 @@ body { background: #f6f8fb; }
 .shared-check table { font-size: 12px; margin: 6px 0; }
 .shared-check th { color: #6c757d; font-weight: normal; width: 110px; }
 .shared-check .sc-foot { display: flex; align-items: center; gap: 6px; }
-.shared-check .sc-warn { display: flex; align-items: center; gap: 6px; margin-top: 6px; color: #b45309; font-weight: 600; }
-.shared-check tr.is-off td { color: #b45309; }
-.shared-check .sc-off { font-weight: 600; }
+.shared-check .sc-sub { color: #6c757d; margin-top: 2px; }
+.shared-check tr.is-off td:nth-child(2) { color: #b45309; font-weight: 600; }
 
 /* ---- hub layout toolbar: one slim row, the rest in its menus ---- */
 :root { --hub-magenta: #d946ef; }

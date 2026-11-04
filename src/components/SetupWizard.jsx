@@ -1,6 +1,7 @@
 import { useMemo, useState, useSyncExternalStore } from 'react';
 import { NO_SUPPLY, allParts, atCurrent, combine, driverTypes, matchParts, resolveSpec, sharedSupply } from '../engine.js';
 import { onSharedParts, sharedSnapshot } from '../catalogue.js';
+import { observation, ownValues, send, vote } from '../learn.js';
 import PresetEditor, { draftFrom, draftFromPart, toPreset } from './PresetEditor.jsx';
 import { FamilyStep, Pill, Review } from './Families.jsx';
 import {
@@ -44,9 +45,9 @@ export default function SetupWizard({ model, presets, dispatch, onClose, only })
     () => (only ? model.inventory.filter((t) => only.has(t.typeRef)) : model.inventory),
     [model.inventory, only],
   );
-  // a check of a shared part changes what can be identified
-  const sharedSet = useSyncExternalStore(onSharedParts, sharedSnapshot);
-  const { families, rest } = useMemo(() => identify(inventory, resolveSpec), [inventory, sharedSet]);
+  // Identified once per opening: a yes sends a vote and the shared set comes back
+  // changed, which must not reshuffle the families under the person mid-walk.
+  const { families, rest } = useMemo(() => identify(inventory, resolveSpec), [inventory]);
   const [at, setAt] = useState(0);             // families.length is the review
   const [out, setOut] = useState(() => new Set());
   const [ask, setAsk] = useState(null);        // { types, fresh?, hand? }
@@ -60,6 +61,7 @@ export default function SetupWizard({ model, presets, dispatch, onClose, only })
 
   const yes = () => {
     for (const x of kept) set(x.preset);
+    vote([f.part, f.supply], 'confirmed');   // another project's part, and now a second person's word
     setAt(at + 1);
   };
   const n = kept.length;
@@ -91,7 +93,11 @@ export default function SetupWizard({ model, presets, dispatch, onClose, only })
             {f
               ? <FamilyStep f={f} out={out} toggle={toggle} />
               : <Review aside={aside} rest={rest} presets={presets} onAsk={setAsk}
-                  onOwn={(x) => set(fixPreset(x.t, x.f.spec, 'fill', x.currentA))}
+                  onOther={(x) => { vote([x.f.part], 'rejected'); setAsk({ types: [x.t], fresh: true }); }}
+                  onOwn={(x, reasons) => {
+                    set({ ...fixPreset(x.t, x.f.spec, 'fill', x.currentA), name: x.preset.name });
+                    send(ownValues(x.t, x.preset, x.f.spec, reasons));
+                  }}
                   onBack={(x) => { set(x.preset); toggle(x.t.typeRef); }} />}
             <div className="tr-foot">
               {at > 0 && <button className="btn btn-sm btn-link" onClick={() => setAt(at - 1)}>Back</button>}
@@ -161,15 +167,15 @@ function Ask({ model, presets, dispatch, types, fresh, hand: byHand, onDone }) {
   };
 
   // The first type, then its lookalikes: from the part at their own current
-  // when there is one, or a copy of the columns filled in by hand.
+  // when there is one, or a copy of the columns filled in by hand, also at its own.
   const write = (first, fromPart) => {
-    dispatch({ type: 'SET_PRESET', preset: first });
-    for (const s of types.slice(1)) {
-      const preset = fromPart
-        ? familyPreset(s, spec, needsCurrent ? currentOptions(s, spec)[0]?.a ?? first.currentA : null)
-        : { ...first, typeRef: s.typeRef, name: s.name || first.name };
-      dispatch({ type: 'SET_PRESET', preset });
-    }
+    const all = [first, ...types.slice(1).map((s) => (fromPart
+      ? familyPreset(s, spec, needsCurrent ? currentOptions(s, spec)[0]?.a ?? first.currentA : null)
+      : { ...first, typeRef: s.typeRef, name: s.name || first.name,
+          currentA: first.powerType === 'CC' ? known(s).currentA?.[0] ?? first.currentA : first.currentA }))];
+    for (const preset of all) dispatch({ type: 'SET_PRESET', preset });
+    if (fromPart) vote([part, psu], 'confirmed');
+    else if (!part) send([observation(types[0].name, all)].filter(Boolean).map((p) => ({ part: p })));
     onDone();
   };
 
