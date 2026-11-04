@@ -26,6 +26,13 @@ names and badge. `dat-autodeploy.timer` keeps Connected on Pages' build. The hos
 
 ## Log
 
+### 2026-11-04 — Estimate reports AHA2MY, J5KE96, JZAJZ7, 95QTPK, 3NC4S3
+- AHA2MY: with no UoM from the DesignDB, a PositionType with a part quantity is taken as metres (`withUom` in api.js), so the working says "13.4 m", not "13.4 fittings".
+- J5KE96: the working names outputs after the type's own nodes (OP.1, OP.2), falling back to O1.
+- JZAJZ7: in One hub at a time, the header figures (rows, PositionTypes, drivers, chips, unmatched) and the filter counts are that hub's.
+- 95QTPK: pivot headers sort the hubs and the groups in each (click again to reverse); the header ⋮ has Reset sorting. The sort is not saved.
+- 3NC4S3: the Filter menu has Clear all filters.
+
 ### 2026-11-04 — Driver types from the assessment
 - The estimate's Driver types menu has "Edit driver types…", which opens the shared Types page (no zone, so it lists the whole library); Back returns to the estimate. An unmatched lot's kebab has "New driver type for these…": the shared NewTypeDialog, seeded from the rows (power type, CC current, control type, outputs = channels).
 - The estimate patch now carries an ElementTypes section for every edited and every new type, used by a line or not (`estimatePatchTypes`, the same `patchablePresets`/`typeSection` as the assignment patch).
