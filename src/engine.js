@@ -330,10 +330,14 @@ export function parseAssessment(text, zoneAlias = {}) {
   rows.forEach((row, i) => {
     const ref = s(row.Link_SecondaryPowerRef);
     if (!ref) return;                        // 100053 already drops these; belt and braces
-    const zone = zoneAlias[ref] || ref;
+    // BestRef = COALESCE(ExtRef, Ref): DJ 100874 sends the ExtRef, 100053 only the Ref
+    const best = s(row.Link_SecondaryPowerExtRef) || ref;
+    const zone = zoneAlias[best] || zoneAlias[ref] || best;
     const qty = num(row.SumQuantity) ?? 1;
     if (qty <= 0) return;                    // a parent replaced by its own children
-    const pt = s(row['CC/CV']);
+    // DJ 100874 renamed CC/CV, CV_Voltage, CC_Current, ControlAddressCount; 0 there means n/a
+    const pt = s(row['CC/CV'] ?? row.SecondaryPowerType);
+    const pos = (v) => { const n = num(v); return n ? n : null; };
     const loadW = num(row.SumPower) ?? 0;
     const fvV = num(row.SumVf);
     out.push({
@@ -343,8 +347,8 @@ export function parseAssessment(text, zoneAlias = {}) {
       qty,
       loadW,
       fvV,
-      currentA: num(row.CC_Current),
-      voltageV: num(row.CV_Voltage),
+      currentA: row.CC_Current != null ? num(row.CC_Current) : pos(row.PositionCurrent),
+      voltageV: row.CV_Voltage != null ? num(row.CV_Voltage) : pos(row.PositionVoltage),
       powerType: pt === 'CC' || pt === 'CV' ? pt : null,
       controlGroup: s(row.ControlGrouptext),
       location: s(row.LocationName),
@@ -353,7 +357,13 @@ export function parseAssessment(text, zoneAlias = {}) {
       // sent from overlay V1.14; without it a quantity is a plain count.
       uom: s(row.UoM) || null,
       controlType: s(row.ControlTypeRef),
-      addressCount: num(row.ControlAddressCount),
+      addressCount: num(row.ControlAddressCount ?? row.Unit_ControlAddressCount),
+      nodes: num(row.MAX_SecondaryPowerNodes),
+      // +ve / -ve terminals: 1/2 is common-anode tunable white, 2/2 two separate channels
+      posNodes: num(row['SecondaryPowerNodes_+ve']),
+      negNodes: num(row['SecondaryPowerNodes_-ve']),
+      // every column as exported, so the estimate can be filtered on any of them like a pivot
+      cols: Object.fromEntries(Object.entries(row).map(([k, v]) => [k, s(v)])),
       // per fitting - what actually has to fit on a node
       wPer: loadW / qty,
       fvPer: fvV == null ? null : fvV / qty,
@@ -492,12 +502,15 @@ export function buildEmpty(zone, typesText, presets) {
     const prior = inventory.get(t.typeRef) ?? null;
     inventory.set(t.typeRef, { ...t, designDB: prior, name: t.name || prior?.name || '' });
   }
+  // several zones: the hubs of a DesignDB opened alone, whose drivers come from its Elements
+  const many = Array.isArray(zone);
   return {
-    zones: [zone],
+    zones: many ? zone : [zone],
     drivers: [], links: [], baseline: {}, originalRows: [], fieldnames: DEFAULT_FIELDNAMES,
     requirements: [],
     mode: 'empty',
-    modeReason: 'nothing points at this hub yet - no drivers, cables or fittings',
+    modeReason: many ? 'the DesignDB alone - its hubs and drivers, no cables'
+      : 'nothing points at this hub yet - no drivers, cables or fittings',
     inventory: [...inventory.values()].sort((a, b) => a.typeRef.localeCompare(b.typeRef)),
   };
 }
@@ -951,9 +964,9 @@ export function compareEstimate(plan, drivers) {
 // Shown on the assessment view and written into anything it exports. The
 // estimate sizes from roll-ups and a transcribed catalogue - it is a starting
 // count, not a design, and nothing downstream checks it.
-export const ESTIMATE_WARNING = 'Estimate only - driver counts are calculated from the DJ 100053 Position '
-  + 'roll-ups and the static catalogue. Double-check every figure against the spec sheets and the '
-  + 'actual cable runs before relying on it.';
+export const ESTIMATE_WARNING = 'Estimate only - driver counts are calculated from the Secondary Power '
+  + 'Assessment (DJ 100053) and then checked against the Driver ElementTypes. You are responsible for '
+  + 'double-checking any estimate made.';
 
 // The ref IS the spec in this library (ET-CCR-D-350-2CH-01 = CC, 350mA, 2CH), so
 // the next free one is composed from the ratings being entered rather than a
@@ -1022,6 +1035,8 @@ function mismatchOf(t, links, allowLocal) {
   if (links.some((l) => l.powerType !== t.powerType)) return `a ${t.powerType ?? '?'} driver for ${links[0].powerType} fittings`;
   if (!links.every((l) => fingerprintCompatible(l, t))) return 'its current or voltage does not match the fittings';
   if (!links.every((l) => controlTypeOk(l, t))) return 'its control type does not match the fittings';
+  const ch = Math.max(...links.map(channelsOf));
+  if (ch > (t.nodes?.length ?? 0)) return `${t.nodes?.length ?? 0} output${t.nodes?.length === 1 ? '' : 's'} for a ${ch}-channel fitting`;
   return 'its ratings are incomplete';
 }
 
@@ -1033,7 +1048,7 @@ function sizingCandidates(inventory, links, allowLocal = false) {
     if (t.powerType === 'CC' && t.currentA == null) return false;
     if (t.powerType === 'CV' && t.outputVoltageV == null) return false;
     return links.every((l) => l.powerType === t.powerType && fingerprintCompatible(l, t)
-      && controlTypeOk(l, t));
+      && controlTypeOk(l, t) && channelsOf(l) <= t.nodes.length);
   });
 }
 
@@ -1146,6 +1161,11 @@ export const PICK_BY = {
 
 // A PositionTypeRef suffixed E or Em (the emergency variant) gets a line of its
 // own unless toggled back into the bundle; any other type only when toggled out.
+// Tunable (2 nodes or 2 addresses) and multi-address (>2) fittings get a line per row, for checking
+export const channelClass = (r) => (r.addressCount > 2 || r.nodes > 2 ? 'multi'
+  : r.nodes === 2 || r.addressCount === 2 ? 'tunable' : null);
+// Channels one fitting needs: each is its own output, and all of them on one driver.
+export const channelsOf = (r) => Math.max(1, r?.nodes || 1);
 export const isOwnLine = (pt, ownLine = []) => !!pt && /Em?$/.test(pt) !== ownLine.includes(pt);
 
 // Fittings of different sizes, packed as they are (MBTBA2): largest first onto
@@ -1199,6 +1219,9 @@ export function packLine(runs, t, keep) {
   };
 }
 
+// A PositionTypeRef starting F is a feed: no CC/CV is expected of it, so it is no warning.
+export const isFeed = (pt) => /^F/i.test(pt ?? '');
+
 export function planFromRequirements(model, zone, opts = {}) {
   const {
     restrictControlGroup = true,
@@ -1220,8 +1243,22 @@ export function planFromRequirements(model, zone, opts = {}) {
     nodeSplitByLocation = false,
   } = opts;
   const keep = 1 - margin;
-  // A row with no load needs no driver, whatever its quantity.
-  const rows = (model.requirements || []).filter((r) => r.zone === zone && !!r.powerType && r.loadW > 0);
+  const all = (model.requirements || []).filter((r) => r.zone === zone);
+  // A row with no load needs no driver, and one with no CC/CV has nothing to size
+  // against. Both are still listed, so a hub of them doesn't read as 0 for no reason.
+  const rows = all.filter((r) => !!r.powerType && r.loadW > 0);
+  // No CC/CV is one line per PositionType, so a type can be forced on them (a feed's PSU, say).
+  const noPt = new Map();
+  for (const r of all.filter((x) => !x.powerType)) noPt.set(r.positionType || '-', [...(noPt.get(r.positionType || '-') ?? []), r]);
+  const skipped = [
+    ...[...noPt].map(([pt, rs]) => [`no-power-type:${pt}`, 'No CC or CV SecondaryPowerType, so no driver is sized for these', rs]),
+    ['no-load', 'No power (SumPower 0), so no driver is needed', all.filter((r) => r.powerType && !(r.loadW > 0))],
+  ].filter(([, , rs]) => rs.length).map(([key, reason, rs]) => ({
+    key, reason, skipped: true, qty: rs.reduce((n, r) => n + r.qty, 0), rows: rs.map((r) => r.ref),
+    positionTypes: [...new Set(rs.map((r) => r.positionType).filter(Boolean))],
+    feed: rs.every((r) => isFeed(r.positionType)),
+    group: rs,
+  }));
 
   // Each constraint is a coarser bucket, and a coarser bucket means more
   // drivers. That is the point: an estimate that packs everything as tightly as
@@ -1232,6 +1269,7 @@ export function planFromRequirements(model, zone, opts = {}) {
     const key = [
       fpKey(r),                                        // a CC fitting cannot share a CV driver
       r.controlType || null,                           // nor a DALI fitting a Local driver
+      channelClass(r) && `${channelClass(r)} ${r.ref}`, // tunable and multi-address: one line per row, to be checked
       restrictControlGroup ? (r.controlGroup || '-') : null,
       splitByType || isOwnLine(r.positionType, ownLine) ? (r.positionType || '-') : null,
       splitByLocation ? (r.location || '-') : null,
@@ -1278,6 +1316,7 @@ export function planFromRequirements(model, zone, opts = {}) {
     }, new Map()).values()];
     const mixed = group.some((r) => r.wPer !== group[0].wPer || (r.fvPer ?? 0) !== (group[0].fvPer ?? 0));
     const wPer = Math.max(...runs.map((r) => r.wPer));
+    const ch = Math.max(...group.map(channelsOf));
 
     // Rank candidates by the count THIS arithmetic gives, not by pickType's,
     // which ranks on watts. When forward voltage binds - and it usually does - 
@@ -1288,6 +1327,11 @@ export function planFromRequirements(model, zone, opts = {}) {
     const size = (t) => {
       if (t.maxPowerW == null || !t.nodes?.length) return null;
       const node = t.nodes[0] ?? {};
+      // A tunable or colour fitting takes one output per channel, all on one driver,
+      // and each channel is sized for the whole fitting (it may be the only one lit).
+      // So the driver is `slots` sets of `ch` outputs, and every set is sized as one output.
+      const slots = Math.floor(t.nodes.length / ch);
+      if (!slots) return null;
       const fit = (run) => {
         const perNodeFv = run.fvPer > 0 && node.maxFvV != null
           ? Math.floor((node.maxFvV * keep) / run.fvPer) : Infinity;
@@ -1305,12 +1349,12 @@ export function planFromRequirements(model, zone, opts = {}) {
       let byWatts = null;
       let packed = null;
       if (mixed) {
-        packed = packLine(runs, t, keep);
+        packed = packLine(runs, ch > 1 ? { ...t, nodes: t.nodes.slice(0, slots) } : t, keep);
         if (!packed) return null;
         ({ count, outputs } = packed);
         perDriver = Math.ceil(qty / count);
       } else if (runs.length === 1) {
-        perDriver = Math.min(perNode * t.nodes.length, perDriverW);
+        perDriver = Math.min(perNode * slots, perDriverW);
         if (!(perDriver > 0)) return null;
         count = Math.ceil(qty / perDriver);
         outputs = Math.ceil(qty / Math.min(perNode, perDriverW));
@@ -1325,7 +1369,7 @@ export function planFromRequirements(model, zone, opts = {}) {
         outputs = runList.reduce((n, r) => n + r.outputs, 0);
         // whole fittings, not watts: 10 x 30W on a 100W driver is 4 drivers of 3, not 3.
         byWatts = perDriverW > 0 ? Math.ceil(qty / perDriverW) : Infinity;
-        count = Math.max(Math.ceil(outputs / t.nodes.length), byWatts);
+        count = Math.max(Math.ceil(outputs / slots), byWatts);
         perDriver = Math.ceil(qty / count);
       }
 
@@ -1333,14 +1377,14 @@ export function planFromRequirements(model, zone, opts = {}) {
         t,
         count,
         perDriver,
-        outputs,
+        outputs: outputs * ch,
         perNode: !mixed && Number.isFinite(perNode) ? perNode : null,
         em: isEmergency(t.typeRef) ? 1 : 0,
         waste: count * t.maxPowerW * keep - totalW,
-        spareOutputs: count * t.nodes.length - outputs,
+        spareOutputs: count * t.nodes.length - outputs * ch,
         // the inputs behind count, so the page can show its working rather than redo it
         working: {
-          keep, maxPowerW: t.maxPowerW, outputs: t.nodes.length,
+          keep, maxPowerW: t.maxPowerW, outputs: t.nodes.length, channels: ch, slots,
           maxFvV: node.maxFvV ?? null, maxLoadW: node.maxLoadW ?? null,
           wPer, fvPer: Math.max(...runs.map((r) => r.fvPer)) || null, runs: runs.length,
           mixed,
@@ -1353,11 +1397,11 @@ export function planFromRequirements(model, zone, opts = {}) {
           totalW, runList, byWatts,
         },
         // the limit that actually bound it, in the reader's terms
-        limit: packed ? (count > Math.ceil(outputs / t.nodes.length) ? 'driver W'
+        limit: packed ? (count > Math.ceil(outputs / slots) ? 'driver W'
           : runs.length > 1 ? 'outputs' : packed.bound)
-          : byWatts != null && byWatts > Math.ceil(outputs / t.nodes.length) ? 'driver W'
+          : byWatts != null && byWatts > Math.ceil(outputs / slots) ? 'driver W'
           : runList ? 'outputs'
-          : perNode * t.nodes.length <= perDriverW
+          : perNode * slots <= perDriverW
           ? (perNodeFv <= perNodeW ? 'fV' : 'node W')
           : 'driver W',
       };
@@ -1400,7 +1444,9 @@ export function planFromRequirements(model, zone, opts = {}) {
 
     if (!best) {
       unmatched.push({ key, qty, rows: group.map((r) => r.ref),
-        reason: 'No ElementType in the DesignDB can take these' });
+        positionTypes: [...new Set(group.map((r) => r.positionType).filter(Boolean))],
+        reason: ch > 1 ? `No ElementType in the DesignDB can take these ${ch}-channel fittings (${ch} outputs on one driver)`
+          : 'No ElementType in the DesignDB can take these' });
       continue;
     }
 
@@ -1434,14 +1480,55 @@ export function planFromRequirements(model, zone, opts = {}) {
     });
   }
 
+  // A type forced on a no-CC/CV line: nothing to size against but watts, so drivers
+  // enough for the load at the margin, and at least one.
+  const left = [];
+  for (const { group, ...u } of skipped) {
+    const want = forced[`${zone}|${u.key}`];
+    const t = want && u.key.startsWith('no-power-type') && model.inventory?.find((x) => x.typeRef === want);
+    if (!t) { left.push(u); continue; }
+    const totalW = group.reduce((w, r) => w + r.loadW, 0);
+    const perW = (t.maxPowerW ?? 0) * keep;
+    lines.push({
+      ...u, skipped: undefined, typeRef: t.typeRef, name: t.name || '',
+      count: Math.max(1, perW > 0 ? Math.ceil(totalW / perW) : 1),
+      limit: 'driver W', working: null, considered: [], fitTypes: [], forced: want,
+      forcedIssue: null, mismatch: null, loadW: totalW, controlGroup: group[0].controlGroup,
+      groupQty: [...group.reduce((m, r) => m.set(r.controlGroup || '', (m.get(r.controlGroup || '') ?? 0) + r.qty),
+        new Map())].sort(([a], [b]) => a.localeCompare(b)),
+      locations: [...new Set(group.map((r) => r.location).filter(Boolean))],
+    });
+  }
+
   const drivers = lines.reduce((n, l) => n + l.count, 0);
-  return { zone, hubRef: rows[0]?.hubRef ?? null, lines, unmatched, drivers,
-    loadW: lines.reduce((w, l) => w + l.loadW, 0) };
+  return { zone, hubRef: all[0]?.hubRef ?? null, lines, unmatched: [...unmatched, ...left], drivers,
+    // every row's power, so a hub of feeds or unsized rows doesn't read 0 W
+    loadW: all.reduce((w, r) => w + (r.loadW || 0), 0) };
 }
 
 // Every hub in the assessment, sized - or just the one asked for.
+// The columns an Excel user pivots the assessment on, each under its 100053 and
+// 100874 name. Any other column can be added. A filter lists the values left
+// out, so a value new to this export is in by default.
+export const PIVOT_COLUMNS = [
+  ['Link_SecondaryPowerRef'],
+  ['Link_SecondaryPowerExtRef'],
+  ['ControlTypeRef'],
+  ['CC/CV', 'SecondaryPowerType'],
+  ['MAX_SecondaryPowerNodes'],
+  ['ControlAddressCount', 'Unit_ControlAddressCount'],
+];
+export const filterValue = (r, col) => r.cols?.[col] ?? '';
+export function filterRequirements(requirements, rowFilter) {
+  const out = Object.entries(rowFilter ?? {}).filter(([, vs]) => vs?.length);
+  if (!out.length) return requirements;
+  return requirements.filter((r) => out.every(([f, vs]) => !vs.includes(filterValue(r, f))));
+}
+
 export function estimate(model, opts, zone) {
-  const zones = zone ? [zone] : [...new Set((model.requirements || []).map((r) => r.zone))].sort();
+  const requirements = filterRequirements(model.requirements || [], opts?.rowFilter);
+  if (requirements !== model.requirements) model = { ...model, requirements };
+  const zones = zone ? [zone] : [...new Set(requirements.map((r) => r.zone))].sort();
   return zones.map((z) => planFromRequirements(model, z, opts));
 }
 

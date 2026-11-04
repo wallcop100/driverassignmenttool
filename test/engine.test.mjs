@@ -1559,3 +1559,100 @@ test('Local drivers are left out of sizing by default and flagged in a hub', () 
   assert.equal(flagged.length, 1);
   assert.equal(engine.validate(m, {}, added, { allowLocal: true }).filter((f) => f.check === 'ControlType').length, 0);
 });
+
+test('assessment: DJ 100874 column names, zone is BestRef', () => {
+  const head = '"Link_SecondaryPowerRef","Link_SecondaryPowerExtRef","ControlTypeRef","PositionTypeRef","SumQuantity","Unit_ControlAddressCount","SecondaryPowerType","PositionVoltage","PositionCurrent","SumVf","SumPower"';
+  const [cv, cc, local, mains] = engine.parseAssessment(`${head}
+"P50001","HUB-A","DALI","C01r","13.4","1","CV","24","0","0","321.6"
+"P50001","HUB-A","DALI","B02w","2","1","CC","0","0.3","70","23.6"
+"P50002","","LOCAL","F01","1","","","0","0","0","100"
+"P50003","","","F02a","1","","N/A","0","0","0","10"
+`);
+  assert.deepEqual([cv.zone, cv.hubRef, cv.powerType, cv.voltageV, cv.currentA, cv.addressCount], ['HUB-A', 'P50001', 'CV', 24, null, 1]);
+  assert.deepEqual([cc.powerType, cc.voltageV, cc.currentA], ['CC', null, 0.3]);
+  assert.deepEqual([local.zone, local.powerType], ['P50002', null]);
+  assert.equal(mains.powerType, null);
+});
+
+test('estimate: a saved hub slot (JSON round-trip) still sizes, for the multi-hub patch', () => {
+  const csv = fs.readFileSync(path.join(dir, '..', 'src', 'demo', 'assessment.csv'), 'utf8');
+  const types = fs.readFileSync(path.join(dir, '..', 'src', 'demo', 'form.csv'), 'utf8');
+  const model = engine.buildEstimate(csv, types);
+  const live = engine.estimatePatchRows(engine.estimate(model, {}));
+  const saved = engine.estimatePatchRows(engine.estimate(JSON.parse(JSON.stringify(model)), {}));
+  assert.ok(live.length > 0);
+  assert.deepEqual(saved, live);
+});
+
+test('estimate: a hub of LOCAL rows (no CC/CV) lists them as not sized, not as nothing', () => {
+  const head = '"Link_SecondaryPowerRef","Link_SecondaryPowerExtRef","ControlTypeRef","PositionTypeRef","SumQuantity","Unit_ControlAddressCount","SecondaryPowerType","PositionVoltage","PositionCurrent","SumVf","SumPower"';
+  const requirements = engine.parseAssessment(`${head}
+"P50440","","LOCAL","F01","1","1","","0","0","0","100"
+"P50440","","LOCAL","F01","1","1","","0","0","0","100"
+`);
+  const p = engine.planFromRequirements({ requirements, driverTypes: [] }, 'P50440');
+  assert.equal(p.drivers, 0);
+  assert.equal(p.hubRef, 'P50440');
+  assert.deepEqual(p.unmatched.map((u) => [u.key, u.skipped, u.qty, u.feed]), [['no-power-type:F01', true, 2, true]]);
+  // a type forced on them sizes by watts: 200 W on 60 W at 5% spare is 4
+  const f = engine.planFromRequirements({ requirements, inventory: [{ typeRef: 'PSU-60', maxPowerW: 60 }] }, 'P50440',
+    { forced: { 'P50440|no-power-type:F01': 'PSU-60' } });
+  assert.deepEqual([f.drivers, f.unmatched.length, f.lines[0].typeRef, f.lines[0].feed], [4, 0, 'PSU-60', true]);
+});
+
+test('estimate: rowFilter leaves out the values ticked off, like an Excel pivot filter', () => {
+  const head = '"Link_SecondaryPowerRef","ControlTypeRef","PositionTypeRef","SumQuantity","Unit_ControlAddressCount","MAX_SecondaryPowerNodes","SecondaryPowerType","PositionVoltage","PositionCurrent","SumVf","SumPower"';
+  const requirements = engine.parseAssessment(`${head}
+"H1","DALI","B02w","2","1","1","CC","0","0.3","70","23.6"
+"H1","LOCAL","F01","1","","","","0","0","0","100"
+"H2","DALI","C01r","1","1","2","CV","24","0","0","20"
+`);
+  assert.equal(requirements[0].cols.MAX_SecondaryPowerNodes, '1');
+  assert.deepEqual(engine.filterRequirements(requirements, { SecondaryPowerType: ['CV'] }).map((r) => r.zone), ['H1', 'H1']);
+  assert.equal(engine.filterRequirements(requirements, { ControlTypeRef: ['LOCAL'], MAX_SecondaryPowerNodes: ['2'] }).length, 1);
+  assert.equal(engine.filterRequirements(requirements, {}), requirements);
+  const model = engine.buildEstimate(fs.readFileSync(path.join(dir, '..', 'src', 'demo', 'assessment.csv'), 'utf8'),
+    fs.readFileSync(path.join(dir, '..', 'src', 'demo', 'form.csv'), 'utf8'));
+  const cts = [...new Set(model.requirements.map((r) => engine.filterValue(r, 'ControlTypeRef')))];
+  assert.equal(engine.estimate(model, { rowFilter: { ControlTypeRef: cts } }).length, 0);
+});
+
+test('estimate: tunable (2 nodes or 2 addresses) and multi-address (>2) fittings get a line per row', () => {
+  const head = '"Link_SecondaryPowerRef","ControlTypeRef","PositionTypeRef","SumQuantity","Unit_ControlAddressCount","MAX_SecondaryPowerNodes","SecondaryPowerType","PositionVoltage","PositionCurrent","SumVf","SumPower"';
+  const requirements = engine.parseAssessment(`${head}
+"H1","DALI","C01r","1","1","1","CV","24","0","0","20"
+"H1","DALI","C01r","1","1","2","CV","24","0","0","20"
+"H1","DALI","C01r","1","2","1","CV","24","0","0","20"
+"H1","DALI","C01r","1","4","1","CV","24","0","0","20"
+"H1","DALI","C01r","1","1","2","CV","24","0","0","20"
+`);
+  assert.deepEqual(requirements.map(engine.channelClass), [null, 'tunable', 'tunable', 'multi', 'tunable']);
+  const p = engine.planFromRequirements({ requirements, inventory: [{ typeRef: 'CV', powerType: 'CV', voltageV: 24, maxPowerW: 100, nodes: [{ name: '1', maxPowerW: 100 }] }] }, 'H1');
+  const keys = [...p.lines, ...p.unmatched].map((l) => l.key);
+  assert.equal(keys.length, 5, keys.join(' | ')); // the plain row, plus one line each for the other four
+});
+
+test('estimate: a tunable fitting takes one output per channel, all on one driver', () => {
+  const head = '"Link_SecondaryPowerRef","ControlTypeRef","PositionTypeRef","SumQuantity","Unit_ControlAddressCount","SecondaryPowerNodes_+ve","SecondaryPowerNodes_-ve","MAX_SecondaryPowerNodes","SecondaryPowerType","PositionVoltage","PositionCurrent","SumVf","SumPower"';
+  const requirements = engine.parseAssessment(`${head}
+"H1","DALI","TW","3","1","1","2","2","CV","24","0","0","30"
+"H1","DALI","RGBW","1","1","1","4","4","CV","24","0","0","10"
+`);
+  assert.equal(requirements[0].negNodes, 2);
+  assert.deepEqual(requirements.map(engine.channelsOf), [2, 4]);
+  const cv = (typeRef, n) => ({ typeRef, powerType: 'CV', outputVoltageV: 24, maxPowerW: 100, controlType: 'DALI',
+    nodes: Array.from({ length: n }, (_, i) => ({ name: `OP.${i + 1}`, maxLoadW: 100 })) });
+  // a 1CH would take 3 TW fittings on one output - their second channel left nowhere
+  const p = engine.planFromRequirements({ requirements, inventory: [cv('ONE', 1), cv('TWO', 2)] }, 'H1');
+  const tw = p.lines.find((l) => l.positionTypes.includes('TW'));
+  assert.equal(tw.typeRef, 'TWO');
+  assert.equal(tw.count, 1);
+  assert.equal(tw.outputs, 2);
+  assert.equal(tw.working.channels, 2);
+  // RGBW needs 4 outputs on one driver; neither type has them
+  assert.ok(p.unmatched.some((u) => u.positionTypes?.includes('RGBW')));
+  // a 4CH holds two TW sets
+  const q = engine.planFromRequirements({ requirements: [{ ...requirements[0], qty: 6, loadW: 60 }], inventory: [cv('FOUR', 4)] }, 'H1');
+  assert.equal(q.lines[0].count, 1);
+  assert.equal(q.lines[0].working.slots, 2);
+});

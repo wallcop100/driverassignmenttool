@@ -4,7 +4,6 @@ import {
   assignedRefs, driverMatchesFilter, effectiveDrivers, filterOptions, isPending, isProvision,
   keyOf, linksByRef, linksForNode, orphanClusters, zoneAccent, zoneControlGroups, zoneStats,
 } from '../state.js';
-import Bom from './Bom.jsx';
 import DriverBin from './DriverBin.jsx';
 import IssuesBadge from './IssuesBadge.jsx';
 import LabelConfig from './LabelConfig.jsx';
@@ -13,7 +12,6 @@ import Search from './Search.jsx';
 import SetupNotice from './SetupNotice.jsx';
 import ViewToggle from './ViewToggle.jsx';
 import { useDomain } from '../core/domain.js';
-import { isFeed } from '../hubLayout.js';
 import Tooltip from './Tooltip.jsx';
 import Tray from './Tray.jsx';
 
@@ -53,12 +51,6 @@ export default function ZonePage({ state, dispatch, zone, onResetToCurrentSet })
 
   const zoneDrivers = effectiveDrivers(model, addedDrivers, state.deletedDrivers)
     .filter((d) => d.zone === zone);
-  // a feed provision is a placeholder, not something bought
-  const bomCounts = useMemo(() => {
-    const n = new Map();
-    for (const d of zoneDrivers) if (!isFeed(d.typeRef)) n.set(d.typeRef, (n.get(d.typeRef) ?? 0) + 1);
-    return [...n.entries()].sort();
-  }, [zoneDrivers]);
   // "N issues" popup: every actionable (FAIL/MISMATCH) flag belonging to a driver
   // in this zone - always shown regardless of the info-warnings toggle above.
   const zoneDriverRefs = useMemo(() => new Set(zoneDrivers.map((d) => d.ref)), [zoneDrivers]);
@@ -155,7 +147,6 @@ export default function ZonePage({ state, dispatch, zone, onResetToCurrentSet })
         )}
         <IssuesBadge issues={zoneIssues} />
         {stats.warns > 0 && <span className="badge badge-info-muted">{stats.warns} info</span>}
-        <Bom counts={bomCounts} inventory={model.inventory} className="is-drop" />
         <div className="ms-auto d-flex align-items-center gap-3">
           <Search model={model} dispatch={dispatch} />
           <LabelConfig fields={state.prefs.label} dispatch={dispatch} />

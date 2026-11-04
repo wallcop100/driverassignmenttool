@@ -101,11 +101,16 @@ test('a junction box never sits on a part', () => {
 
 test('a bill of materials counts each part, its supply and its junction boxes', async () => {
   const { resolveSpec } = await import('../../src/catalogue.js');
-  const inv = [wrapper, { typeRef: 'ET-CCR-D-350-1CH-01', name: 'EldoLED SOLODrive 360/A at 350mA' }, { typeRef: 'ET-X', name: 'Mystery box' }];
+  const inv = [wrapper, { typeRef: 'ET-CVR-PSU-24', name: 'Meanwell - HLG-185-24' },
+    { typeRef: 'ET-CCR-D-350-1CH-01', name: 'EldoLED SOLODrive 360/A at 350mA' }, { typeRef: 'ET-X', name: 'Mystery box' }];
   const rows = r.bom([['ET-CVR-D-24-2CH-01', 3], ['ET-CCR-D-350-1CH-01', 2], ['ET-X', 1]], inv, resolveSpec);
   const by = Object.fromEntries(rows.map((x) => [x.kind, x]));
   assert.equal(by.supply.qty, 3);
   assert.equal(by.jbox.qty, 6);                     // CV, 2 outputs, 3 drivers
-  assert.deepEqual(rows.filter((x) => x.kind === 'driver').map((x) => x.qty).sort(), [2, 3]);
-  assert.deepEqual(by.unmatched, { kind: 'unmatched', item: 'Mystery box', qty: 1 });
+  assert.equal(by.supply.ref, 'ET-CVR-PSU-24');     // the supply's own ElementType
+  assert.deepEqual(rows.filter((x) => x.kind === 'driver').map((x) => [x.ref, x.qty]).sort(),
+    [['ET-CCR-D-350-1CH-01', 2], ['ET-CVR-D-24-2CH-01', 3]]);
+  assert.deepEqual(by.unmatched, { kind: 'unmatched', ref: 'ET-X', item: 'Mystery box', qty: 1 });
+  // the layout's own box count wins over the default
+  assert.equal(r.bom([['ET-CVR-D-24-2CH-01', 3, 1]], inv, resolveSpec).find((x) => x.kind === 'jbox').qty, 1);
 });

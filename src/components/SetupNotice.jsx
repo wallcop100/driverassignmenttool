@@ -1,4 +1,6 @@
-import { useMemo } from 'react';
+import { useMemo, useRef, useState } from 'react';
+import * as api from '../api.js';
+import * as embed from '../embed.js';
 import { bannedNodes, driverTypes, filledHere, needsSetup, resolveSpec, statedAttributes } from '../engine.js';
 import { disagreeing } from '../typeFaults.js';
 
@@ -12,6 +14,37 @@ import { disagreeing } from '../typeFaults.js';
 // belongs to the job rather than to the hub that happens to be open, and filling
 // one in should settle it everywhere it is used. Control gear is left out - it
 // has none of these attributes and never will.
+// The ratings may already be written in the designer's own workbook, just not in
+// what was dropped. Standalone only: embedded, the host sends the library itself.
+function AttachDesignDb({ state, dispatch }) {
+  const input = useRef(null);
+  const [msg, setMsg] = useState(null);
+  if (embed.isEmbedded()) return null;
+  const attach = async (file) => {
+    if (!file) return;
+    setMsg('Reading…');
+    try {
+      const model = await api.attachDesignDb(file, state.presets);
+      if (!model) { setMsg('Drop the CSVs again with the DesignDB - a resumed session has no files to rebuild from.'); return; }
+      dispatch({ type: 'SET_MODEL', model });
+      setMsg(null);
+    } catch (e) {
+      setMsg(e.message);
+    }
+  };
+  return (
+    <>
+      <button className="btn btn-sm btn-outline-secondary" onClick={() => input.current?.click()}
+        title="Read the driver types from your DesignDB's ElementTypes sheet. Nothing leaves your browser.">
+        Attach DesignDB
+      </button>
+      <input ref={input} type="file" accept=".xlsx,.xlsm" hidden
+        onChange={(e) => { attach(e.target.files[0]); e.target.value = ''; }} />
+      {msg && <div className="small text-secondary w-100 text-end">{msg}</div>}
+    </>
+  );
+}
+
 export default function SetupNotice({ state, dispatch, className = '' }) {
   const { model } = state;
   const inUse = useMemo(() => driverTypes(model), [model]);
@@ -43,7 +76,10 @@ export default function SetupNotice({ state, dispatch, className = '' }) {
             fill in from their datasheet in one press.
           </div>
         </div>
-        <button className="btn btn-sm btn-primary ms-auto" onClick={go}>Fill them in</button>
+        <div className="ms-auto d-flex flex-wrap gap-2 justify-content-end">
+          <AttachDesignDb state={state} dispatch={dispatch} />
+          <button className="btn btn-sm btn-primary" onClick={go}>Fill them in</button>
+        </div>
       </div>
     );
   }
@@ -85,7 +121,10 @@ export default function SetupNotice({ state, dispatch, className = '' }) {
         {pendingNote}
         <div className="text-secondary small">Patch what you have, or carry on through the rest.</div>
       </div>
-      <button className="btn btn-sm btn-outline-primary ms-auto" onClick={go}>Carry on</button>
+      <div className="ms-auto d-flex flex-wrap gap-2 justify-content-end">
+        <AttachDesignDb state={state} dispatch={dispatch} />
+        <button className="btn btn-sm btn-outline-primary" onClick={go}>Carry on</button>
+      </div>
     </div>
   );
 }

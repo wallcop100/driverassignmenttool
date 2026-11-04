@@ -85,6 +85,7 @@ npm run build                   # -> dist/
 | `src/api.js` | thin promise-based wrapper keeping engine calls behind a stable interface |
 | `src/catalogue.js` | 34 driver parts transcribed from the Driver Specs page group |
 | `src/components/` | ~30 components; `ImportScreen`, `Landing`, `ZonePage`, `Tray`, `DriverBin`, `ReviewModal` are the spine |
+| `src/designdb.js` | DesignDB .xlsx → type library CSV; the overlay's section 0 ported to sheet rows |
 | `src/persist.js` | the only persistence — session autosave to localStorage, offered back as "Resume" |
 | `src/companion.js` | probes `./companion/capabilities` once; null on Pages. Reports and the shared parts catalogue |
 | `src/build.js`, `src/buildNames.json` | build commit, channel and name (stamped by `vite.config.js`), shown as the bottom-right badge |
@@ -118,6 +119,7 @@ node docs/hub-layout-shots.mjs
 
 ## Gotchas
 
+- **A picked file can't see an Excel save (2026-11-03).** An `<input type=file>` File is a snapshot and dies on reload, so the DesignDB refresh needs a FileSystemFileHandle (from a drop or `showOpenFilePicker`), kept in IndexedDB. To test with a real handle, write the workbook into OPFS (`navigator.storage.getDirectory()`), stub `getAsFileSystemHandle`, and rewrite the OPFS file to stand in for a save.
 - **DesignDB names parts by product code, with lookalike characters.** `SL0240A3` has a zero where
   the letter O belongs, and `SLO560S3`/`DL0560S3` differ by prefix only. Matching is by model token
   because the names are free text. Add aliases **from the data, not from the spec page**.
@@ -159,3 +161,18 @@ node docs/hub-layout-shots.mjs
   `src/catalogue.js`. Reading `part.sizeMm` directly would draw an unchecked size, or miss an agreed
   amendment that fills a datasheet part's gap. An amendment never overrides a value the datasheet has.
   A shared size reports its origin as `shared` ("suggested"), and the patch treats it like a datasheet size (2026-10-29).
+- **A driver dropped from the Add drivers drawer lands through the `landing` ref** in
+  `HubLayoutLab.jsx`. `ADD_DRIVER` only creates the Elements, and the placement effect takes the
+  bay and index from `landing`. Without that, the drivers fall into Not placed. Bounding Lines and
+  the BoM panel are viewer prefs (`prefs.bounds`, `prefs.showBom`), not per-bay layout (2026-10-30).
+- **A drag out of the Add drivers drawer listens on `window`, not on `.hub-lab`.** The drawer sinks
+  and turns off pointer events as the drag starts, so the cursor can land outside `.hub-lab` and its
+  mouseleave would cancel the drag. That is what broke it in #25. The listener hook sits above the
+  `if (!cur) return` and reaches `onDrop` through `dropRef` (2026-10-30).
+- **`src/designdb.js` is a second copy of the overlay's type-library filter** (section 0 of
+  `sysex-overlay-DJ101681.sql`): live types whose Parameters have `<` or `OP.`, parts of live
+  Elements, and types placed on a hub. The workbook doesn't say which PositionTypes are hubs, so a
+  hub there is any Position named as a `Link_SecondaryPowerRef`. Change both together (2026-11-03).
+- 2026-11-03: `hubsFromSheets` in `src/designdb.js` is a copy of the overlay's section 2d (`datc_`/`date_`). Change both together. Standalone, `elementText` is a map of hub label to CSV, while embedded it is one hub's CSV string. `hubRows(hub)` handles both.
+- 2026-11-03: The SP assessment in use is DJ 100874, not 100053. Its column names differ (`SecondaryPowerType`, `PositionVoltage`/`PositionCurrent` with 0 for n/a, `Unit_ControlAddressCount`, `Link_SecondaryPowerExtRef`). parseAssessment accepts both, and the zone is BestRef = ExtRef or Ref. A missing column there fails silently, giving powerType null and 0 drivers, not an error.
+- 2026-11-03: Playwright's `setInputFiles` copies the file, so a File in the page never sees a later change on disk. To test the DesignDB refresh, stub `DataTransferItem.prototype.getAsFileSystemHandle` and dispatch a synthetic drop. `getAsFileSystemHandle()` has to be called inside the drop handler, before any await.

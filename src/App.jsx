@@ -17,6 +17,7 @@ import Landing from './components/Landing.jsx';
 import Tutorial from './components/Tutorial.jsx';
 import ZonePage from './components/ZonePage.jsx';
 import * as embed from './embed.js';
+import DesignDbRefresh from './components/DesignDbRefresh.jsx';
 import { LabelContext } from './labelContext.js';
 import { clearSession, loadPrefs, loadSession, loadTypeExtras, loadTypes, savePrefs, saveSession, setSessionKey } from './persist.js';
 import { changeCount, diffRows, initialState, intersectionSuggestions, reducer } from './state.js';
@@ -68,6 +69,7 @@ export default function App({ domain = driversDomain }) {
     const pin = embedded && state.view.page === 'zone'
       && saved.model?.zones?.includes(state.view.zone) ? state.view : undefined;
     dispatch({ type: 'RESTORE', saved, view: pin, presets: loadTypes(), ...loadTypeExtras() });
+    if (!embedded) api.resumeDesignDb();
     setSaved(null);
   };
   const discard = () => { clearSession(); setSaved(null); };
@@ -206,7 +208,7 @@ export default function App({ domain = driversDomain }) {
   useEffect(() => {
     saveSession(state);
     if (embedded && model) embed.send({ type: embed.topic('dirty'), changeCount: changeCount(state) });
-  }, [model, assignments, addedDrivers, state.prefs, state.presets, state.typeSizes, state.tbc, state.recipes, state.jboxes, state.forcedTypes, state.ownLine, state.layouts, state.view]);
+  }, [model, assignments, addedDrivers, state.prefs, state.presets, state.typeSizes, state.tbc, state.recipes, state.jboxes, state.forcedTypes, state.rowFilter, state.ownLine, state.layouts, state.view]);
 
   useEffect(() => {
     const onKey = (e) => {
@@ -302,6 +304,7 @@ export default function App({ domain = driversDomain }) {
           <button className="btn-close" onClick={() => setNotice(null)} />
         </div>
       )}
+      {!embedded && <DesignDbRefresh state={state} dispatch={dispatch} />}
       {/* the screen as the person sees it: a lab keeps the view on 'landing',
           which would send whoever reads the report to the wrong place */}
       <ErrorBoundary context={context}

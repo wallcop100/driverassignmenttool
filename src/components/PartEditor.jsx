@@ -37,6 +37,9 @@ export default function PartEditor({
   // junction boxes, which sit beside them and are not the type's to state
   const env = recipe.envelope(parts) ?? [100, 50, 30];
   const jbs = recipe.placeJbs(jboxes ?? 0, parts);
+  // the layout's house rule lifts the supply clear of the junction box stack; so must this
+  const house = recipe.houseArrange(parts, { minLow: (jboxes ?? 0) * recipe.JB_SIZE[1] });
+  const isHouse = house.every((p, i) => [0, 1].every((a) => (p.at?.[a] ?? 0) === (parts[i].at?.[a] ?? 0)));
   const view = recipe.envelope([...parts, ...jbs]) ?? env;
   const k = Math.min(1.2, 300 / Math.max(view[0], 1), 190 / Math.max(view[1], 1));
   const PAD = 18;
@@ -198,8 +201,9 @@ export default function PartEditor({
               setDirty(true);
             }}>+ part</button>
           )}
-          <button type="button" className="btn btn-sm btn-outline-secondary"
-            onClick={() => { setParts((ps) => recipe.houseArrange(ps)); setDirty(true); }}>Reset to house rule</button>
+          <button type="button" className="btn btn-sm btn-outline-secondary" disabled={isHouse}
+            title={isHouse ? 'Already in the house arrangement' : 'Supply across the top, the rest side by side beneath it'}
+            onClick={() => { setParts(house); setDirty(true); }}>Reset to house rule</button>
           {asking ? (
             <span className="pe-ask">
               Apply to

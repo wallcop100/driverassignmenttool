@@ -358,56 +358,58 @@ function SharePart({ draft, part }) {
   };
   const send = async () => {
     const r = await companion.parts.add(partFromDraft(draft, form));
-    if (r.parts) { setSharedParts(r.parts); setForm(null); setSaid('Shared - everyone using this tool can pick it now'); }
+    if (r.parts) { setSharedParts(r.parts); setForm(null); setSaid('Sent - others using this tool will be asked to check it'); }
     else setSaid(r.error);
   };
   const f = (k) => ({ value: form[k], onChange: (e) => setForm({ ...form, [k]: e.target.value }) });
+  const what = part && !part.shared ? `Suggest a correction to ${part.name}` : 'Suggest a catalogue part';
   return (
     <div className="share-part">
       {!form && (
-        <button type="button" className="btn btn-sm btn-link p-0" onClick={open}
-          title="Add these ratings to the catalogue everyone using this tool picks from">
-          {part && !part.shared ? `Suggest a correction to ${part.name}…` : 'Share as a catalogue part…'}
+        <button type="button" className="btn btn-sm btn-link p-0 share-open" onClick={open}
+          title="Send these ratings to the companion, for others using this tool to check">
+          <span className="material-icons">auto_awesome</span>{what}…
         </button>
       )}
       {form && (
-        <div className="fld-grid">
-          <label className="fld"><span className="fld-col" title="The part, as its maker names it">Part name</span>
-            <input {...f('name')} /></label>
-          <label className="fld"><span className="fld-col" title="Comma-separated. A type whose Name contains one is matched to this part">Also matches</span>
-            <input {...f('aliases')} placeholder="e.g. SLO360" /></label>
-          <label className="fld"><span className="fld-col">Kind</span>
-            <select {...f('kind')}>
-              <option value="driver">driver</option>
-              <option value="dcdc">DC/DC driver</option>
-              <option value="supply">supply</option>
-            </select></label>
-          {draft.powerType === 'CC' && (
-            <label className="fld"><span className="fld-col" title="The datasheet's current range, mA">Range (mA)</span>
-              <span className="share-range"><input type="number" min="0" {...f('minMa')} />–<input type="number" min="0" {...f('maxMa')} /></span>
-            </label>
-          )}
-          <label className="fld"><span className="fld-col" title="Length × width × height off the datasheet, mm. The hub layout draws the driver at this size">Size (mm)</span>
-            <span className="share-range">{[0, 1, 2].map((n) => (
-              <input key={n} type="number" min="0" style={{ width: 72 }} aria-label={['Length', 'Width', 'Height'][n]} value={form.size[n]}
-                onChange={(e) => setForm({ ...form, size: form.size.map((v, i) => (i === n ? e.target.value : v)) })} />
-            ))}</span></label>
-          <label className="fld"><span className="fld-col" title="Junction boxes it arrives with in a hub. Blank: one per output for CV, none for CC">Junction boxes</span>
-            <input type="number" min="0" max="8" {...f('jboxes')} /></label>
-          {form.kind === 'dcdc' && (
-            <label className="fld"><span className="fld-col" title="The supply it is usually paired with, offered first when someone picks this driver">Usual supply</span>
-              <select {...f('psu')}>
-                <option value="">None</option>
-                {allParts().filter((p) => p.kind === 'supply').map((p) => <option key={p.name} value={p.name}>{p.name}</option>)}
+        <div className="companion-card share-card" data-testid="share-card">
+          <div className="share-head"><span className="material-icons">fact_check</span>{what}</div>
+          <div className="fld-grid">
+            <label className="fld"><span className="fld-col" title="The part, as its maker names it">Part name</span>
+              <input {...f('name')} /></label>
+            <label className="fld"><span className="fld-col" title="Comma-separated. A type whose Name contains one is matched to this part">Also matches</span>
+              <input {...f('aliases')} placeholder="e.g. SLO360" /></label>
+            <label className="fld"><span className="fld-col">Kind</span>
+              <select {...f('kind')}>
+                <option value="driver">driver</option>
+                <option value="dcdc">DC/DC driver</option>
+                <option value="supply">supply</option>
               </select></label>
-          )}
-        </div>
-      )}
-      {form && (
-        <div className="fld-foot">
-          <button className="btn btn-sm btn-outline-primary" disabled={form.name.trim().length < 4} onClick={send}>Share</button>
-          <button className="btn btn-sm btn-link" onClick={() => setForm(null)}>Cancel</button>
-          <span className="fld-foot-note">Shown to everyone as shared, never in place of a spec page</span>
+            {draft.powerType === 'CC' && (
+              <label className="fld"><span className="fld-col" title="The datasheet's current range, mA">Range (mA)</span>
+                <span className="share-range"><input type="number" min="0" {...f('minMa')} />–<input type="number" min="0" {...f('maxMa')} /></span>
+              </label>
+            )}
+            <label className="fld share-size"><span className="fld-col" title="Length × width × height off the datasheet, mm. The hub layout draws the driver at this size">Size (mm)</span>
+              <span className="share-range">{[0, 1, 2].map((n) => (
+                <input key={n} type="number" min="0" aria-label={['Length', 'Width', 'Height'][n]} value={form.size[n]}
+                  onChange={(e) => setForm({ ...form, size: form.size.map((v, i) => (i === n ? e.target.value : v)) })} />
+              ))}</span></label>
+            <label className="fld"><span className="fld-col" title="Junction boxes it arrives with in a hub. Blank: one per output for CV, none for CC">Junction boxes</span>
+              <input type="number" min="0" max="8" {...f('jboxes')} /></label>
+            {form.kind === 'dcdc' && (
+              <label className="fld"><span className="fld-col" title="The supply it is usually paired with, offered first when someone picks this driver">Usual supply</span>
+                <select {...f('psu')}>
+                  <option value="">None</option>
+                  {allParts().filter((p) => p.kind === 'supply').map((p) => <option key={p.name} value={p.name}>{p.name}</option>)}
+                </select></label>
+            )}
+          </div>
+          <div className="fld-foot">
+            <button className="btn btn-sm btn-outline-primary" disabled={form.name.trim().length < 4} onClick={send}>Send</button>
+            <button className="btn btn-sm btn-link" onClick={() => setForm(null)}>Cancel</button>
+            <span className="fld-foot-note">Others are asked to check it before it is suggested; a spec page always wins</span>
+          </div>
         </div>
       )}
       {said && <div className="fld-foot-note">{said}</div>}

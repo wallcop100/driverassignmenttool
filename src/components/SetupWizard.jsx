@@ -258,7 +258,7 @@ export default function SetupWizard({ model, presets, dispatch, onClose, only })
             <button className="btn btn-sm btn-outline-secondary" disabled={i >= steps.length - 1}
               onClick={() => { setI(i + 1); setDraft(null); }}>Skip</button>
             <button className="btn btn-sm btn-primary" disabled={!ready || unchecked.length > 0} onClick={accept}
-              title={unchecked.length ? 'A shared part needs a second person to check it first' : undefined}>
+              title={unchecked.length ? 'A suggested part needs a second person to check it first' : undefined}>
               {i < steps.length - 1 ? 'Use this, next' : 'Use this'}
             </button>
           </div>

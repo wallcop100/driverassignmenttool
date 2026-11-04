@@ -12,8 +12,10 @@ const demo = () => Promise.all([
 ]).then((m) => m.map((x) => x.default));
 import * as embed from './embed.js';
 import * as engine from './engine.js';
+import { isWorkbook, readDesignDb } from './designdb.js';
 import { readCsv } from './core/csv.js';
 import { parseParams } from './core/params.js';
+import { loadDesignDbHandle, saveDesignDbHandle } from './persist.js';
 
 let model = null;
 // The raw CSVs are kept so the model can be rebuilt when a driver type preset is
@@ -21,6 +23,12 @@ let model = null;
 // nobody to ask). `applied` is what the current model was built with.
 let raw = { form: null, links: null, types: null, assessment: null, empty: null };
 let applied = '[]';
+// PositionType -> UoM from the DesignDB, for assessments without a UoM column (DJ 100874)
+let ptUom = {};
+const withUom = (m) => {
+  for (const r of m?.requirements ?? []) if (!r.uom && ptUom[r.positionType]) r.uom = ptUom[r.positionType];
+  return m;
+};
 // Hub Ref -> hub label, from the host's context: the assessment names a hub by
 // its Position Ref, everything else by its label. Empty when standalone.
 let zoneAlias = {};
@@ -34,7 +42,7 @@ export function setModel(m) { model = m; }
 export function parseText(formText, linksText, typesText, assessmentText) {
   raw = { form: formText, links: linksText, types: typesText, assessment: assessmentText };
   applied = '[]';
-  model = engine.buildModel(formText, linksText, typesText, null, assessmentText, zoneAlias);
+  model = withUom(engine.buildModel(formText, linksText, typesText, null, assessmentText, zoneAlias));
   return model;
 }
 
@@ -51,28 +59,47 @@ export function rebuild(presets) {
   else if (raw.empty) model = engine.buildEmpty(raw.empty, raw.types, list);
   else return null;
   applied = key;
-  return model;
+  return withUom(model);
 }
 
 // Drop the files at once, autodetect which is which (#10). Three shapes are
 // accepted, one per mode: links + form, links + type library, or a requirement
 // assessment + type library when there are no links at all.
+// A DesignDB workbook stands in for the type library; a type CSV, being from a
+// commit, wins over it when both are dropped.
 export async function parseAuto(files) {
-  const texts = await Promise.all([...files].map((f) => f.text()));
+  watchDesignDb(null);
+  const all = [...files];
+  const texts = await Promise.all(all.filter((f) => !isWorkbook(f)).map((f) => f.text()));
   const found = { form: null, links: null, types: null, assessment: null };
   for (const t of texts) {
     const kind = engine.detectKind(t);
     if (kind) found[kind] = t;
   }
+  const book = all.find(isWorkbook);
+  ptUom = {};
+  setDriverExtras();
+  const db = book ? await readDesignDb(book) : null;
+  if (db) {
+    found.types ??= db.types;
+    ptUom = db.uom;
+    setDriverExtras({ compositions: db.compositions, elements: db.hubs });
+  }
+  // the DesignDB alone: its hubs, their drivers and stored layouts, for the space layout
+  if (db && !texts.length) {
+    const hubs = Object.keys(db.hubs).sort();
+    if (!hubs.length) throw new Error(`${book.name} has no hubs: no Position holds a driver or is named as a Link_SecondaryPowerRef.`);
+    return parseEmpty(hubs, found.types);
+  }
   // The circumstance decides the mode, not which file happened to be dropped: a
   // links CSV with a header and no rows is a hub with no cables, which is the
   // estimate's case and not an error.
   const hasLinks = found.links && engine.detectKind(found.links) === 'links'
-    && engine.buildModel(null, found.links, found.types ?? 'ElementTypeRef\nX\n').links.length > 0;
+    && engine.buildModel(null, found.links, found.types ?? 'ElementTypeRef,Name\nX,\n').links.length > 0;
 
   if (found.assessment && !hasLinks) {
     if (!found.types) {
-      throw new Error('The assessment needs the driver type library alongside it, to size against.');
+      throw needsTypes('The assessment needs driver types to size against.');
     }
     return parseEstimate(found.assessment, found.types);
   }
@@ -82,7 +109,7 @@ export async function parseAuto(files) {
       : "Couldn't detect a Links Assignment CSV, or a Requirement Assessment. Drop one of those.");
   }
   if (!found.form && !found.types) {
-    throw new Error('Links only: add the Driver Assignment CSV, or the driver type library to size new drivers from.');
+    throw needsTypes('Cables but no drivers: add the Driver Assignment CSV, or driver types to size new drivers from.');
   }
   return parseText(found.form, found.links, found.types, found.assessment);
 }
@@ -96,11 +123,77 @@ export function parseEmpty(zone, typesText) {
   return model;
 }
 
+// Missing only the type library: the import screen keeps what was dropped and
+// asks for the DesignDB, rather than starting over.
+function needsTypes(message) {
+  return Object.assign(new Error(message), { code: 'needs-types' });
+}
+
+// The type library arriving after the model was built - a DesignDB attached from
+// the app. Rebuilt as if it had been dropped with the CSVs.
+export async function attachDesignDb(file, presets, handle = null) {
+  const db = await readDesignDb(file);
+  ({ types: raw.types, uom: ptUom } = db);
+  if (!embed.isEmbedded()) setDriverExtras({ compositions: db.compositions, elements: db.hubs });
+  // opened from the DesignDB alone, so a save may have added or removed a hub
+  if (Array.isArray(raw.empty)) raw.empty = Object.keys(db.hubs).sort();
+  applied = null;
+  watchDesignDb(file, handle);
+  return rebuild(presets);
+}
+
+// The workbook the types came from, so a save in Excel while the tool is open
+// can be offered as a refresh. A dropped file in Chromium brings a handle that
+// reads the file as it is now; a picked one is a snapshot.
+let source = null;
+export function watchDesignDb(file, handle = null) {
+  source = file ? { file, handle, at: file.lastModified } : null;
+  saveDesignDbHandle(handle ? { handle, at: file.lastModified } : null);
+}
+// After a reload: the handle saved with the session, compared against the save it was read at.
+export async function resumeDesignDb() {
+  const v = await loadDesignDbHandle();
+  source = v?.handle ? { file: null, handle: v.handle, at: v.at } : null;
+  // the hub rows aren't in the session, so read them back while the handle still may
+  if (!source || embed.isEmbedded() || (await v.handle.queryPermission?.({ mode: 'read' })) !== 'granted') return;
+  try {
+    const db = await readDesignDb(await v.handle.getFile());
+    setDriverExtras({ compositions: db.compositions, elements: db.hubs });
+  } catch { /* unreadable now: the refresh banner takes it from here */ }
+}
+// A handle restored after a reload needs the user's say-so (a click) before it reads again.
+export async function allowDesignDb(handle) {
+  return (await handle.requestPermission?.({ mode: 'read' })) === 'granted';
+}
+// Not now: ask again only on the next save (a snapshot can't tell saves apart, so it stops asking).
+export function skipDesignDbChange(change) {
+  if (source && change?.file) source.at = change.file.lastModified;
+  else source = null;
+}
+// null while unchanged; { file } to re-read, or { file: null } when the browser
+// can tell it changed but cannot read the new one (pick it again).
+export async function designDbChange() {
+  if (!source) return null;
+  try {
+    if (source.handle) {
+      const perm = await source.handle.queryPermission?.({ mode: 'read' });
+      if (perm && perm !== 'granted') return { file: null, handle: source.handle, ask: true };
+      const f = await source.handle.getFile();
+      return f.lastModified !== source.at ? { file: f, handle: source.handle } : null;
+    }
+    await source.file.slice(0, 1).arrayBuffer();
+    return null;
+  } catch (e) {
+    // shortcut: a snapshot File refusing to read is Chromium's only change signal without a handle; Firefox gives none
+    return !source.handle && e?.name === 'NotReadableError' ? { file: null } : null;
+  }
+}
+
 // Third mode: Positions rolled up by DJ 100053, no links and no drivers.
 export function parseEstimate(assessmentText, typesText) {
   raw = { form: null, links: null, types: typesText, assessment: assessmentText };
   applied = '[]';
-  model = engine.buildEstimate(assessmentText, typesText, null, zoneAlias);
+  model = withUom(engine.buildEstimate(assessmentText, typesText, null, zoneAlias));
   return model;
 }
 
@@ -108,13 +201,12 @@ export async function estimate(opts, zone) {
   return engine.estimate(model, opts, zone);
 }
 
-export async function estimatePatchRows(opts, zone, patchOpts) {
-  return engine.estimatePatchRows(engine.estimate(model, opts, zone), patchOpts);
+// Other hubs of this branch+set, from their saved slots, each with its own
+// forced types - so one patch can carry several hubs (E7P24F).
+export async function estimateHubs(sessions, opts) {
+  return sessions.flatMap((s) => engine.estimate(s.model, { ...opts, forced: s.forcedTypes ?? {} }));
 }
 
-export async function generateEstimatePatch(opts, zone, patchOpts) {
-  return engine.generateEstimatePatch(engine.estimate(model, opts, zone), patchOpts);
-}
 
 // The demo carries all three modes at once, because a real job does: most hubs
 // designed, HUB-B1 cabled but with no drivers, and HUB-J still at tender.
@@ -255,10 +347,12 @@ export function compositions() {
 // their sizes), any bay separated into an Element, and every driver's placement,
 // as-placed size and junction boxes. This is what lets a layout saved by the
 // patch be drawn again with nothing from the session.
-export function hubRows() {
+// Embedded, the host sends the one hub's rows; from a DesignDB they come per hub label.
+export function hubRows(hub = null) {
   const out = { hub: null, bays: [], elements: {} };
-  if (!elementText?.trim()) return out;
-  const { rows } = readCsv(elementText, [], 'Hub rows', true);
+  const text = typeof elementText === 'string' ? elementText : elementText?.[hub];
+  if (!text?.trim()) return out;
+  const { rows } = readCsv(text, [], 'Hub rows', true);
   for (const r of rows) {
     const row = {
       ref: String(r.Ref ?? r.ElementRef ?? '').trim(),
