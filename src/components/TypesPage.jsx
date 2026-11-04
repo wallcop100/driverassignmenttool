@@ -25,7 +25,8 @@ export default function TypesPage({ state, dispatch, zone }) {
   const [adding, setAdding] = useState(false);
   const [warn, setWarn] = useState(null);
   const [plan, setPlan] = useState(null);
-  const [setup, setSetup] = useState(false);
+  const [setup, setSetup] = useState(null);   // the typeRefs the wizard walks, fixed when it opens
+  const [flagOnly, setFlagOnly] = useState(false);
 
   const drivers = useMemo(() => effectiveDrivers(model, addedDrivers, state.deletedDrivers),
     [model, addedDrivers, state.deletedDrivers]);
@@ -37,9 +38,11 @@ export default function TypesPage({ state, dispatch, zone }) {
   // it stays true while you fill them in - the offer goes once it is patched and
   // the host sends the data back.
   const inUse = useMemo(() => driverTypes(model), [model]);
-  const unset = inUse.filter((t) => statedAttributes(t) === 0).length;
-  const onboarding = needsSetup(model);
+  // a type filled in here is done until the patch lands; asking again re-asks finished work (VSGJFE)
+  const unsetTypes = inUse.filter((t) => statedAttributes(t) === 0 && !presets[t.typeRef]);
+  const unset = unsetTypes.length;
   const pending = filledHere(model, presets);
+  const onboarding = needsSetup(model) && !pending;
 
   // ':' is banned inside a node name. Correcting it is a rename, so it is safe
   // to do for the whole job at once - and it has to be, because a node written
@@ -94,6 +97,11 @@ export default function TypesPage({ state, dispatch, zone }) {
   [inUse, needle, zone, inHub, usage]);
 
   const flagged = cards.filter((c) => c.f.length).length;
+  const shown = flagOnly && flagged ? cards.filter((c) => c.f.length) : cards;
+  // The open dialog follows the type, so a fix that leaves something blank shows
+  // what is left rather than closing on a card still marked "check this" (KKFPJV).
+  const warned = warn && cards.find((c) => c.t.typeRef === warn);
+  useEffect(() => { if (warn && !warned?.f.length) setWarn(null); }, [warn, warned]);
   const closeEdit = () => { setEditKey(null); setDraft(null); };
   // Every way out goes back where you came from: the page that sent you, else
   // the space layout, else the hub (report 6QSCLN).
@@ -107,7 +115,9 @@ export default function TypesPage({ state, dispatch, zone }) {
       <div className="dp-head">
         <button className="btn btn-sm btn-outline-secondary d-flex align-items-center"
           onClick={() => dispatch({ type: 'SET_VIEW', view: back })}>
-          <span className="material-icons small-icon">arrow_back</span> {back.zone ?? 'Zones'}
+          <span className="material-icons small-icon">arrow_back</span>
+          {/* names where it goes, not where you might think (KXA6KQ) */}
+          {{ estimate: 'Estimate', landing: 'Zones' }[back.page] ?? back.zone ?? 'Back'}
         </button>
         <h5 className="mb-0">{zone ? `Add a driver to ${zone}` : 'Driver types'}</h5>
         {/* Where the list came from. Embedded, the host posts the whole project's
@@ -118,9 +128,13 @@ export default function TypesPage({ state, dispatch, zone }) {
           {zone ? ` available · ${inHub.size} already in ${zone}` : ' in the design'}
         </span>
         {flagged > 0 && (
-          <span className="dp-need" title="These types state something the datasheet disagrees with, or nothing at all">
+          <button type="button" className={`dp-need est-need-filter${flagOnly ? ' is-on' : ''}`} aria-pressed={flagOnly}
+            title={flagOnly ? 'Showing only these types - click to show everything again'
+              : 'These types state something the datasheet disagrees with, or nothing at all. Click to show only these.'}
+            onClick={() => setFlagOnly((v) => !v)}>
             {flagged} worth a look
-          </span>
+            {flagOnly && <span className="material-icons" aria-hidden="true">close</span>}
+          </button>
         )}
         <input className="form-control form-control-sm ms-auto" style={{ maxWidth: 220 }}
           placeholder="Filter…" value={q} onChange={(e) => setQ(e.target.value)} />
@@ -154,7 +168,7 @@ export default function TypesPage({ state, dispatch, zone }) {
         </div>
       )}
 
-      {(onboarding || unset > 0) && (
+      {unset > 0 && (
         <div className={`dp-suggest sw-offer ${onboarding ? '' : 'is-part'}`}>
           <div>
             <b>
@@ -172,7 +186,7 @@ export default function TypesPage({ state, dispatch, zone }) {
             </div>
           </div>
           <button className={`btn btn-sm ${onboarding ? 'btn-primary' : 'btn-outline-primary'} ms-auto`}
-            onClick={() => setSetup(true)}>
+            onClick={() => setSetup(new Set(unsetTypes.map((t) => t.typeRef)))}>
             {onboarding ? 'Fill them in' : 'Carry on'}
           </button>
         </div>
@@ -199,7 +213,7 @@ export default function TypesPage({ state, dispatch, zone }) {
       )}
 
       <div className="tp-grid">
-        {cards.map(({ t, spec, f }) => (
+        {shown.map(({ t, spec, f }) => (
           <TypeRow key={t.typeRef} t={t} spec={spec} f={f}
             zone={zone} back={back} dispatch={dispatch} presets={presets} inventory={model.inventory}
             editing={editKey === t.typeRef} draft={draft} setDraft={setDraft}
@@ -209,7 +223,7 @@ export default function TypesPage({ state, dispatch, zone }) {
             toggleMenu={() => setMenu(menu === t.typeRef ? null : t.typeRef)}
             closeMenu={() => setMenu(null)}
             inHub={inHub.has(t.typeRef)}
-            onWarn={() => setWarn({ t, spec, f })} />
+            onWarn={() => setWarn(t.typeRef)} />
         ))}
         {!cards.length && (
           <div className="tp-empty text-secondary">
@@ -218,13 +232,11 @@ export default function TypesPage({ state, dispatch, zone }) {
         )}
       </div>
 
-      {warn && (
-        <FaultDialog t={warn.t} spec={warn.spec} faults={warn.f}
+      {warned?.f.length > 0 && (
+        <FaultDialog t={warned.t} spec={warned.spec} faults={warned.f}
           onClose={() => setWarn(null)}
-          onFix={(mode, a) => {
-            dispatch({ type: 'SET_PRESET', preset: fixPreset(warn.t, warn.spec, mode, a) });
-            setWarn(null);
-          }} />
+          onFix={(mode, a) => dispatch({ type: 'SET_PRESET', preset: fixPreset(warned.t, warned.spec, mode, a) })}
+          onAsk={() => { setWarn(null); setSetup(new Set([warned.t.typeRef])); }} />
       )}
       {adding && (
         <NewTypeDialog zone={zone} inventory={model.inventory} dispatch={dispatch}
@@ -233,8 +245,8 @@ export default function TypesPage({ state, dispatch, zone }) {
       )}
       {setup && (
         <SetupWizard model={model} presets={presets} dispatch={dispatch}
-          only={new Set(inUse.map((t) => t.typeRef))}
-          onClose={() => setSetup(false)} />
+          only={setup}
+          onClose={() => setSetup(null)} />
       )}
     </div>
   );

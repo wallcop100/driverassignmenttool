@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { canFill, canReplace, currentOptions, fixPreset, fmt, ratingsOf } from '../typeFaults.js';
 
 // What is wrong with a type, at a size you can read. This was a title="" tooltip,
@@ -7,10 +8,17 @@ import { canFill, canReplace, currentOptions, fixPreset, fmt, ratingsOf } from '
 //
 // The remedies live here too. A warning you can only look at is a nag; the fix
 // belongs next to the reason for it.
-export default function FaultDialog({ t, spec, faults, onClose, onFix }) {
+export default function FaultDialog({ t, spec, faults, onClose, onFix, onAsk }) {
   const opts = currentOptions(t, spec);
   const fill = onFix && canFill(t, spec);
   const replace = onFix && canReplace(t, spec);
+  // The one blank a spec page cannot fill: which current a CC driver is set to,
+  // when neither the Ref nor the Name says. Asked here, so a fix fills it (KWNT6U).
+  const [ma, setMa] = useState('');
+  const askCurrent = onFix && spec?.powerType === 'CC' && t.currentA == null && !opts.length;
+  const a = Number(ma) > 0 ? Number(ma) / 1000 : undefined;
+  // anything else left blank - no match, or a DC/DC driver with no supply - is the wizard's to ask
+  const blanks = faults.some((f) => f[2] !== 'disagrees');
 
   return (
     <div className="nt-backdrop" onClick={(e) => e.target === e.currentTarget && onClose()}>
@@ -40,14 +48,27 @@ export default function FaultDialog({ t, spec, faults, onClose, onFix }) {
           ))}
         </ul>
 
+        {askCurrent && (
+          <label className="fld sw-part">
+            <span className="fld-col">Driven at what current?</span>
+            <span className="fld-box">
+              <input type="number" min="0" step="10" style={{ width: 90 }}
+                placeholder={spec.minA != null ? `${spec.minA * 1000}–${spec.maxA * 1000}` : 'mA'}
+                value={ma} onChange={(e) => setMa(e.target.value)} />
+              mA
+            </span>
+            <span className="fld-ds">neither the Ref nor the Name says</span>
+          </label>
+        )}
+
         <div className="fd-foot">
           {fill && (
-            <button className="btn btn-sm btn-outline-primary" onClick={() => onFix('fill')}>
+            <button className="btn btn-sm btn-outline-primary" onClick={() => onFix('fill', a)}>
               Fill blanks from {spec.name}
             </button>
           )}
           {replace && (
-            <button className="btn btn-sm btn-outline-warning" onClick={() => onFix('replace')}>
+            <button className="btn btn-sm btn-outline-warning" onClick={() => onFix('replace', a)}>
               Use the spec page ({fmt(spec.maxPowerW)}W)
             </button>
           )}
@@ -59,6 +80,11 @@ export default function FaultDialog({ t, spec, faults, onClose, onFix }) {
               Set CurrentRange to {o.a}A <em className="text-secondary">per the {o.from}</em>
             </button>
           ))}
+          {onAsk && blanks && !askCurrent && (
+            <button className="btn btn-sm btn-outline-secondary" onClick={onAsk}>
+              Answer the questions
+            </button>
+          )}
           {!onFix && (
             <span className="text-secondary small">Correct it on the Driver types page.</span>
           )}
