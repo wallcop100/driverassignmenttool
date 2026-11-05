@@ -1,6 +1,6 @@
 # driverassignmenttool — state
 
-Updated: 2026-11-04
+Updated: 2026-11-05
 
 <!-- Now / Next / Blocked are rewritten in place and never grow. Finish something, delete the
      line. Only Log appends. Format: /srv/projects/FORMAT.md -->
@@ -29,6 +29,8 @@ names and badge. `dat-autodeploy.timer` keeps Connected on Pages' build. The hos
 
 
 ## Log
+
+- **2026-11-05 (Assessment tweaks and hub approval, uncommitted):** The line kebab ("How N was worked out", "Change driver type") now sits beside the driver-type chip. View shows Expand all or Collapse all, never both. Standalone only, a hub row has a tick that approves it for the Elements patch (`approvedHubs` in state, kept out of undo and saved in the session). The patch dialog's new Hubs choice offers Selected (an "N of M approved" `<details>` holding the editable tick list), All, or One hub (a select). Routed to a hub, it opens on One hub. With nothing selected, Copy is disabled. A tick approves the hub's estimate as it stands: a hash of its patch rows. When the estimate changes, for example a forced type, the tick is cleared. The Filter doesn't count as a change: the hash is taken from the unfiltered estimate. Checked in Playwright on the demo: tick, dialog, force a type, re-tick, then Resume. The overlay harness has no ticks and its dialog is unchanged.
 
 - **2026-11-04 (What to check, redone):** #53's "Filled… still left" note was the wrong fix (Erik: it says done and still to do, doesn't close, the chip stays). A Playwright pass over every remedy on every flagged card, plus injected real-data cases (a CC type with no current in Ref or Name, Ref and Name disagreeing), found that Fill and Use the spec page half-applied, the ⋮ menu did the same silently, and Fill took the Ref's current when Ref and Name disagreed. Now a fix is offered only if it leaves the card clean (`leaves()` in `typeFaults.js`). One needing the current waits for it, an mA in range or a Ref/Name pick. One the spec page can't finish (DC/DC with no supply) is withheld, says what it would leave, and "Answer the questions" is offered. The menu offers only one-press complete fixes, otherwise "What to check…". Every offered fix now closes the dialog on a clean card.
 

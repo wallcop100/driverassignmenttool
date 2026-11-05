@@ -24,7 +24,7 @@ export function stackSite(stack = '') {
 }
 
 // FNV-1a: tiny, stable across runs and builds, which is the whole point.
-function hash(text) {
+export function hash(text) {
   let h = 0x811c9dc5;
   for (let i = 0; i < text.length; i += 1) {
     h ^= text.charCodeAt(i);
