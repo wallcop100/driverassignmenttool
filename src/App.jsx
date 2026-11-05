@@ -69,7 +69,7 @@ export default function App({ domain = driversDomain }) {
     const pin = embedded && state.view.page === 'zone'
       && saved.model?.zones?.includes(state.view.zone) ? state.view : undefined;
     dispatch({ type: 'RESTORE', saved, view: pin, presets: loadTypes(), ...loadTypeExtras() });
-    if (!embedded) api.resumeDesignDb();
+    if (!embedded) api.resumeDesignDb(saved.model).then((m) => m && dispatch({ type: 'SET_MODEL', model: m }));
     setSaved(null);
   };
   const discard = () => { clearSession(); setSaved(null); };
@@ -208,7 +208,7 @@ export default function App({ domain = driversDomain }) {
   useEffect(() => {
     saveSession(state);
     if (embedded && model) embed.send({ type: embed.topic('dirty'), changeCount: changeCount(state) });
-  }, [model, assignments, addedDrivers, state.prefs, state.presets, state.typeSizes, state.tbc, state.recipes, state.jboxes, state.forcedTypes, state.rowFilter, state.ownLine, state.layouts, state.view]);
+  }, [model, assignments, addedDrivers, state.prefs, state.presets, state.typeSizes, state.tbc, state.recipes, state.jboxes, state.forcedTypes, state.approvedHubs, state.rowFilter, state.ownLine, state.layouts, state.view]);
 
   useEffect(() => {
     const onKey = (e) => {

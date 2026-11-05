@@ -1,20 +1,24 @@
 # driverassignmenttool — state
 
-Updated: 2026-11-03
+Updated: 2026-11-05
 
 <!-- Now / Next / Blocked are rewritten in place and never grow. Finish something, delete the
      line. Only Log appends. Format: /srv/projects/FORMAT.md -->
 
 ## Now
 
-`main` is 86b4ae8 (#13, 2026-10-27), shipping #10–#12: the estimate rework, forced driver types and
-E/Em own lines. The self-hosting app side (#9) has the companion probe, sent bug reports, build
+`main` is 597784d (#43, 2026-11-04), shipping #22–#42, up to the working-trace redesign (#41) and
+channel-aware sizing with the Control Type column (#42). The self-hosting app side (#9) has the companion probe, sent bug reports, build
 names and badge. `dat-autodeploy.timer` keeps Connected on Pages' build. The host side, `/data/projects/dat_bridge`, is live on
 `drivers.erikrees.co.uk` and `drivers-dev.wallcop.org`. Reports land in datajoin (#19 live
 2026-10-27).
 
 ## Next
 
+0. Driver traces (`TRACES_PLAN.md` §9): phases 1–8 done. The app side is on `dev` (PR #52,
+   merged 2026-11-04). The server side is datajoin branch `dat-part-reasons`:
+   its tests haven't been run, then it needs a PR and Erik's merge. Until it is live, a `{reason}`
+   body gets a 400 and is dropped, which the app tolerates.
 1. n8n overlay sync (plan §7): not built; needs the read/save gateway actions in datajoin first.
 2. AUSTHZ shared driver parts: app and datajoin are live; prod and dev bridges don't serve
    `parts` yet, so the feature stays off. Deploy dat_bridge `shared-parts`, then have Erik run
@@ -25,6 +29,39 @@ names and badge. `dat-autodeploy.timer` keeps Connected on Pages' build. The hos
 
 
 ## Log
+
+- **2026-11-05 (Assessment tweaks and hub approval, uncommitted):** The line kebab ("How N was worked out", "Change driver type") now sits beside the driver-type chip. View shows Expand all or Collapse all, never both. Standalone only, a hub row has a tick that approves it for the Elements patch (`approvedHubs` in state, kept out of undo and saved in the session). The patch dialog's new Hubs choice offers Selected (an "N of M approved" `<details>` holding the editable tick list), All, or One hub (a select). Routed to a hub, it opens on One hub. With nothing selected, Copy is disabled. A tick approves the hub's estimate as it stands: a hash of its patch rows. When the estimate changes, for example a forced type, the tick is cleared. The Filter doesn't count as a change: the hash is taken from the unfiltered estimate. Checked in Playwright on the demo: tick, dialog, force a type, re-tick, then Resume. The overlay harness has no ticks and its dialog is unchanged.
+
+- **2026-11-04 (What to check, redone):** #53's "Filled… still left" note was the wrong fix (Erik: it says done and still to do, doesn't close, the chip stays). A Playwright pass over every remedy on every flagged card, plus injected real-data cases (a CC type with no current in Ref or Name, Ref and Name disagreeing), found that Fill and Use the spec page half-applied, the ⋮ menu did the same silently, and Fill took the Ref's current when Ref and Name disagreed. Now a fix is offered only if it leaves the card clean (`leaves()` in `typeFaults.js`). One needing the current waits for it, an mA in range or a Ref/Name pick. One the spec page can't finish (DC/DC with no supply) is withheld, says what it would leave, and "Answer the questions" is offered. The menu offers only one-press complete fixes, otherwise "What to check…". Every offered fix now closes the dialog on a clean card.
+
+- **2026-11-04 (report 9GYN2L):** "does not work" in What to check, on cdc4bef. Every button acts in the harness. The likely cause is the state KKFPJV left: a fill that leaves another fault, such as a DC/DC driver with no supply still lacking OutputVoltage, keeps the dialog open looking unchanged. The dialog now says "Filled from the X spec page. This is still left:" above what remains. Uncommitted; resolve the report once it ships.
+
+- **2026-11-04 (implicit companion, phases 6–8):** The wizard's answers now send, through `src/learn.js`. A yes to a family on another project's part votes `confirmed` once per rev, and "a different product" on it votes `rejected`. "Its own values are right" asks why, per value that differs (derated on purpose, a different variant, the datasheet's wrong) and sends `{reason}`. Only "the datasheet's wrong" also amends the part, and only from the datasheet, or from an earlier amendment that is agreed or the sender's. A type filled in by hand that matches no part is sent as an observation, its currents giving the range. The CLAUDE.md hard constraint now has the §8 wording. SharedCheck is gone, after Erik's complaint that "Are these ratings right" didn't say whose numbers it asked about. In its place, an unchecked amendment from another project gets one row per value it changes, in the wizard's family step and in the type editor (`Disputes.jsx`): datasheet / their correction / not sure. The pick fills the types and is the vote (`disputed`, `pickedSpec`, `pickedFamily` and `pickVotes` in `learn.js`). The family's yes waits for the answer. `partRows`/`conflicts` were removed. `docs/companion-shots.mjs` was rewritten. It asserts every body sent, and its images were retaken. `npm test` 383 passing.
+- **2026-11-04 (companion surfaces out):** Removed what §6 of `TRACES_PLAN.md` replaces: SharePart ("Suggest a correction to X…" / "Suggest a catalogue part…") from the type editor, SharedCheck and the "Suggested" badge from the wizard's questions, the "suggested"/"to check" tags on part and supply buttons and crumbs, and the sparkle on New type. A shared part's field offer reads "another project: N". "Use this" no longer waits on a second person's check. Nothing is sent from type filling until phase 6. The SharedCheck card on the Types page editor stays, as the only way an unchecked part gets checked until then.
+- **2026-11-04 (driver families):** The Driver attributes dialog now walks one product family per step (`src/components/Families.jsx`): the product and its datasheet values on the left, curves to each type, and on each type only what sets it apart (its current or voltage, a ~~was~~ → now correction, a guess); fills the whole family shares stay on the product. "Not right" sets a type aside; the review offers "a different product", "its own values are right" and "put it back", and groups with no product found get the questions once for the group. `identify`/`judge`/`familyPreset` in `typeFaults.js`. Styling is the v2 mock's, with the SP assessment's type pills. Checked in the harness against a 4746-style blank library: families, set aside, review, the `&` decoder starting fresh, the TCI group. `docs/companion-shots.mjs` is now stale.
+- **2026-11-04 (driver questions):** Branch `driver-questions`. The wizard's "Which driver is this?" dropdowns are now questions with buttons: CC or CV first, then ControlType or outputs (whichever splits the parts left, while more than 4), then the part, the supply (DC/DC) and the current (CC with a range). Buttons are ordered by what this project's filled-in types use (`precedent` in `typeFaults.js`). Each has an "Other…" box, and an answer no part fits opens the hand-fill form carrying the answers. What the Ref, Name or type already says is a crumb, and clicking it asks again. Checked in the harness: the CC path to preview, a CV DC/DC asking the supply, a re-ask and an unmatched part. Companion: suggested parts are tagged "suggested"/"to check" on the buttons, a picked part brings its own agreed supply (a "suggested" crumb), and a part with no ControlType or outputs isn't dropped by those answers. `docs/companion-shots.mjs` retakes every companion surface in type filling against a mocked companion, shown in `docs/companion.md`.
+
+- **2026-11-04 (types page reports):** Branch `fix/dat-reports-1104`. G78VGK: "N worth a look" is a filter toggle with ✕. KXA6KQ: the back button names its destination ("Estimate", the hub, "Zones"). VSGJFE: the setup banner and the wizard skip types filled in here, and the wizard's list is fixed when it opens. KKFPJV: the cause was that "Use the spec page" left a blank the page cannot fill (no current in the Ref/Name, or a DC/DC with no supply), and the dialog closed on a card still flagged. Now the dialog follows the type, stays open with what is left, and closes when nothing is. KWNT6U: the dialog asks the CC current inline, and "Answer the questions" opens the wizard for that one type.
+
+- **2026-11-04 (resume):** Erik's "still showing all types / 13.4 fittings" was on Russet Newt (#45), before #46/#47. A real gap was found too: a resumed standalone session kept the saved model, so a session first opened by an older build never got UoMs or segments. Resume now re-applies them from the DesignDB handle when the browser still grants read. Without that grant, re-dropping the files is the only way.
+
+- **2026-11-04 (row table):** The line's row table gets "Qty × fV each" when any row has fV. ControlGroup is now the first column, and it's hidden when drivers are kept apart by ControlGroup (Erik).
+
+- **2026-11-04 (segments):** Linear lines are now packed from the DesignDB's segments. A segment is a measured Position inside a run, such as C01r in C01, and its `Dim` cannot be split across outputs (Erik). Segments are matched to assessment rows by hub|LocationRef|ControlGroup|PositionType. The hub is inherited from the run and then the Location. If the segments don't add up to SumQuantity, the line is flagged and sized both ways, and the count that needs more drivers wins (Erik). Runs with no segments keep plain division. On the test db.xlsx 13 of 29 measured rows match, and 7 of those don't add up: the DB is older than the CSV.
+
+- **2026-11-04 (Russet Newt):** Driver types page and the estimate's type list now hold drivers only (`isDriverType`, the OP.n rule), not every ElementType. UoM comes from the type's own PositionTypes row, deleted rows included (live wins). No ParentRef inheritance, because the UoM never sits on a parent (Erik). The qty-based 'm' guess from #45 is gone.
+
+### 2026-11-04 — Estimate reports AHA2MY, J5KE96, JZAJZ7, 95QTPK, 3NC4S3
+- AHA2MY: with no UoM from the DesignDB, a PositionType with a part quantity is taken as metres (`withUom` in api.js), so the working says "13.4 m", not "13.4 fittings".
+- J5KE96: the working names outputs after the type's own nodes (OP.1, OP.2), falling back to O1.
+- JZAJZ7: in One hub at a time, the header figures (rows, PositionTypes, drivers, chips, unmatched) and the filter counts are that hub's.
+- 95QTPK: pivot headers sort the hubs and the groups in each (click again to reverse); the header ⋮ has Reset sorting. The sort is not saved.
+- 3NC4S3: the Filter menu has Clear all filters.
+
+### 2026-11-04 — Driver types from the assessment
+- The estimate's Driver types menu has "Edit driver types…", which opens the shared Types page (no zone, so it lists the whole library); Back returns to the estimate. An unmatched lot's kebab has "New driver type for these…": the shared NewTypeDialog, seeded from the rows (power type, CC current, control type, outputs = channels).
+- The estimate patch now carries an ElementTypes section for every edited and every new type, used by a line or not (`estimatePatchTypes`, the same `patchablePresets`/`typeSection` as the assignment patch).
+- Skipped: picked / could-fit / unused badges on the Types page.
 
 ### 2026-11-04 — Channel-aware sizing and Control Type badges
 - `channelsOf(r)` = MAX_SecondaryPowerNodes (min 1). A fitting takes one output per channel, all on one driver, and each channel is sized for the whole fitting (W and fV), since one channel may be the only one lit. The driver becomes `floor(outputs / ch)` sets; every set is sized like one output. A type with fewer outputs than channels is no candidate, and forcing one says so.

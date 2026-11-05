@@ -2,7 +2,7 @@
 // states against the datasheet the type's Name matched. No JSX and no React, so
 // `node --test` can cover the judgement itself rather than only the screens
 // built on it.
-import { atCurrent, checkOf, combine, currentFromName, currentFromRef, sharedSupply } from './engine.js';
+import { atCurrent, checkOf, combine, currentFromName, currentFromRef, presetToType, sharedSupply } from './engine.js';
 
 export const fmt = (n) => {
   if (n == null || n === '') return null;
@@ -118,6 +118,10 @@ export function fixPreset(t, spec, mode, currentA) {
   };
 }
 
+// What a fix would still leave flagged. A fix is only offered when this is empty:
+// one that fills some blanks and leaves the card "to check" reads as broken (9GYN2L).
+export const leaves = (t, spec, mode, currentA) => faults(presetToType(fixPreset(t, spec, mode, currentA)), spec);
+
 // Which of the two fixes a type can take. Judged against what the card shows - 
 // pending preset included - so filling the blanks does not take the other away.
 export const canFill = (t, spec) => !!spec && (t.maxPowerW == null || t.powerType == null
@@ -196,4 +200,223 @@ export function fillFromSpec({ t, spec, currentA }) {
     invented: false,
     origin: fromShared(spec) ? 'shared' : 'datasheet',
   };
+}
+
+// ---- families: which product a project's types are, and what that changes ----
+// About 90% of a project is the same few products at different currents, so
+// the product is identified first and every type of it confirmed in one go.
+// What can't be identified with confidence goes to the review, and from there
+// to the questions below.
+
+// What a type writes as one of a family. The datasheet wins where it says
+// something (a shared part only fills blanks), and Parameters that list more
+// than the default OP.1 already say how many outputs there are.
+export function familyPreset(t, spec, currentA) {
+  const p = fixPreset(t, spec, fromShared(spec) ? 'fill' : 'replace', currentA);
+  if ((t.nodes?.length ?? 0) > 1) return p;
+  return { ...p, outputs: spec.outputs ?? 1, nodeNames: spec.nodeNames ?? null };
+}
+
+// The Name less what tells siblings apart, so types no part is known for still
+// group: "TCI MP 32 HV K2 - 350mA" and "- 700mA" are one product, asked about once.
+export const nameStem = (name) => String(name ?? '').toLowerCase()
+  .replace(/\b(at|set to)?\s*\d{2,4}\s*ma\b/g, '').replace(/\bvariant\s*\d+\b/g, '')
+  .replace(/[\s\-–:,]+$/, '').replace(/\s+/g, ' ').trim();
+
+// { families: [{ key, spec, part, supply, types: [{ t, currentA, preset, note }] }],
+//   rest: [{ types, spec, why }] }, biggest family first. A part only one other
+// person has sent still forms a family: saying yes to it is the second vote (learn.js).
+export function identify(types, resolve) {
+  const fams = new Map();
+  const rest = [];
+  const pairs = [];   // DC/DC drivers whose Name names no supply, settled once the families are known
+  const join = (spec, t, currentA, note) => {
+    const part = spec.driver ?? spec;
+    const key = `${part.name}|${spec.supply?.name ?? ''}`;
+    if (!fams.has(key)) fams.set(key, { key, spec, part, supply: spec.supply ?? null, types: [] });
+    fams.get(key).types.push({ t, currentA, note, preset: familyPreset(t, spec, currentA) });
+  };
+  const current = (t, spec) => {
+    if (spec.powerType !== 'CC') return { a: null };
+    const opts = currentOptions(t, spec);
+    if (!opts.length) return { why: `Neither the Ref nor the Name gives a current the ${spec.name} can run at.` };
+    if (opts.length > 1) return { why: `The Ref says ${fmt(opts[0].a)}A and the Name says ${fmt(opts[1].a)}A.` };
+    return { a: opts[0].a };
+  };
+  const place = (t, spec, note) => {
+    const c = current(t, spec);
+    if (c.why) rest.push({ types: [t], spec, why: c.why }); else join(spec, t, c.a, note);
+  };
+
+  for (const t of types ?? []) {
+    const name = t.name || '';
+    const spec = name ? resolve(name) : null;
+    const part = spec?.driver ?? spec;
+    if (!part) { rest.push({ types: [t], spec: null, why: name ? 'No known product has this Name.' : 'It has no Name.' }); continue; }
+    // "HLG-185H-24A & LTEC LT-995 DMX Decoder" matches the supply and nothing else
+    // the part itself is in doubt in these two, so the questions start without it (spec: null)
+    if (/[&+]/.test(name) && (spec.parts?.length ?? 1) < 2) { rest.push({ types: [t], spec: null, why: `The Name names a second product beside the ${part.name}.` }); continue; }
+    const outs = (t.nodes?.length ?? 0) > 1 ? t.nodes.length : null;
+    if (outs && part.outputs != null && part.outputs !== outs) {
+      rest.push({ types: [t], spec: null, why: `Its Parameters give ${outs} outputs, and the ${part.name} has ${part.outputs}.` });
+      continue;
+    }
+    if (part.kind === 'dcdc' && !spec.supply) { pairs.push({ t, part }); continue; }
+    place(t, spec);
+  }
+
+  // A driver with no supply named runs on the one its siblings name, or the one people agreed
+  for (const { t, part } of pairs) {
+    const sib = [...fams.values()].find((f) => f.part.name === part.name && f.supply);
+    const usual = sharedSupply(part);
+    const psu = sib?.supply ?? usual;
+    if (psu) place(t, combine(part, psu), `Its supply, ${psu.name}, as ${sib ? 'the other types here have it' : 'people use it'}`);
+    else rest.push({ types: [t], spec: part, why: 'Its Name names no supply.' });
+  }
+
+  // No Name at all: a guess, when the Ref fits exactly one family
+  for (let n = rest.length - 1; n >= 0; n--) {
+    const [t] = rest[n].types;
+    if (t.name || rest[n].spec) continue;
+    const k = known(t);
+    const pt = k.powerType?.[0];
+    // the Ref itself must say how many outputs: ET-CVR-FEED-PROV says CV and nothing else
+    const outs = Number(String(t.typeRef).match(/-(\d)CH\b/i)?.[1]);
+    const fits = [...fams.values()].filter((f) => pt && outs && f.spec.powerType === pt
+      && (f.part.outputs ?? 1) === outs
+      && (pt !== 'CC' || (k.currentA && (f.spec.minA == null
+        || (k.currentA[0] >= f.spec.minA && k.currentA[0] <= f.spec.maxA)))));
+    if (fits.length !== 1) continue;
+    rest.splice(n, 1);
+    join(fits[0].spec, t, k.currentA?.[0] ?? null, 'No Name: a guess from the Ref and the other types here');
+  }
+
+  // A type with no Name is named the way its siblings are, at its own current
+  for (const f of fams.values()) {
+    const sib = f.types.find((x) => x.t.name && currentFromName(x.t.name) != null);
+    if (!sib) continue;
+    for (const x of f.types) {
+      if (!x.t.name && x.currentA != null) x.preset = { ...x.preset, name: sib.t.name.replace(NAME_MA_G, `${Math.round(x.currentA * 1000)}mA`) };
+    }
+  }
+
+  // what is left, one card per product even when no part is known for it
+  const grouped = new Map();
+  for (const r of rest) {
+    const [t] = r.types;
+    const key = t.name ? `${r.why}|${nameStem(t.name)}` : `ref|${t.typeRef}`;
+    if (grouped.has(key)) grouped.get(key).types.push(t); else grouped.set(key, { ...r, types: [t] });
+  }
+  return { families: [...fams.values()].sort((a, b) => b.types.length - a.types.length), rest: [...grouped.values()] };
+}
+
+const JUDGED = [
+  ['powerType', 'PowerType', '', (d) => d.powerType],
+  ['maxPowerW', 'Max power', 'W', (d) => d.maxPowerW],
+  ['currentA', 'Current', 'A', (d) => d.currentA],
+  ['outputVoltageV', 'Output voltage', 'V', (d) => d.outputVoltageV],
+  ['nodeMaxFvV', 'Forward voltage', 'V', (d) => d.nodes?.[0]?.maxFvV],
+  ['nodeMaxLoadW', 'Power per output', 'W', (d) => d.nodes?.[0]?.maxLoadW],
+  ['controlType', 'ControlType', '', (d) => d.controlType],
+  ['addresses', 'Addresses', '', (d) => d.ballast],
+];
+
+// What a family's preset does to each column the type already has: `fill` a
+// blank, or replace a value that `differs` from the datasheet, or is `wrong` -
+// beyond what the part can do at all. Columns that agree are left out.
+export function judge(t, preset, spec) {
+  const d = t.designDB ?? t;
+  spec = atCurrent(spec, preset.currentA);
+  const out = [];
+  for (const [key, col, unit, get] of JUDGED) {
+    const was = get(d);
+    const now = preset[key];
+    if (now == null || now === '') continue;
+    if (was == null || was === '') { out.push({ status: 'fill', key, col, now, unit }); continue; }
+    const same = typeof now === 'number' ? Math.abs(now - Number(was)) < 0.01 : String(now).toLowerCase() === String(was).toLowerCase();
+    if (same) continue;
+    const times = key === 'maxPowerW' && spec?.maxPowerW ? Number(was) / spec.maxPowerW : null;
+    const wrong = (times != null && times > 1.01)
+      || (key === 'currentA' && spec?.minA != null && (was < spec.minA || was > spec.maxA));
+    out.push({
+      status: wrong ? 'wrong' : 'differs', key, col, was, now, unit,
+      hint: times >= 1.5 ? `${fmt(times)}× what the ${spec.name} gives` : null,
+    });
+  }
+  return out;
+}
+
+// ---- the setup questions (the wizard's "which driver is this?") ----
+// Asked as buttons, one at a time, until one catalogue part is left. What the
+// type already says is not asked, and the buttons come in the order this
+// project already uses them.
+
+export const QUESTIONS = ['powerType', 'controlType', 'outputs'];
+
+// What the type itself answers, as { key: [value, where] }. Only more than one
+// node counts for outputs: a library row with no Node column gets one OP.1 by
+// default, which says nothing.
+export function known(t) {
+  const k = {};
+  const ref = String(t.typeRef ?? '');
+  const pt = t.powerType ?? (/^ET-CCR/i.test(ref) ? 'CC' : /^ET-CVR/i.test(ref) ? 'CV' : null);
+  if (pt) k.powerType = [pt, t.powerType ? 'type' : 'Ref'];
+  if (t.controlType) k.controlType = [t.controlType, 'type'];
+  const refOuts = Number(ref.match(/-(\d)CH\b/i)?.[1]);
+  if ((t.nodes?.length ?? 0) > 1) k.outputs = [t.nodes.length, 'Parameters'];
+  else if (refOuts) k.outputs = [refOuts, 'Ref'];
+  const a = t.currentA ?? currentFromRef(ref) ?? currentFromName(t.name);
+  if (pt === 'CC' && a != null) k.currentA = [a, t.currentA != null ? 'type' : currentFromRef(ref) != null ? 'Ref' : 'Name'];
+  return k;
+}
+
+// How often this project's filled-in driver types use each answer, keyed by
+// question, then value. A type counts once it states anything or is filled in here.
+export function precedent(types, resolveSpec) {
+  const out = { powerType: {}, controlType: {}, outputs: {}, part: {}, supply: {}, currentA: {} };
+  const add = (key, v) => { if (v != null && v !== '') out[key][v] = (out[key][v] ?? 0) + 1; };
+  for (const t of types ?? []) {
+    if (!t.preset && t.maxPowerW == null && t.currentA == null && t.outputVoltageV == null) continue;
+    add('powerType', t.powerType);
+    add('controlType', t.controlType);
+    add('outputs', t.nodes?.length);
+    add('currentA', t.currentA);
+    const spec = resolveSpec(t.name || t.typeRef);
+    add('part', (spec?.driver ?? spec)?.name);
+    add('supply', spec?.supply?.name);
+  }
+  return out;
+}
+
+// The parts still possible. A supply alone is a CV driver too (an unswitched
+// PSU feeding tape), so it stays in unless the answer is CC. A suggested part
+// may not say its ControlType or outputs; not saying is no reason to drop it.
+export const narrow = (parts, ans) => parts.filter((p) => (p.kind !== 'supply' || ans.powerType !== 'CC')
+  && (ans.powerType == null || p.powerType === ans.powerType)
+  && (ans.controlType == null || p.controlType == null || p.controlType === ans.controlType)
+  && (ans.outputs == null || p.outputs == null || p.outputs === ans.outputs)
+  && (ans.currentA == null || p.powerType !== 'CC' || p.minA == null
+    || (ans.currentA >= p.minA - 1e-9 && ans.currentA <= p.maxA + 1e-9)));
+
+// The next attribute to ask, or null to go to the part buttons. CC/CV first,
+// always: everyone can answer it. Then whichever open question best tells the
+// parts left apart - the one whose biggest answer leaves the fewest - while
+// there are too many to show as buttons.
+export function nextQuestion(cands, ans, few = 4) {
+  const split = (key) => {
+    const groups = {};
+    for (const p of cands) if (p[key] != null) groups[p[key]] = (groups[p[key]] ?? 0) + 1;
+    return groups;
+  };
+  if (ans.powerType == null) return { key: 'powerType', groups: split('powerType') };
+  if (cands.length <= few) return null;
+  let best = null;
+  for (const key of QUESTIONS) {
+    if (ans[key] != null) continue;
+    const groups = split(key);
+    if (Object.keys(groups).length < 2) continue;
+    const worst = Math.max(...Object.values(groups));
+    if (!best || worst < best.worst) best = { key, groups, worst };
+  }
+  return best && { key: best.key, groups: best.groups };
 }

@@ -10,7 +10,7 @@ A 404, an HTML page or no answer at all means there is no companion, so nothing 
 | `companion/capabilities` | 404 | `{"protocol":"dat-companion/1","features":["reports","opened","parts"]}` |
 | Bug note buttons | Save | Send (the report is still kept locally) |
 | Crash screen | Copy | Copy, plus **Send the report** (sends only on a click) |
-| Driver parts | the static catalogue | the static catalogue, plus the shared one; a part can be shared from the type editor |
+| Driver parts | the static catalogue | the static catalogue, plus the shared one, which learns from the answers given while filling in driver types |
 
 ## What a report sends
 
@@ -43,23 +43,67 @@ On Pages the same note offers only Save:
 
 ## Shared driver parts
 
-`GET companion/parts` returns the shared catalogue for the channel (prod and dev are separate);
-`POST companion/parts` with `{part}` adds one and returns the new list. datajoin stores them in
-`dat_parts`: one `observed` row per name, the latest write wins, and a `confirmed` row (set by hand)
-outranks it. Each row keeps a hash of the sender's IP so one source can be purged.
+`GET companion/parts` returns the shared catalogue for the channel (prod and dev are separate).
+`POST companion/parts` takes `{part}`, `{vote}`, `{reason}` or `{part, reason}`, and returns the new
+list. datajoin stores parts in `dat_parts`: one `observed` row per name, the latest write wins, and
+a `confirmed` row (set by hand) outranks it. Votes are per version (`rev`, a hash of the part), and
+a reason code per value goes in `dat_part_reasons`. Each row keeps a hash of the sender's IP so one
+source can be purged.
 
 A part is datasheet ratings only, never design data: name, code, aliases (matched as substrings, no
-regex is ever shared), CC/CV, kind, control type, the numeric ratings. datajoin validates every
-field against fixed ranges and drops anything else.
+regex is ever shared), CC/CV, kind, control type, the numeric ratings. A reason is a part name, a
+column and one of three codes. datajoin validates every field against fixed ranges and refuses
+anything else.
 
 In the app (`setSharedParts` in `src/catalogue.js`):
 
 - The static catalogue always wins. A shared part whose name matches a static one is an
-  **amendment**: the editor offers its value beside the datasheet's ("shared: 33"), never in its place.
+  **amendment**: once agreed, the editor offers its value beside the datasheet's, never in its place.
 - A shared part only fills blanks, never overwrites (`canReplace` is false), and a type filled from
   one has origin **shared**, listed on its own in Review changes so it is checked before the patch.
-- **Share as a catalogue part…** / **Suggest a correction to X…** sits under the type editor;
-  "Describe it yourself" in New type reaches it when no part matches.
+
+### Filling in a driver type
+
+There is no share button and no setting. The companion learns from the answers the person gives
+anyway (`src/learn.js`), and on Pages the same answers send nothing:
+
+| The person does | Sent |
+|---|---|
+| Says yes to a family built on another project's part | `{vote: confirmed}` for that part's `rev` |
+| Says yes to a family built on a spec page | nothing |
+| Keeps a type's own values, as *derated on purpose* or *a different variant* | `{reason}`: the code per value, no values |
+| Keeps them because *the datasheet's wrong* | `{part, reason}`: the part, amended with the DesignDB's value |
+| Fills in by hand a product no catalogue has | `{part}`, its currents as the range |
+| Says "it's a different product" to another project's part | `{vote: rejected}` |
+
+A vote counts once per version, whichever screen it came from. Retaken, with every body checked,
+by `node docs/companion-shots.mjs` against a mocked companion.
+
+A part one other person entered still forms a family. Saying yes to it is the second vote:
+
+![A family on another project's part](img/companion-family.png)
+
+A type set aside and kept as it is asks why, per value that differs. *Derated on purpose* is
+offered only when its value is lower:
+
+![Why its own values are right](img/companion-reasons.png)
+
+In the type editor, an agreed amendment's value is offered under its field:
+
+![Suggested in the editor](img/companion-editor-suggested.png)
+
+An unchecked amendment exists only because another project said the datasheet was wrong. In a
+later session it is asked about where the part is used, one row per value it changes: the
+datasheet's, their correction, or not sure (which uses the datasheet's). The DesignDB's own values
+are never part of this question. In the wizard the family's yes waits for the answer, and the pick
+fills its types:
+
+![A correction in a family](img/companion-family-dispute.png)
+
+In the type editor the pick fills the field, and Save sends it as the vote: their value
+`confirmed`, the datasheet's `rejected`, not sure `unsure`. It is asked once per version:
+
+![A correction in the editor](img/companion-editor-dispute.png)
 
 ## Build names
 

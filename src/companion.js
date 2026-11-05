@@ -39,11 +39,12 @@ function build(base, features) {
     })) : null,
     /** Count this open (usage on projects.wallcop.org). */
     opened: features.has('opened') ? () => quiet(getJson(`${base}opened`, { method: 'POST' })) : null,
-    /** The shared catalogue: list() -> { parts } | null; add(part) -> { parts } | { error }. */
+    /** The shared catalogue: list() -> { parts } | null; send({ part?, reason? }) -> { parts } | { error }. */
     parts: features.has('parts') ? {
       list: () => quiet(getJson(`${base}parts`)),
-      add: (part) => getJson(`${base}parts`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ part }),
+      /** A part (new, or an amendment), a reason code for values kept (learn.js), or both. */
+      send: (b) => getJson(`${base}parts`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b),
       }).then(({ res, body }) => (res.ok && body ? body : { error: body?.message ?? 'Not sent' }))
         .catch(() => ({ error: 'Not sent' })),
       /** A person's check of the version they were shown -> { parts } | { error }. */

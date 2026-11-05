@@ -37,10 +37,12 @@ test('keeps live drivers, parts and placed types; drops the rest', () => {
   assert.equal(a.nodes.length, 1);
 });
 
-test('positionUoms: live PositionTypes with a UoM only', () => {
+test('positionUoms: own UoM only, no ParentRef inheritance; deleted types count, live wins', () => {
   assert.deepEqual(positionUoms([
-    { Ref: 'C01r', UoM: 'm' }, { Ref: 'B02w', UoM: '' }, { Ref: 'X', UoM: 'm', IsDeleted: 'Y' }, { Ref: 'P1', UoM: 'm2' },
-  ]), { C01r: 'm', P1: 'm2' });
+    { Ref: 'LINEAR', UoM: 'm' }, { Ref: 'C01r', UoM: '', ParentRef: 'LINEAR' }, { Ref: 'B02w', UoM: '' },
+    { Ref: 'X', UoM: 'm', IsDeleted: 'Y' }, { Ref: 'P1', UoM: 'm2' },
+    { Ref: 'D', UoM: 'm', IsDeleted: 'Y' }, { Ref: 'D', UoM: '' },
+  ]), { LINEAR: 'm', X: 'm', P1: 'm2' });
 });
 
 // Hub Spacing from the DesignDB alone: hubs by the safer rule, each with its rows.
@@ -80,4 +82,15 @@ test('hubsFromSheets: a hub holds a driver or is named as secondary power', () =
   const m = engine.buildEmpty(Object.keys(hubs).sort(), 'ElementTypeRef,ElementTypeName,Parameters\nET-D,Driver,{<OP.1}\n');
   assert.deepEqual(m.zones, ['H2', 'H3', 'HUB-A']);
   assert.equal(m.mode, 'empty');
+});
+
+test('positionPieces: segments inside a run, keyed hub|location|group|type, inheriting from the run', async () => {
+  const { positionPieces } = await import('../src/designdb.js');
+  assert.deepEqual(positionPieces([
+    { Ref: 'P9', TypeRef: 'C01', ContextRef: 'L102', Dim: 14.2, ControlGroupText: 'G' },
+    { Ref: 'P10', TypeRef: 'C01r', ContextRef: 'P9', Dim: 1.7 },
+    { Ref: 'P11', TypeRef: 'C01r', ContextRef: 'P9', Dim: 0.2, ControlGroupText: 'G' },
+    { Ref: 'P12', TypeRef: 'C01r', ContextRef: 'P9', Dim: 1.7, IsDeleted: 'Y' },
+    { Ref: 'P13', TypeRef: 'B02w', ContextRef: 'P9', Dim: 3 }, // counted, not measured
+  ], { C01: 'm', C01r: 'm' }, [{ Ref: 'L102', ContextRef: 'L1', Link_SecondaryPowerRef: 'P1' }]), { 'P1|L102|G|C01r': [1.7, 0.2] });
 });

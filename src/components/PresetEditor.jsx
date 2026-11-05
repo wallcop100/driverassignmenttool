@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
-import { allParts, atCurrent, checkOf, checked, combine, nextTypeRef, reachableW, resolveSpec, setSharedParts, sharedAmendment } from '../engine.js';
-import { useCompanion } from '../companion.js';
-import SharedCheck, { ReportSuggestion } from './SharedCheck.jsx';
+import { useEffect, useMemo, useState } from 'react';
+import { allParts, atCurrent, checkOf, combine, nextTypeRef, reachableW, resolveSpec, sharedAmendment } from '../engine.js';
+import Disputes from './Disputes.jsx';
+import { disputed, pickKey, pickedSpec, votePicks } from '../learn.js';
 
 // The driver type editor, shared by the Add-driver modal and the Driver types
 // page. A preset is a rating nobody declared, supplied here and patched into the
@@ -81,6 +81,12 @@ export const toPreset = (d) => ({
 const isComplete = (d) => !!d.typeRef.trim() && numOrNull(d.maxPowerW) > 0
   && (d.powerType === 'CC' ? numOrNull(d.currentA) > 0 : numOrNull(d.outputVoltageV) > 0);
 
+// The draft field each disputed spec value is written to; a current range is a check, not a field.
+const FIELD = {
+  powerType: 'powerType', maxPowerW: 'maxPowerW', outputV: 'outputVoltageV', maxFvV: 'nodeMaxFvV',
+  nodeMaxLoadW: 'nodeMaxLoadW', nodeCurrentA: 'nodeCurrentA', outputs: 'outputs', addresses: 'addresses', controlType: 'controlType',
+};
+
 export default function PresetEditor({ draft, setDraft, inventory, onSave, onCancel, onDelete }) {
   const parts = allParts();   // the datasheets, then any shared additions
   const set = (patch) => setDraft({ ...draft, ...patch });
@@ -91,9 +97,15 @@ export default function PresetEditor({ draft, setDraft, inventory, onSave, onCan
   // it advises, never edits.
   const chosen = parts.find((p) => p.name === draft.part);
   const chosenPsu = parts.find((p) => p.name === draft.psu);
-  const part = atCurrent(draft.invented && chosen
+  const found = atCurrent(draft.invented && chosen
     ? combine(chosen, chosenPsu)
     : resolveSpec(draft.name || draft.typeRef), numOrNull(draft.currentA));
+  // another project's unchecked correction to that datasheet, fixed while this is
+  // open: the pick is the vote, cast on Save, and the row must stay until then
+  const names = [found?.driver?.name ?? found?.name, found?.supply?.name].join('|');
+  const rows = useMemo(() => disputed([found?.driver ?? found, found?.supply]), [names]);
+  const [picks, setPicks] = useState({});
+  const part = pickedSpec(found, rows, picks);
 
   useEffect(() => {
     if (!draft.invented || ownRef) return;
@@ -119,17 +131,29 @@ export default function PresetEditor({ draft, setDraft, inventory, onSave, onCan
     controlType: part?.controlType,
   };
 
+  // A pick writes its value into the field, as the pair gives it once combined.
+  const pick = (r, v) => {
+    const next = { ...picks, [pickKey(r)]: v };
+    setPicks(next);
+    const k = FIELD[r.key];
+    const p = pickedSpec(found, rows, next);
+    if (k && p?.[r.key] != null) set({ [k]: p[r.key] });
+  };
+
   // What people have sent for this datasheet part, offered beside the page and
   // never in its place (report AUSTHZ). A part that is itself shared says so.
-  // An unchecked one is asked about (SharedCheck), never offered: a suggestion is only what the companion is sure of.
+  // An unchecked one is asked about (Disputes), never offered: a suggestion is only what the companion is sure of.
   const amend = sharedAmendment((part?.driver ?? part)?.name);
-  const sure = checkOf(amend) !== 'unchecked' ? amend : null;
+  // your own sending is not "another project"
+  const sure = checkOf(amend) !== 'unchecked' && !amend?.own ? amend : null;
   const said = {
     maxPowerW: sure?.maxPowerW, outputVoltageV: sure?.outputV, outputs: sure?.outputs,
     addresses: sure?.addresses, nodeMaxFvV: sure?.maxFvV, nodeMaxLoadW: sure?.nodeMaxLoadW,
     nodeCurrentA: sure?.nodeCurrentA,
   };
-  const from = part?.shared ? 'Suggested' : 'spec page';
+  const from = part?.shared ? 'another project' : 'spec page';
+  // a value taken from their correction is offered as theirs, not the spec page's
+  const theirs = new Set(rows.filter((r) => picks[pickKey(r)] === 'theirs').map((r) => FIELD[r.key]));
 
   // One field: the schema's own column name above a box that looks like a box,
   // and - where the datasheet says otherwise - an offer you can take rather than
@@ -151,19 +175,17 @@ export default function PresetEditor({ draft, setDraft, inventory, onSave, onCan
         {(off || blank) && (
           <span className="fld-sug">
             <button type="button" className={`fld-ds${part.shared ? ' is-shared' : ''}`} onClick={() => set({ [k]: want })}
-              title={`Take ${g(want)} from the ${part.name} ${from}`}>
-              {part.shared && <span className="material-icons">auto_awesome</span>}{off ? `${from}: ${g(want)}` : `use ${g(want)}`}
+              title={`Take ${g(want)} from the ${part.name} ${theirs.has(k) ? 'correction' : from}`}>
+              {off ? `${theirs.has(k) ? 'their correction' : from}: ${g(want)}` : `use ${g(want)}`}
             </button>
-            {part.shared && <ReportSuggestion what={`${part.name} ${col} ${g(want)}`} />}
           </span>
         )}
         {altOff && (
           <span className="fld-sug">
             <button type="button" className="fld-ds is-shared" onClick={() => set({ [k]: alt })}
               title={`Use ${g(alt)} - what other projects use for the ${amend.name}, agreed by two people`}>
-              <span className="material-icons">auto_awesome</span>Suggested: {g(alt)}
+              another project: {g(alt)}
             </button>
-            <ReportSuggestion what={`${amend.name} ${col} ${g(alt)}`} />
           </span>
         )}
       </label>
@@ -189,10 +211,7 @@ export default function PresetEditor({ draft, setDraft, inventory, onSave, onCan
 
   return (
     <div className="preset-editor">
-      {/* an amendment is checked here too: its size, boxes and supply fill the layout once agreed */}
-      {[part?.driver ?? part, part?.supply, amend].filter(Boolean).map((p, n) => (
-        <SharedCheck key={`${n}${p.name}`} part={p} />
-      ))}
+      <Disputes rows={rows} picks={picks} onPick={pick} fills="this type" />
       {draft.invented ? (
         <div className="spec-pick">
           <label>
@@ -302,7 +321,7 @@ export default function PresetEditor({ draft, setDraft, inventory, onSave, onCan
       )}
 
       <div className="fld-foot">
-        <button className="btn btn-sm btn-primary" disabled={!isComplete(draft)} onClick={onSave}>Save</button>
+        <button className="btn btn-sm btn-primary" disabled={!isComplete(draft)} onClick={() => { votePicks(rows, picks); onSave(); }}>Save</button>
         <button className="btn btn-sm btn-link" onClick={onCancel}>Cancel</button>
         <span className="fld-foot-note">
           Saved here, and written to the workbook when you copy the patch
@@ -311,108 +330,6 @@ export default function PresetEditor({ draft, setDraft, inventory, onSave, onCan
           <button className="btn btn-sm btn-link text-danger ms-auto" onClick={onDelete}>Remove</button>
         )}
       </div>
-      <SharePart draft={draft} part={part?.driver ?? part} />
-    </div>
-  );
-}
-
-// The ratings above, sent to the shared catalogue as a datasheet part: a new one,
-// or an amendment to a part the page has wrong. Only with a companion, and only
-// these fields - never the Ref, the node names, or anything else of the design.
-export const partFromDraft = (d, { name, aliases, kind, minMa, maxMa, size = [], jboxes = '', psu = '' }) => ({
-  name: name.trim(),
-  aliases: aliases.split(',').map((a) => a.trim()).filter(Boolean),
-  kind, powerType: d.powerType,
-  maxPowerW: numOrNull(d.maxPowerW),
-  ...(d.powerType === 'CC'
-    ? { minA: numOrNull(minMa) == null ? null : numOrNull(minMa) / 1000,
-        maxA: numOrNull(maxMa) == null ? null : numOrNull(maxMa) / 1000 }
-    : { outputV: numOrNull(d.outputVoltageV) }),
-  outputs: Math.max(1, Number(d.outputs) || 1),
-  addresses: numOrNull(d.addresses),
-  maxFvV: numOrNull(d.nodeMaxFvV),
-  nodeMaxLoadW: numOrNull(d.nodeMaxLoadW),
-  nodeCurrentA: numOrNull(d.nodeCurrentA),
-  controlType: (d.controlType ?? '').trim() || null,
-  // what the layout needs to draw it: the case, its boxes, and a DC/DC driver's usual supply
-  ...(size.length === 3 && size.every((v) => numOrNull(v) > 0) && { sizeMm: size.map(Number) }),
-  ...(numOrNull(jboxes) != null && { jboxes: Math.round(Number(jboxes)) }),
-  ...(kind === 'dcdc' && psu && { psu }),
-});
-
-function SharePart({ draft, part }) {
-  const companion = useCompanion();
-  const [form, setForm] = useState(null);
-  const [said, setSaid] = useState(null);
-  if (!companion?.parts) return null;
-  const ma = (a) => (a == null ? '' : String(Math.round(a * 1000)));
-  const open = () => {
-    setSaid(null);
-    setForm({
-      name: part?.name ?? draft.part ?? draft.name ?? '',
-      aliases: '', kind: part?.kind ?? 'driver',
-      minMa: ma(part?.minA ?? numOrNull(draft.currentA)), maxMa: ma(part?.maxA ?? numOrNull(draft.currentA)),
-      size: (checked(part, 'sizeMm') ?? ['', '', '']).map(String),
-      jboxes: String(checked(part, 'jboxes') ?? ''), psu: draft.psu || checked(part, 'psu') || '',
-    });
-  };
-  const send = async () => {
-    const r = await companion.parts.add(partFromDraft(draft, form));
-    if (r.parts) { setSharedParts(r.parts); setForm(null); setSaid('Sent - others using this tool will be asked to check it'); }
-    else setSaid(r.error);
-  };
-  const f = (k) => ({ value: form[k], onChange: (e) => setForm({ ...form, [k]: e.target.value }) });
-  const what = part && !part.shared ? `Suggest a correction to ${part.name}` : 'Suggest a catalogue part';
-  return (
-    <div className="share-part">
-      {!form && (
-        <button type="button" className="btn btn-sm btn-link p-0 share-open" onClick={open}
-          title="Send these ratings to the companion, for others using this tool to check">
-          <span className="material-icons">auto_awesome</span>{what}…
-        </button>
-      )}
-      {form && (
-        <div className="companion-card share-card" data-testid="share-card">
-          <div className="share-head"><span className="material-icons">fact_check</span>{what}</div>
-          <div className="fld-grid">
-            <label className="fld"><span className="fld-col" title="The part, as its maker names it">Part name</span>
-              <input {...f('name')} /></label>
-            <label className="fld"><span className="fld-col" title="Comma-separated. A type whose Name contains one is matched to this part">Also matches</span>
-              <input {...f('aliases')} placeholder="e.g. SLO360" /></label>
-            <label className="fld"><span className="fld-col">Kind</span>
-              <select {...f('kind')}>
-                <option value="driver">driver</option>
-                <option value="dcdc">DC/DC driver</option>
-                <option value="supply">supply</option>
-              </select></label>
-            {draft.powerType === 'CC' && (
-              <label className="fld"><span className="fld-col" title="The datasheet's current range, mA">Range (mA)</span>
-                <span className="share-range"><input type="number" min="0" {...f('minMa')} />–<input type="number" min="0" {...f('maxMa')} /></span>
-              </label>
-            )}
-            <label className="fld share-size"><span className="fld-col" title="Length × width × height off the datasheet, mm. The hub layout draws the driver at this size">Size (mm)</span>
-              <span className="share-range">{[0, 1, 2].map((n) => (
-                <input key={n} type="number" min="0" aria-label={['Length', 'Width', 'Height'][n]} value={form.size[n]}
-                  onChange={(e) => setForm({ ...form, size: form.size.map((v, i) => (i === n ? e.target.value : v)) })} />
-              ))}</span></label>
-            <label className="fld"><span className="fld-col" title="Junction boxes it arrives with in a hub. Blank: one per output for CV, none for CC">Junction boxes</span>
-              <input type="number" min="0" max="8" {...f('jboxes')} /></label>
-            {form.kind === 'dcdc' && (
-              <label className="fld"><span className="fld-col" title="The supply it is usually paired with, offered first when someone picks this driver">Usual supply</span>
-                <select {...f('psu')}>
-                  <option value="">None</option>
-                  {allParts().filter((p) => p.kind === 'supply').map((p) => <option key={p.name} value={p.name}>{p.name}</option>)}
-                </select></label>
-            )}
-          </div>
-          <div className="fld-foot">
-            <button className="btn btn-sm btn-outline-primary" disabled={form.name.trim().length < 4} onClick={send}>Send</button>
-            <button className="btn btn-sm btn-link" onClick={() => setForm(null)}>Cancel</button>
-            <span className="fld-foot-note">Others are asked to check it before it is suggested; a spec page always wins</span>
-          </div>
-        </div>
-      )}
-      {said && <div className="fld-foot-note">{said}</div>}
     </div>
   );
 }

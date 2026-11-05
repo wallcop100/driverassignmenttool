@@ -1,12 +1,14 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import * as api from '../api.js';
 import { listSessions } from '../persist.js';
-import { compareEstimate, ESTIMATE_WARNING, isFeed, estimatePatchRows, filterRequirements, filterValue, PIVOT_COLUMNS, generateEstimatePatch, isOwnLine, channelClass, channelsOf, resolveSpec, zoneViews } from '../engine.js';
+import { compareEstimate, ESTIMATE_WARNING, isFeed, estimatePatchRows, filterRequirements, filterValue, PIVOT_COLUMNS, generateEstimatePatch, estimatePatchTypes, isOwnLine, channelClass, channelsOf, isDriverType, resolveSpec, zoneViews } from '../engine.js';
 import { effectiveDrivers } from '../state.js';
 import { ratingsOf } from '../typeFaults.js';
 import { openReport } from '../bugReports.js';
 import { isEmbedded } from '../embed.js';
+import { hash } from '../core/errorId.js';
 import KebabMenu from './KebabMenu.jsx';
+import NewTypeDialog from './NewTypeDialog.jsx';
 import Tooltip from './Tooltip.jsx';
 import ViewToggle from './ViewToggle.jsx';
 
@@ -91,17 +93,55 @@ const ROW_MODES = [
   [true, 'One row per driver', 'Quantity 1 each. Each Name lists the ControlGroups that driver carries - dealt out in order when groups share drivers.'],
 ];
 
+// A tick approves the hub's estimate as it stands. Once that estimate changes, the tick is cleared.
+// The Filter is left out: narrowing the view isn't a change to a hub's drivers.
+function useApproval(model, opts, zone, approvedHubs, dispatch) {
+  const [sigs, setSigs] = useState({});
+  const unfiltered = JSON.stringify({ ...opts, rowFilter: null });
+  useEffect(() => {
+    let stale = false;
+    api.estimate(JSON.parse(unfiltered), zone).then((e) => !stale && setSigs(Object.fromEntries(e.map((z) =>
+      [z.zone, hash(JSON.stringify(estimatePatchRows([z], { perDriver: false })))]))));
+    return () => { stale = true; };
+  }, [model, unfiltered, zone]);
+  useEffect(() => {
+    const stale = Object.keys(sigs).filter((h) => h in approvedHubs && approvedHubs[h] !== sigs[h]);
+    if (stale.length) dispatch({ type: 'APPROVE_HUB', sigs: Object.fromEntries(stale.map((h) => [h, null])), on: false });
+  }, [sigs, approvedHubs]);
+  const approved = useMemo(() => new Set(Object.keys(sigs).filter((h) => approvedHubs[h] === sigs[h])), [sigs, approvedHubs]);
+  const approve = (hubs, on) => dispatch({ type: 'APPROVE_HUB', sigs: Object.fromEntries(hubs.map((h) => [h, sigs[h]])), on });
+  return [approved, approve];
+}
+
+// The hubs a standalone patch covers: the ones approved on the page, all of them, or one.
+const SCOPES = [['selected', 'Selected hubs'], ['all', 'All hubs'], ['one', 'One hub']];
+
 // `others`: hubs saved in this branch+set (overlay only), ticked into the same patch.
-function PatchDialog({ opts, zone, others, perDriver, onPerDriver, onCopy, onClose }) {
+// Standalone, the whole job is estimated and the scope picks the hubs out of it.
+function PatchDialog({ opts, zone, others, perDriver, onPerDriver, onCopy, onClose, model, presets,
+  approvedHubs, dispatch, scopePref, onScope }) {
+  const standalone = !isEmbedded();
   const [estimates, setEstimates] = useState([]);
   const [picked, setPicked] = useState(() => new Set(others.map((s) => s.key)));
   useEffect(() => {
     let stale = false;
-    Promise.all([api.estimate(opts, zone), api.estimateHubs(others.filter((s) => picked.has(s.key)), opts)])
-      .then(([here, more]) => !stale && setEstimates([...here, ...more]));
+    (standalone ? api.estimate(opts)
+      : Promise.all([api.estimate(opts, zone), api.estimateHubs(others.filter((s) => picked.has(s.key)), opts)])
+        .then(([here, more]) => [...here, ...more]))
+      .then((e) => !stale && setEstimates(e));
     return () => { stale = true; };
   }, [JSON.stringify(opts), zone, picked]);
-  const rows = estimatePatchRows(estimates, { perDriver });
+  // routed to one hub, that hub; otherwise the last choice, or the approved hubs when there are any
+  const [approved, onApprove] = useApproval(model, opts, null, approvedHubs, dispatch);
+  const [scope, setScope] = useState(() => (zone ? 'one' : Object.keys(approvedHubs).length ? scopePref ?? 'selected' : scopePref === 'one' ? 'one' : 'all'));
+  const hubs = estimates.map((z) => z.zone);
+  const [oneHub, setOneHub] = useState(zone ?? null);
+  const only = oneHub ?? hubs[0];
+  const chosen = !standalone ? estimates
+    : estimates.filter((z) => scope === 'all' || (scope === 'one' ? z.zone === only : approved.has(z.zone)));
+  const rows = estimatePatchRows(chosen, { perDriver });
+  const types = estimatePatchTypes(chosen, { model, presets }).length;
+  const pick = (v) => { setScope(v); onScope(v); };
   const tick = (key) => setPicked((p) => { const n = new Set(p); if (!n.delete(key)) n.add(key); return n; });
 
   return (
@@ -120,6 +160,46 @@ function PatchDialog({ opts, zone, others, perDriver, onPerDriver, onCopy, onClo
             </label>
           ))}
         </fieldset>
+        {standalone && (
+          <fieldset className="est-patch-modes">
+            <legend>Hubs</legend>
+            {SCOPES.map(([v, label]) => (
+              <Fragment key={v}>
+                <label>
+                  <input type="radio" name="patch-hubs" checked={scope === v} onChange={() => pick(v)} />
+                  <span><b>{label}</b>
+                    {v === 'selected' && scope !== 'selected' && <small>{hubs.filter((h) => approved.has(h)).length} of {hubs.length} approved</small>}
+                    {v === 'all' && <small>{hubs.length} hub{hubs.length === 1 ? '' : 's'}</small>}
+                  </span>
+                  {v === 'one' && scope === 'one' && (
+                    <select className="form-select form-select-sm est-patch-one" value={only ?? ''} aria-label="Hub"
+                      onChange={(e) => setOneHub(e.target.value)}>
+                      {hubs.map((h) => <option key={h} value={h}>{h}</option>)}
+                    </select>
+                  )}
+                </label>
+                {v === 'selected' && scope === 'selected' && (
+                  <details className="est-patch-hubs">
+                    <summary>{hubs.filter((h) => approved.has(h)).length} of {hubs.length} approved</summary>
+                    <div className="est-patch-list">
+                      <div className="est-patch-all">
+                        <button type="button" className="btn btn-sm btn-link p-0" onClick={() => onApprove(hubs, true)}>All</button>
+                        {' · '}
+                        <button type="button" className="btn btn-sm btn-link p-0" onClick={() => onApprove(hubs, false)}>None</button>
+                      </div>
+                      {hubs.map((h) => (
+                        <label key={h}>
+                          <input type="checkbox" checked={approved.has(h)} onChange={() => onApprove([h])} />
+                          <span>{h}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </details>
+                )}
+              </Fragment>
+            ))}
+          </fieldset>
+        )}
         {others.length > 0 && (
           <fieldset className="est-patch-modes">
             <legend>Hubs</legend>
@@ -144,8 +224,10 @@ function PatchDialog({ opts, zone, others, perDriver, onPerDriver, onCopy, onClo
           </table>
         </div>
         <div className="fd-foot">
-          <span className="est-meta">{rows.length} row{rows.length === 1 ? '' : 's'} appended, each needing a Ref</span>
-          <button className="btn btn-sm btn-primary ms-auto" onClick={() => onCopy(generateEstimatePatch(estimates, { perDriver }))}
+          <span className="est-meta">{standalone && scope === 'selected' && !chosen.length ? 'Approve hubs to patch them' : <>
+            {rows.length} row{rows.length === 1 ? '' : 's'}{standalone && ` from ${chosen.length} hub${chosen.length === 1 ? '' : 's'}`} appended, each needing a Ref
+            {types > 0 && ` · ${types} driver type${types === 1 ? '' : 's'} added or changed`}</>}</span>
+          <button className="btn btn-sm btn-primary ms-auto" onClick={() => onCopy(generateEstimatePatch(chosen, { perDriver, model, presets }))}
             disabled={!rows.length}>Copy patch</button>
         </div>
       </div>
@@ -174,6 +256,7 @@ export default function EstimatePage({ state, dispatch, zone }) {
     // the pivot filters an Excel user would set; the overlay sends one hub's rows already
     rowFilter: isEmbedded() ? null : state.rowFilter,
   };
+  const [approved, approve] = useApproval(model, opts, zone, state.approvedHubs, dispatch);
   useEffect(() => {
     let stale = false;
     api.estimate(opts, zone).then((z) => !stale && setZones(z)).catch((e) => setError(e.message));
@@ -201,18 +284,24 @@ export default function EstimatePage({ state, dispatch, zone }) {
   }, []);
   const marginPct = Math.round((prefs.margin ?? 0) * 100);
 
+  // hub by hub: only standalone over the whole job - the overlay already sends one hub
+  const canStep = !isEmbedded() && !zone && zones.length > 1;
+  const [hubAt, setHubAt] = useState(0);
+  const at = Math.min(hubAt, zones.length - 1);
+  // stepping, every figure is the shown hub's (JZAJZ7)
+  const stepped = canStep && prefs.hubByHub ? zones[at]?.zone : null;
   const totals = useMemo(() => {
     const byType = new Map();
     let drivers = 0;
     let unmatched = 0;
     let skipped = 0;
-    for (const z of zones) {
+    for (const z of stepped ? zones.filter((x) => x.zone === stepped) : zones) {
       drivers += z.drivers;
       for (const u of z.unmatched) if (u.feed) continue; else if (u.skipped) skipped += u.qty; else unmatched += u.qty;
       for (const l of z.lines) byType.set(l.typeRef, (byType.get(l.typeRef) ?? 0) + l.count);
     }
     return { drivers, unmatched, skipped, byType: [...byType.entries()].sort() };
-  }, [zones]);
+  }, [zones, stepped]);
 
   // Beside the hub's actual drivers, per type - only for one hub that has any.
   // An estimate-only hub has nothing to compare, and saying "0 in the hub" for
@@ -267,6 +356,7 @@ export default function EstimatePage({ state, dispatch, zone }) {
   const unmatchedLabel = (skipped = false) => {
     const byUnit = new Map();
     for (const z of zones) {
+      if (stepped && z.zone !== stepped) continue;
       for (const u of z.unmatched.filter((x) => !x.feed && !!x.skipped === skipped)) {
         for (const ref of u.rows ?? []) {
           const r = reqByRef.get(ref);
@@ -278,7 +368,7 @@ export default function EstimatePage({ state, dispatch, zone }) {
   };
 
   // scoped to one hub when routed from the landing page, whole job otherwise
-  const rows = zone ? model.requirements.filter((r) => r.zone === zone) : model.requirements;
+  const rows = zone || stepped ? model.requirements.filter((r) => r.zone === (zone || stepped)) : model.requirements;
   // a filter is only offered for a column this export has; values counted over the scope
   const columns = useMemo(() => [...new Set(rows.flatMap((r) => Object.keys(r.cols ?? {})))], [rows]);
   const pivots = PIVOT_COLUMNS.map((names) => names.find((c) => columns.includes(c))).filter(Boolean);
@@ -318,6 +408,7 @@ export default function EstimatePage({ state, dispatch, zone }) {
   const [open, setOpen] = useState(() => new Set());
   // one working at a time, in a dialog: several open inline was too busy (report TZY2VC)
   const [working, setWorking] = useState(null);
+  const [newFor, setNewFor] = useState(null); // an unmatched lot's rows, for New type for these
   // the driver type select stays out of the way until asked for from ⋮ (SSCMMX)
   const [forcing, setForcing] = useState(null);
   // one driver type for every line a PositionType is on (5SVFZX)
@@ -328,16 +419,37 @@ export default function EstimatePage({ state, dispatch, zone }) {
   const flash = nudge === 'flash';
   const [agreed, setAgreed] = useState(nudge !== 'confirm');
   const toggle = (set, k) => set((p) => { const n = new Set(p); if (!n.delete(k)) n.add(k); return n; });
-  // hub by hub: only standalone over the whole job - the overlay already sends one hub
-  const canStep = !isEmbedded() && !zone && zones.length > 1;
-  const [hubAt, setHubAt] = useState(0);
-  const at = Math.min(hubAt, zones.length - 1);
   const shown = (canStep && prefs.hubByHub ? zones.slice(at, at + 1) : zones).filter((z) => !notSized || groupsOf(z).length);
   // Total Power / Total Forward Voltage: hidden unless asked for from the header's ⋮
   const showP = !!prefs.pvPower;
   const showV = !!prefs.pvFv;
   const showN = !!prefs.pvName;   // Driver Name, beside Driver Type (RDTQNJ)
   const showC = prefs.pvCtl !== false; // Control Type, shown unless turned off
+  // click a header to sort the hubs and the groups in each, again to reverse; ⋮ resets (95QTPK)
+  const [sort, setSort] = useState(null);
+  const keyOf = ({ cg, items }, col) => {
+    const refs = items.flatMap((i) => i.l.rows ?? []);
+    const m = items.filter((i) => !i.unmatched);
+    const types = [...new Set(m.map((i) => i.l.typeRef))];
+    return {
+      name: cg, power: powerOf(refs), fv: rowsOf(refs).reduce((n, r) => n + (r.fvPer ?? 0) * r.qty, 0),
+      type: types.join(', '), dname: types.map(nameOf).join(', '),
+      ctl: [...new Set(rowsOf(refs).map((r) => r.controlType).filter(Boolean))].join(', '),
+      count: m.reduce((n, i) => n + i.l.count, 0), limit: items.length === 1 ? items[0].l.limit ?? '' : '',
+    }[col];
+  };
+  const hubKey = (z, col) => ({ name: z.zone, power: z.loadW, count: z.drivers })[col];
+  const cmp = (a, b) => (typeof a === 'number' && typeof b === 'number' ? a - b
+    : String(a ?? '').localeCompare(String(b ?? ''), undefined, { numeric: true }));
+  const sorted = (list, key) => (!sort || !list.length || key(list[0], sort.col) === undefined ? list
+    : [...list].sort((a, b) => cmp(key(a, sort.col), key(b, sort.col)) * sort.dir));
+  const Th = ({ col, className, children }) => (
+    <th className={className} aria-sort={sort?.col === col ? (sort.dir > 0 ? 'ascending' : 'descending') : undefined}>
+      <button type="button" className="pv-sort" onClick={() => setSort((o) => ({ col, dir: o?.col === col ? -o.dir : 1 }))}>
+        {children}{sort?.col === col && <span className="material-icons">{sort.dir > 0 ? 'arrow_upward' : 'arrow_downward'}</span>}
+      </button>
+    </th>
+  );
   const lineKeys = shown.flatMap((z) => groupsOf(z).flatMap(({ g, items }) => [g, ...items.map((i) => i.k)]));
 
   // the line's rows are one channelClass (the engine splits on it), so one chip says it all
@@ -365,19 +477,25 @@ export default function EstimatePage({ state, dispatch, zone }) {
     return cts.map((ct) => <span key={ct} className="est-ct" style={{ background: CT_BG[ct.toLowerCase()] ?? '#64748b' }}>{ct.toUpperCase()}</span>);
   };
 
-  const RowTable = ({ refs }) => (
+  const RowTable = ({ refs }) => {
+    const rs = refs.map((ref) => reqByRef.get(ref)).filter(Boolean);
+    const hasFv = rs.some((r) => r.fvPer > 0);
+    // a driver kept to one ControlGroup says it once, on the line
+    const showCg = !prefs.restrictControlGroup;
+    return (
     <table className="est-rowtable">
-      <thead><tr><th>PositionType</th><th>Room</th><th>ControlGroup</th><th className="text-end">Qty × W each</th><th>Drive</th><th /></tr></thead>
+      <thead><tr>{showCg && <th>ControlGroup</th>}<th>PositionType</th><th>Room</th><th className="text-end">Qty × W each</th>{hasFv && <th className="text-end">Qty × fV each</th>}<th>Drive</th><th /></tr></thead>
       <tbody>
-        {refs.map((ref) => reqByRef.get(ref)).filter(Boolean).map((r) => {
+        {rs.map((r) => {
           const part = resolveSpec(r.positionType);
           const u = r.uom ? ` ${r.uom}` : '';
           return (
             <tr key={r.ref} data-code={r.ref}>
+              {showCg && <td className="est-mono">{r.controlGroup}</td>}
               <td className="est-type">{r.positionType}{part && <small>{part.name}</small>}</td>
               <td>{r.location}</td>
-              <td className="est-mono">{r.controlGroup}</td>
               <td className="est-load">{fmt(r.qty)}{u} × {fmt(r.wPer)} W{r.uom ? `/${r.uom}` : ''} = <b>{fmt(r.loadW)} W</b></td>
+              {hasFv && <td className="est-load">{r.fvPer > 0 && <>{fmt(r.qty)}{u} × {fmt(r.fvPer)} V{r.uom ? `/${r.uom}` : ''} = <b>{fmt(r.qty * r.fvPer)} V</b></>}</td>}
               <td>
                 <span className={`est-drive is-${(r.powerType ?? '').toLowerCase()}`}>
                   {!r.powerType ? 'no CC/CV' : r.powerType === 'CV' ? `CV ${r.voltageV ?? ''} V`
@@ -403,10 +521,11 @@ export default function EstimatePage({ state, dispatch, zone }) {
       </tbody>
     </table>
   );
+  };
 
   // Every driver type in the library, the ones that fit these fittings first.
   // Anything may be forced: an emergency driver, or a case-by-case call.
-  const driverTypes = useMemo(() => (model.inventory ?? []).filter((t) => t.nodes?.length)
+  const driverTypes = useMemo(() => (model.inventory ?? []).filter(isDriverType)
     .map((t) => t.typeRef).sort(), [model]);
   const ForceType = ({ k, l }) => {
     const fits = l.fitTypes ?? [];
@@ -489,7 +608,7 @@ export default function EstimatePage({ state, dispatch, zone }) {
       estimate: {
         zone: z, typeRef: l.typeRef, count: l.count, qty: l.qty, perDriver: l.perDriver, outputs: l.outputs,
         perNode: l.perNode, limit: l.limit, loadW: l.loadW, controlGroup: l.controlGroup,
-        positionTypes: l.positionTypes, rows: l.rows, working: w, forced: l.forced, mismatch: l.mismatch,
+        positionTypes: l.positionTypes, rows: l.rows, working: w, forced: l.forced, mismatch: l.mismatch, pieceIssue: l.pieceIssue,
         // the forced map's keys can carry room names
         opts: { ...opts, forced: undefined },
       },
@@ -517,12 +636,15 @@ export default function EstimatePage({ state, dispatch, zone }) {
     const ch = w.channels ?? 1;
     const sets = w.slots ?? n;
     const setsOf = (x) => (ch > 1 ? `${x} set${x === 1 ? '' : 's'} of ${ch} outputs` : outsOf(x));
+    // the type's own node names, {<OP.1,<OP.2} (J5KE96)
+    const nodes = (model.inventory ?? []).find((t) => t.typeRef === l.typeRef)?.nodes ?? [];
+    const outName = (j) => nodes[j]?.name || `O${j + 1}`;
 
     // Per driver, then per output: the packer's own split where there is one,
     // else fill order for plain division. Grouped runs have no split.
     const drivers = w.packing
       ? w.packing.drivers.map((d) => ({ w: d.w, outs: d.outs.map((o) => ({
-        label: o.items.map((it) => `${it.pt ?? '-'}${it.q < 1 ? ` (${fmt(it.q)})` : ''}`).join(' + '),
+        label: o.items.map((it) => `${it.pt ?? '-'}${it.q !== 1 ? ` (${fmt(it.q)}${u})` : ''}`).join(' + '),
         fv: o.fv > 0 && w.packing.fvCap != null ? [o.fv, w.packing.fvCap] : null,
         w: [o.w, w.packing.wCap],
       })) }))
@@ -551,6 +673,13 @@ export default function EstimatePage({ state, dispatch, zone }) {
             </div>
           ))}
           <div className="est-tr-sub">Σ {N(l.loadW, 'W', true)}{w.mixed ? ' · each packed at its own size' : ''}</div>
+          {w.segments && (
+            <div className="est-tr-sub">
+              {w.segments.n} segment{w.segments.n === 1 ? '' : 's'} in the DesignDB, {fmt(w.segments.total)}{u} · each kept whole on one output
+              {w.segments.used === 'assessment' && ' · not used: the assessment quantity needs more drivers'}
+            </div>
+          )}
+          {l.pieceIssue && <div className="est-tr-sub est-tr-warn">{l.pieceIssue}{u}: sized on whichever needs more drivers.</div>}
           {ch > 1 && <div className="est-tr-sub est-tr-ch"><ChannelIcon refs={l.rows} /> {ch} outputs per fitting, on one driver · each sized for the whole fitting</div>}
         </Step>
 
@@ -641,11 +770,11 @@ export default function EstimatePage({ state, dispatch, zone }) {
                 {n > 1 || d.outs.some((o) => o?.fv || o?.w) ? (
                   <div className="est-tr-outs">{d.outs.map((o, j) => (o ? (
                     <span className="est-tr-out" key={j}>
-                      O{j + 1} {o.label}
+                      {outName(j)} {o.label}
                       {o.fv && <> · {N(o.fv[0], 'V', true)} / {N(o.fv[1], 'V')}</>}
                       {o.w && (w.packing || !o.fv) && <> · {N(o.w[0], 'W', true)} / {N(o.w[1], 'W')}</>}
                     </span>
-                  ) : <span className="est-tr-out is-spare" key={j}>O{j + 1} spare</span>))}</div>
+                  ) : <span className="est-tr-out is-spare" key={j}>{outName(j)} spare</span>))}</div>
                 ) : null}
               </div>
             </div>
@@ -690,7 +819,16 @@ export default function EstimatePage({ state, dispatch, zone }) {
     return <>
       {showP && <td className="n">{fmt(unmatched ? powerOf(l.rows) : l.loadW)} W</td>}
       {showV && <td className="n">{fvLabel(l.rows)}</td>}
-      <td>{unmatched ? <span className={l.feed ? 'pv-note' : 'dp-fault'}>{reasonOf(l)}</span> : <TypePill t={l.typeRef} />}</td>
+      <td>{unmatched ? <span className={l.feed ? 'pv-note' : 'dp-fault'}>{reasonOf(l)}</span> : <span className="est-typecell">
+        <TypePill t={l.typeRef} />
+        <KebabMenu title="Line actions" items={[...(l.working ? [{
+          label: `How ${l.count} was worked out`, icon: 'calculate',
+          onClick: () => setWorking(k),
+        }] : []), {
+          label: 'Change driver type', icon: 'swap_horiz',
+          onClick: () => { setForcing(k); if (!open.has(k)) toggle(setOpen, k); },
+        }]} />
+      </span>}</td>
       {showN && <td className="pv-name">{unmatched ? '' : nameOf(l.typeRef)}</td>}
       {showC && <td className="pv-ct"><CtBadges refs={l.rows} /></td>}
       <td className="n">{unmatched ? '–' : l.count}</td>
@@ -702,6 +840,11 @@ export default function EstimatePage({ state, dispatch, zone }) {
           </Tooltip>
         )}
         {l.positionTypes?.length > 0 && l.positionTypes.every(isFeed) && <Tooltip content="Feed"><Icon name="feed" cls="est-feed" label="Feed" /></Tooltip>}
+        {l.pieceIssue && (
+          <Tooltip content={[['Segments don\u2019t add up', ''], `${l.pieceIssue}. Sized on whichever needs more drivers.`]}>
+            <Icon name="report_problem" cls="est-forced bad" label="Segments don't add up" />
+          </Tooltip>
+        )}
         {l.forced && (
           <Tooltip content={[['Forced', ''], l.mismatch ? `Does not match: ${l.mismatch}` : l.forcedIssue ?? 'On this line instead of the automatic pick.']}>
             <Icon name={l.mismatch || l.forcedIssue ? 'report_problem' : 'push_pin'} cls={`est-forced${l.mismatch || l.forcedIssue ? ' bad' : ''}`} label="Forced" />
@@ -716,13 +859,9 @@ export default function EstimatePage({ state, dispatch, zone }) {
         )}
       </td>
       <td className="text-end" data-code={l.typeRef}>
-        {!unmatched && <KebabMenu title="Line actions" items={[...(l.working ? [{
-          label: `How ${l.count} was worked out`, icon: 'calculate',
-          onClick: () => setWorking(k),
-        }] : []), {
-          label: 'Change driver type', icon: 'swap_horiz',
-          onClick: () => { setForcing(k); if (!open.has(k)) toggle(setOpen, k); },
-        }]} />}
+        {unmatched && !l.skipped && (
+          <KebabMenu title="Line actions" items={[{ label: 'New driver type for these…', icon: 'add_circle_outline', onClick: () => setNewFor(l.rows) }]} />
+        )}
         {working === k && (
           <div className="nt-backdrop text-start" onClick={(e) => e.target === e.currentTarget && setWorking(null)}>
             <div className="fd-dialog est-working-dialog" role="dialog" aria-label="How the count was worked out">
@@ -829,8 +968,20 @@ export default function EstimatePage({ state, dispatch, zone }) {
       {patchOpen && (
         <PatchDialog opts={opts} zone={zone} others={otherHubs} perDriver={!!prefs.patchPerDriver}
           onPerDriver={(v) => setPref({ patchPerDriver: v })}
-          onCopy={copyPatch} onClose={() => setPatchOpen(false)} />
+          onCopy={copyPatch} onClose={() => setPatchOpen(false)} model={model} presets={state.presets}
+          approvedHubs={state.approvedHubs} dispatch={dispatch}
+          scopePref={prefs.patchScope} onScope={(v) => setPref({ patchScope: v })} />
       )}
+      {newFor && (() => {
+        const rs = newFor.map((ref) => reqByRef.get(ref)).filter(Boolean);
+        const one = (f) => { const v = [...new Set(rs.map(f).filter((x) => x != null && x !== ''))]; return v.length === 1 ? v[0] : undefined; };
+        const ch = Math.max(1, ...rs.map(channelsOf));
+        return (
+          <NewTypeDialog inventory={model.inventory} dispatch={dispatch} onClose={() => setNewFor(null)}
+            seed={{ powerType: one((r) => r.powerType), currentA: one((r) => (r.powerType === 'CC' ? r.currentA : null)),
+              controlType: one((r) => r.controlType), outputs: ch > 1 ? ch : undefined }} />
+        );
+      })()}
 
       {!agreed && (
         <div className="nt-backdrop">
@@ -895,6 +1046,12 @@ export default function EstimatePage({ state, dispatch, zone }) {
                   );
                 })}
                 <div className="hub-mdiv" />
+                {filtersOn > 0 && (
+                  <button type="button" className="hub-mi"
+                    onClick={() => filters.forEach(([col]) => dispatch({ type: 'SET_ROW_FILTER', field: col, values: pivots.includes(col) ? [] : null }))}>
+                    <span className="material-icons">filter_alt_off</span><span className="grow">Clear all filters</span>
+                  </button>
+                )}
                 <div className="hub-mi">
                   <span className="material-icons">add</span>
                   <select className="form-select form-select-sm" value="" aria-label="Filter on another column"
@@ -965,6 +1122,10 @@ export default function EstimatePage({ state, dispatch, zone }) {
           %
           <Info text={`Capacity left free on every driver and output, for late changes. At ${marginPct}% each is filled to ${100 - marginPct}% of its rating.`} />
         </label>
+        <button type="button" className="btn btn-sm btn-link est-c p-0"
+          onClick={() => dispatch({ type: 'SET_VIEW', view: { page: 'types', back: state.view } })}>
+          <span className="material-icons small-icon">tune</span> Edit driver types…
+        </button>
             </div>
           )}
         </span>
@@ -973,12 +1134,15 @@ export default function EstimatePage({ state, dispatch, zone }) {
           {menuButton('view', 'visibility', 'View')}
           {bar === 'view' && (
             <div style={menuAt} className="hub-menu">
-              <button type="button" className="hub-mi" onClick={() => { setOpen(new Set(lineKeys)); setBar(null); }}>
-                <span className="material-icons">unfold_more</span><span className="grow">Expand all rows</span>
-              </button>
-              <button type="button" className="hub-mi" onClick={() => { setOpen(new Set()); setBar(null); }}>
-                <span className="material-icons">unfold_less</span><span className="grow">Collapse all rows</span>
-              </button>
+              {open.size ? (
+                <button type="button" className="hub-mi" onClick={() => { setOpen(new Set()); setBar(null); }}>
+                  <span className="material-icons">unfold_less</span><span className="grow">Collapse all rows</span>
+                </button>
+              ) : (
+                <button type="button" className="hub-mi" onClick={() => { setOpen(new Set(lineKeys)); setBar(null); }}>
+                  <span className="material-icons">unfold_more</span><span className="grow">Expand all rows</span>
+                </button>
+              )}
               {canStep && <>
                 <div className="hub-mdiv" />
                 <label className="hub-mi">
@@ -1045,9 +1209,10 @@ export default function EstimatePage({ state, dispatch, zone }) {
         <table className="est-pivot">
           <thead>
             <tr>
-              <th>Hub / ControlGroup</th>
-              {showP && <th className="n">Total Power</th>}{showV && <th className="n">Total Forward Voltage</th>}
-              <th>Driver Type</th>{showN && <th>Driver Name</th>}{showC && <th>Control Type</th>}<th className="n">Driver Count</th><th>Flags</th><th>Limited By</th>
+              <Th col="name">Hub / ControlGroup</Th>
+              {showP && <Th col="power" className="n">Total Power</Th>}{showV && <Th col="fv" className="n">Total Forward Voltage</Th>}
+              <Th col="type">Driver Type</Th>{showN && <Th col="dname">Driver Name</Th>}{showC && <Th col="ctl">Control Type</Th>}
+              <Th col="count" className="n">Driver Count</Th><th>Flags</th><Th col="limit">Limited By</Th>
               <th className="text-end">
                 {/* the totals are there to check against, not to read every time */}
                 <KebabMenu title="Columns" items={[
@@ -1055,17 +1220,25 @@ export default function EstimatePage({ state, dispatch, zone }) {
                   { label: 'Total Forward Voltage', icon: showV ? 'check_box' : 'check_box_outline_blank', onClick: () => setPref({ pvFv: !showV }) },
                   { label: 'Driver Name', icon: showN ? 'check_box' : 'check_box_outline_blank', onClick: () => setPref({ pvName: !showN }) },
                   { label: 'Control Type', icon: showC ? 'check_box' : 'check_box_outline_blank', onClick: () => setPref({ pvCtl: !showC }) },
+                  ...(sort ? [{ label: 'Reset sorting', icon: 'sort', onClick: () => setSort(null) }] : []),
                 ]} />
               </th>
             </tr>
           </thead>
-          {shown.map((z) => {
-            const groups = groupsOf(z);
+          {sorted(shown, hubKey).map((z) => {
+            const groups = sorted(groupsOf(z), keyOf);
             const hubTypes = new Set(z.lines.map((l) => l.typeRef));
             return (
               <tbody key={z.zone}>
-                <tr className="pv-hub">
-                  <td>{z.zone}</td>{showP && <td className="n">{fmt(z.loadW)} W</td>}{showV && <td />}
+                <tr className={`pv-hub${approved.has(z.zone) ? ' is-approved' : ''}`}>
+                  <td>
+                    {!isEmbedded() && (
+                      <input type="checkbox" className="form-check-input pv-approve" checked={approved.has(z.zone)}
+                        onChange={() => approve([z.zone])}
+                        title="Approve for the Elements patch" aria-label={`Approve ${z.zone} for the Elements patch`} />
+                    )}
+                    {z.zone}
+                  </td>{showP && <td className="n">{fmt(z.loadW)} W</td>}{showV && <td />}
                   <td>{hubTypes.size === 1 ? <TypePill t={[...hubTypes][0]} /> : null}</td>
                   {showN && <td className="pv-name">{hubTypes.size === 1 ? nameOf([...hubTypes][0]) : null}</td>}
                   {showC && <td />}

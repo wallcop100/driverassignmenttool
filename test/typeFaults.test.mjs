@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { checkOf, resolveSpec, setSharedParts } from '../src/engine.js';
 import {
-  autoFillable, canFill, canReplace, currentOptions, disagreeing, faults, fixPreset, ratingsOf,
+  autoFillable, canFill, canReplace, currentOptions, disagreeing, faults, fixPreset, leaves, ratingsOf,
 } from '../src/typeFaults.js';
 
 const SOLO = resolveSpec('EldoLED SOLODrive 360/A at 1050mA');
@@ -52,6 +52,19 @@ test('the fixes are offered only when they would do something', () => {
   assert.equal(canReplace(type({ maxPowerW: 30 }), SOLO), false);
   assert.equal(canFill(type({ nodes: [{ maxFvV: 55 }] }), SOLO), false);
   assert.equal(canFill(type({ currentA: null }), SOLO), true);
+});
+
+test('a fix is judged by what it would still leave flagged (9GYN2L)', () => {
+  const solo = resolveSpec('EldoLED SOLODrive 360/A');
+  // no current in the Ref or the Name: the spec page alone leaves CurrentRange blank
+  const t = type({ typeRef: 'ET-CCR-D-1CH-02', name: 'EldoLED SOLODrive 360/A', powerType: null, currentA: null });
+  assert.match(leaves(t, solo, 'replace')[0][0], /no CurrentRange/);
+  assert.deepEqual(leaves(t, solo, 'replace', 0.7), []);
+  // a DC/DC driver with no supply: nothing the datasheet has gives it a voltage
+  const lin = resolveSpec('EldoLED LinearDrive 220D');
+  const cv = { typeRef: 'ET-CVR-01', name: 'EldoLED LinearDrive 220D', powerType: null, maxPowerW: null, nodes: [{ name: 'OP.1' }] };
+  assert.match(leaves(cv, lin, 'fill')[0][0], /no OutputVoltage/);
+  assert.deepEqual(leaves(type(), SOLO, 'replace'), []);
 });
 
 test('the current comes from the ref and the name, and out-of-range is refused', () => {
@@ -111,3 +124,76 @@ test('a shared part is checked by a second person before it fills anything, and 
     setSharedParts([]);
   }
 });
+
+test('questions: the Ref answers CC/CV and the current, and the questions narrow to a part', async () => {
+  const { known, narrow, nextQuestion, precedent } = await import('../src/typeFaults.js');
+  const { allParts } = await import('../src/engine.js');
+  const k = known({ typeRef: 'ET-CCR-D-1050-1CH-01', name: '' });
+  assert.deepEqual(k.powerType, ['CC', 'Ref']);
+  assert.equal(k.currentA[1], 'Ref');
+  assert.equal(known({ typeRef: 'X', nodes: [{}] }).outputs, undefined);   // one default OP.1 says nothing
+
+  const parts = allParts();
+  assert.equal(nextQuestion(narrow(parts, {}), {}).key, 'powerType');   // always first
+  const cc = narrow(parts, { powerType: 'CC' });
+  assert.ok(cc.length > 4 && cc.every((p) => p.powerType === 'CC' && p.kind !== 'supply'));
+  assert.ok(narrow(parts, { powerType: 'CV' }).some((p) => p.kind === 'supply'));   // a PSU alone can be the driver
+  let ans = { powerType: 'CC' };
+  for (let q; (q = nextQuestion(narrow(parts, ans), ans));) { const v = Object.keys(q.groups)[0]; ans = { ...ans, [q.key]: q.key === 'outputs' ? Number(v) : v }; }
+  assert.ok(narrow(parts, ans).length >= 1 && narrow(parts, ans).length <= 4);
+  assert.equal(narrow(parts, { powerType: 'CC', currentA: 99 }).length, 0);   // nothing fits: by hand
+
+  const sug = { name: 'Sent 50', kind: 'driver', powerType: 'CC', shared: 'observed' };   // says no ControlType or outputs
+  assert.deepEqual(narrow([sug], { powerType: 'CC', controlType: 'DALI', outputs: 2 }), [sug]);
+  assert.equal(nextQuestion([sug, sug, sug, sug, sug], { powerType: 'CC' }), null);   // nothing to split on
+
+  const prec = precedent([{ typeRef: 'A', powerType: 'CC', maxPowerW: 30, name: 'x' }, { typeRef: 'B', name: 'y' }], () => null);
+  assert.deepEqual(prec.powerType, { CC: 1 });   // B states nothing, so it is no precedent
+});
+
+test('identify: types group by product, and what isn\'t sure goes to the review', async () => {
+  const { identify, judge } = await import('../src/typeFaults.js');
+  const op = (n) => Array.from({ length: n }, (_, i) => ({ name: `OP.${i + 1}` }));
+  // as project 4746 has them: Parameters and BallastCountPerUoM, nothing else
+  const t = (typeRef, name, n = 1) => ({ typeRef, name, nodes: op(n), ballast: n });
+  const { families, rest } = identify([
+    t('ET-DALI-CCR-2CH-350', 'EldoLED DualDrive 560/A 350mA', 2),
+    t('ET-DALI-CCR-2CH-700', 'EldoLED DualDrive 560/A 700mA', 2),
+    t('ET-DALI-CCR-SC-350', 'EldoLED SOLOdrive 240/A 350mA'),
+    t('ET-CCR-D-350-2CH-01', 'EldoLED SOLOdrive 240/A - 350mA', 2),       // a 1-output part, Parameters say 2
+    t('ET-DMX-CVR-5CH-01', 'HLG-185H-24A & LTEC LT-995-OLED DMX Decoder', 5),
+    t('ET-CCR-S-350-1CH-01', 'TCI MP 32 HV K2 - 350mA'),
+    t('ET-CCR-S-700-1CH-01', 'TCI MP 32 HV K2 - 700mA'),
+    t('ET-CCR-D-500-1CH-01', ''),                                           // no Name: fits only the SOLOdrive
+    t('ET-DALI-CVR-SC-01', 'HLG-185-24A & EldoLED LIN 220D', 2),
+    t('DALI-CVR-01', 'EldoLED LINEARDrive 220D'),                         // no supply: takes its sibling's
+    t('ET-CVR-FEED-PROV', ''),                                              // no Name, and the Ref gives no outputs
+  ], resolveSpec);
+  const fam = (name) => families.find((f) => f.part.name === name);
+  assert.deepEqual(fam('EldoLED DualDrive 560/A').types.map((x) => x.currentA), [0.35, 0.7]);
+  assert.equal(families[0].types.length >= families.at(-1).types.length, true, 'biggest first');
+  const solo = fam('EldoLED SoloDrive 240/A');
+  assert.equal(solo.types.length, 2);
+  assert.match(solo.types[1].note, /a guess/);
+  assert.equal(solo.types[1].preset.name, 'EldoLED SOLOdrive 240/A 500mA', 'named like its sibling');
+  assert.equal(fam('EldoLED LinearDrive 220D').types.length, 2);
+  assert.match(fam('EldoLED LinearDrive 220D').types[1].note, /as the other types here have it/);
+  const why = (ref) => rest.find((r) => r.types.some((x) => x.typeRef === ref))?.why;
+  assert.match(why('ET-CCR-D-350-2CH-01'), /Parameters give 2 outputs/);
+  assert.match(why('ET-DMX-CVR-5CH-01'), /second product/);
+  assert.match(why('ET-CVR-FEED-PROV'), /no Name/, 'a feed provision is not guessed into a family');
+  assert.equal(rest.find((r) => /TCI/.test(r.types[0].name)).types.length, 2, 'one card for a product no part is known for');
+
+  // the judge: blanks are filled, a value past the part's rating is wrong
+  const dual = fam('EldoLED DualDrive 560/A').types[0];
+  assert.ok(judge(dual.t, dual.preset, fam('EldoLED DualDrive 560/A').spec).every((j) => j.status === 'fill'));
+  const over = { ...type(), designDB: type() };
+  const [w] = judge(over, familyPresetOf(over), SOLO);
+  assert.equal(w.status, 'wrong');
+  assert.match(w.hint, /× what the/);
+  assert.equal(judge(type({ maxPowerW: 30, nodes: [{ name: 'OP.1', maxFvV: SOLO.maxFvV }] }),
+    familyPresetOf(type()), SOLO).filter((j) => j.status !== 'fill').length, 0, 'agreeing columns are left out');
+});
+
+import { familyPreset } from '../src/typeFaults.js';
+const familyPresetOf = (t) => familyPreset(t, SOLO, 1.05);

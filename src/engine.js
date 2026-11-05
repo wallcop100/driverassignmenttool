@@ -1171,9 +1171,10 @@ export const isOwnLine = (pt, ownLine = []) => !!pt && /Em?$/.test(pt) !== ownLi
 // Fittings of different sizes, packed as they are (MBTBA2): largest first onto
 // each run's own outputs, then the outputs onto drivers. First-fit decreasing,
 // so near-optimal rather than optimal - an estimate, not the detail design.
-// A fractional quantity (strip in metres) is a last, part-sized piece.
+// A fractional quantity (strip in metres) is a last, part-sized piece - unless
+// the row carries its segments from the DesignDB, which are packed as they are.
 const EPS = 1e-9;
-export function packLine(runs, t, keep) {
+export function packLine(runs, t, keep, usePieces = false) {
   const node = t.nodes[0] ?? {};
   const fvCap = node.maxFvV != null ? node.maxFvV * keep : Infinity;
   const nodeWCap = node.maxLoadW != null ? node.maxLoadW * keep : Infinity;
@@ -1183,6 +1184,9 @@ export function packLine(runs, t, keep) {
   const runList = [];
   for (const run of runs) {
     const items = run.rows.flatMap((r) => {
+      if (usePieces && r.pieces) {
+        return r.pieces.map((q) => ({ pt: r.positionType || null, q, w: r.wPer * q, fv: (r.fvPer ?? 0) * q }));
+      }
       const whole = Math.floor(r.qty);
       const part = r.qty - whole;
       const one = { pt: r.positionType || null, q: 1, w: r.wPer, fv: r.fvPer ?? 0 };
@@ -1317,6 +1321,15 @@ export function planFromRequirements(model, zone, opts = {}) {
     const mixed = group.some((r) => r.wPer !== group[0].wPer || (r.fvPer ?? 0) !== (group[0].fvPer ?? 0));
     const wPer = Math.max(...runs.map((r) => r.wPer));
     const ch = Math.max(...group.map(channelsOf));
+    // DesignDB segments, each kept whole. Where they don't add up to the
+    // assessment's quantity the line is flagged and sized both ways, keeping
+    // whichever needs more drivers.
+    const pieced = group.filter((r) => r.pieces);
+    const pieceTotal = pieced.reduce((n, r) => n + r.pieces.reduce((a, q) => a + q, 0), 0);
+    const pieceQty = pieced.reduce((n, r) => n + r.qty, 0);
+    const pieceGap = pieced.some((r) => Math.abs(r.pieces.reduce((a, q) => a + q, 0) - r.qty) > 0.005);
+    const pieceIssue = pieceGap
+      ? `DesignDB segments total ${+pieceTotal.toFixed(2)} but the assessment says ${+pieceQty.toFixed(2)}` : null;
 
     // Rank candidates by the count THIS arithmetic gives, not by pickType's,
     // which ranks on watts. When forward voltage binds - and it usually does - 
@@ -1342,14 +1355,15 @@ export function planFromRequirements(model, zone, opts = {}) {
       };
       const f = fit({ wPer, fvPer: Math.max(...runs.map((r) => r.fvPer)) });
       const { perNodeFv, perNodeW, perNode, perDriverW } = f;
+      const calc = (usePieces) => {
       let perDriver;
       let count;
       let outputs;
       let runList = null;
       let byWatts = null;
       let packed = null;
-      if (mixed) {
-        packed = packLine(runs, ch > 1 ? { ...t, nodes: t.nodes.slice(0, slots) } : t, keep);
+      if (mixed || usePieces) {
+        packed = packLine(runs, ch > 1 ? { ...t, nodes: t.nodes.slice(0, slots) } : t, keep, usePieces);
         if (!packed) return null;
         ({ count, outputs } = packed);
         perDriver = Math.ceil(qty / count);
@@ -1372,13 +1386,21 @@ export function planFromRequirements(model, zone, opts = {}) {
         count = Math.max(Math.ceil(outputs / slots), byWatts);
         perDriver = Math.ceil(qty / count);
       }
+      return { perDriver, count, outputs, runList, byWatts, packed };
+      };
+      // a segment too big for one output rules the type out whatever the totals say
+      let r = calc(pieced.length > 0);
+      if (!r) return null;
+      let bySegments = pieced.length > 0;
+      if (pieceGap) { const d = calc(false); if (d && d.count > r.count) { r = d; bySegments = false; } }
+      const { perDriver, count, outputs, runList, byWatts, packed } = r;
 
       const cand = {
         t,
         count,
         perDriver,
         outputs: outputs * ch,
-        perNode: !mixed && Number.isFinite(perNode) ? perNode : null,
+        perNode: !packed && Number.isFinite(perNode) ? perNode : null,
         em: isEmergency(t.typeRef) ? 1 : 0,
         waste: count * t.maxPowerW * keep - totalW,
         spareOutputs: count * t.nodes.length - outputs * ch,
@@ -1389,6 +1411,10 @@ export function planFromRequirements(model, zone, opts = {}) {
           wPer, fvPer: Math.max(...runs.map((r) => r.fvPer)) || null, runs: runs.length,
           mixed,
           fittings,
+          segments: pieced.length ? {
+            n: pieced.reduce((a, x) => a + x.pieces.length, 0), total: pieceTotal, qty: pieceQty,
+            used: bySegments ? 'segments' : 'assessment', issue: pieceIssue,
+          } : null,
           packed: packed?.runList ?? null,
           packing: packed?.detail ?? null,
           perNodeFv: Number.isFinite(perNodeFv) ? perNodeFv : null,
@@ -1467,7 +1493,7 @@ export function planFromRequirements(model, zone, opts = {}) {
         taken: c === best, auto: c === auto, mismatch: c.mismatch ?? null,
         lostOn: c === auto || !cands.includes(c) ? null : lostOn(c) })),
       fitTypes: cands.map((c) => c.t.typeRef),
-      forced: want, forcedIssue, mismatch: best.mismatch ?? null,
+      forced: want, forcedIssue, mismatch: best.mismatch ?? null, pieceIssue,
       loadW: totalW,
       controlGroup: group[0].controlGroup,
       // fittings per ControlGroup, in order, so a patch can name each driver
@@ -1836,11 +1862,21 @@ export function estimatePatchRows(estimates, { perDriver = false } = {}) {
   }));
 }
 
-export function generateEstimatePatch(estimates, patchOpts) {
+// Driver types defined from the estimate: every edit and every new type, used or
+// not, because at tender the point is to define the types.
+export const estimatePatchTypes = (_estimates, { model, presets } = {}) => {
+  const list = Object.values(presets || {});
+  return patchablePresets([{ model, presets: list, addedDrivers: list }]);
+};
+
+export function generateEstimatePatch(estimates, patchOpts = {}) {
   const adds = estimatePatchRows(estimates, patchOpts);
+  const types = estimatePatchTypes(estimates, patchOpts).map(typeRow);
   const warn = `// ${ESTIMATE_WARNING}\n`;
-  if (!adds.length) return warn + script('');
-  return warn + script(`${header(ELEMENT_SHEET, 'E', ELEM_COLS)}\n${addSection(adds)}`);
+  if (!adds.length && !types.length) return warn + script('');
+  return warn + script(`${types.length ? header(TYPE_SHEET, 'ET', TYPE_COLS, V46_COLS) : ''}`
+    + `${adds.length ? header(ELEMENT_SHEET, 'E', ELEM_COLS) : ''}\n`
+    + `${types.length ? typeSection(types) : ''}${adds.length ? addSection(adds) : ''}`);
 }
 
 export function generatePatchScript(model, assignments, addedDrivers, presets, context) {
