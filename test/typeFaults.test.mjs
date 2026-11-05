@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { checkOf, resolveSpec, setSharedParts } from '../src/engine.js';
 import {
-  autoFillable, canFill, canReplace, currentOptions, disagreeing, faults, fixPreset, ratingsOf,
+  autoFillable, canFill, canReplace, currentOptions, disagreeing, faults, fixPreset, leaves, ratingsOf,
 } from '../src/typeFaults.js';
 
 const SOLO = resolveSpec('EldoLED SOLODrive 360/A at 1050mA');
@@ -52,6 +52,19 @@ test('the fixes are offered only when they would do something', () => {
   assert.equal(canReplace(type({ maxPowerW: 30 }), SOLO), false);
   assert.equal(canFill(type({ nodes: [{ maxFvV: 55 }] }), SOLO), false);
   assert.equal(canFill(type({ currentA: null }), SOLO), true);
+});
+
+test('a fix is judged by what it would still leave flagged (9GYN2L)', () => {
+  const solo = resolveSpec('EldoLED SOLODrive 360/A');
+  // no current in the Ref or the Name: the spec page alone leaves CurrentRange blank
+  const t = type({ typeRef: 'ET-CCR-D-1CH-02', name: 'EldoLED SOLODrive 360/A', powerType: null, currentA: null });
+  assert.match(leaves(t, solo, 'replace')[0][0], /no CurrentRange/);
+  assert.deepEqual(leaves(t, solo, 'replace', 0.7), []);
+  // a DC/DC driver with no supply: nothing the datasheet has gives it a voltage
+  const lin = resolveSpec('EldoLED LinearDrive 220D');
+  const cv = { typeRef: 'ET-CVR-01', name: 'EldoLED LinearDrive 220D', powerType: null, maxPowerW: null, nodes: [{ name: 'OP.1' }] };
+  assert.match(leaves(cv, lin, 'fill')[0][0], /no OutputVoltage/);
+  assert.deepEqual(leaves(type(), SOLO, 'replace'), []);
 });
 
 test('the current comes from the ref and the name, and out-of-range is refused', () => {
