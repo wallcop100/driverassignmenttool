@@ -61,6 +61,7 @@ export const initialState = {
   recipes: {},          // wrapper typeRef -> [part] arranged here
   jboxes: {},           // driver Element ref -> junction box count set here
   forcedTypes: {},      // `${hub}|${estimate line key}` -> typeRef chosen by hand
+  approvedHubs: {},     // hub label -> its estimate when ticked for the Elements patch (standalone)
   rowFilter: {},        // requirement field -> values left out of the estimate (engine ROW_FILTERS)
   ownLine: [],          // PositionTypeRefs toggled against the estimate's own-line default (engine isOwnLine)
   demo: false,          // demo dataset loaded → show the tutorial
@@ -380,6 +381,7 @@ export function reducer(state, action) {
         recipes: { ...(action.saved.recipes ?? {}), ...(action.recipes ?? {}) },
         jboxes: { ...(action.saved.jboxes ?? {}), ...(action.jboxes ?? {}) },
         forcedTypes: action.saved.forcedTypes ?? {},
+        approvedHubs: action.saved.approvedHubs ?? {},
         rowFilter: action.saved.rowFilter ?? {},
         // the set's, like the type extras above - the hub's own copy is only a fallback
         ownLine: action.ownLine ?? action.saved.ownLine ?? [],
@@ -448,6 +450,15 @@ export function reducer(state, action) {
         else delete forcedTypes[key];
       }
       return withUndo(state, { forcedTypes });
+    }
+    // out of undo, like the layouts: approving a hub isn't an edit to the design
+    case 'APPROVE_HUB': {
+      // `sigs`: hub -> the estimate being approved; toggled unless `on` says which way
+      const approvedHubs = { ...state.approvedHubs };
+      for (const [z, sig] of Object.entries(action.sigs)) {
+        if (action.on ?? !(z in approvedHubs)) approvedHubs[z] = sig; else delete approvedHubs[z];
+      }
+      return { ...state, approvedHubs };
     }
     case 'OWN_LINE': {
       const ownLine = state.ownLine.filter((t) => t !== action.positionType);

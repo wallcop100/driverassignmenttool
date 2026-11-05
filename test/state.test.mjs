@@ -363,3 +363,20 @@ test('Ctrl+Z undoes a forced driver type and an own-line toggle (report TRF856)'
   s = reducer(s, { type: 'REDO' });
   assert.equal(s.forcedTypes['HUB-A|k1'], 'ET-X');
 });
+
+test('APPROVE_HUB ticks hubs for the patch, outside undo, and survives a restore', () => {
+  let s = init();
+  s = reducer(s, { type: 'APPROVE_HUB', sigs: { 'HUB-A': 'a1' } });
+  s = reducer(s, { type: 'APPROVE_HUB', sigs: { 'HUB-B': 'b1' } });
+  assert.deepEqual(s.approvedHubs, { 'HUB-A': 'a1', 'HUB-B': 'b1' });
+  s = reducer(s, { type: 'APPROVE_HUB', sigs: { 'HUB-A': 'a1' } });
+  assert.deepEqual(s.approvedHubs, { 'HUB-B': 'b1' });
+  // on: true re-approves at the estimate given, replacing the one ticked before
+  s = reducer(s, { type: 'APPROVE_HUB', sigs: { 'HUB-B': 'b2', 'HUB-C': 'c1' }, on: true });
+  assert.deepEqual(s.approvedHubs, { 'HUB-B': 'b2', 'HUB-C': 'c1' });
+  assert.equal(s.undo.length, 0);
+  s = reducer(s, { type: 'APPROVE_HUB', sigs: { 'HUB-B': null, 'HUB-C': null }, on: false });
+  assert.deepEqual(s.approvedHubs, {});
+  const back = reducer(init(), { type: 'RESTORE', saved: { model, assignments: {}, approvedHubs: { 'HUB-C': 'c1' } } });
+  assert.deepEqual(back.approvedHubs, { 'HUB-C': 'c1' });
+});

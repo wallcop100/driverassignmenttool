@@ -144,6 +144,7 @@ export function saveSession(state) {
     presets: state.presets,
     layouts: state.layouts,
     forcedTypes: state.forcedTypes,
+    approvedHubs: state.approvedHubs,
     rowFilter: state.rowFilter,
     ownLine: state.ownLine,
     view: state.view,

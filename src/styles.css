@@ -506,6 +506,7 @@ body { background: #f6f8fb; }
 .est-pills { display: inline-flex; gap: 4px; flex-wrap: wrap; }
 .est-pill { font: 11.5px system-ui, sans-serif; color: #000; border: 0; padding: 1px 8px; border-radius: 10px; white-space: nowrap; }
 .est-pill-type { background: #fbe9de; }
+.est-typecell { display: inline-flex; align-items: center; gap: 2px; }
 .est-pill-pt { background: #e6f2fc; }
 .est-ico { font-size: 17px; cursor: help; }
 .est-svg { width: 17px; height: 17px; }
@@ -1244,6 +1245,13 @@ body { background: #f6f8fb; }
 .est-patch-modes label { display: flex; gap: 8px; align-items: flex-start; cursor: pointer; font-size: 13px; }
 .est-patch-modes label input { margin-top: 3px; }
 .est-patch-modes small { display: block; color: #64748b; font-size: 12px; }
+.est-patch-modes label .est-patch-one { width: auto; margin-left: auto; }
+.est-patch-hubs { margin: -6px 0 4px 24px; font-size: 12px; color: #64748b; }
+.est-patch-hubs summary { cursor: pointer; }
+.est-patch-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 4px 12px;
+  max-height: 180px; overflow-y: auto; margin-top: 6px; padding: 8px 10px; border: 1px solid #e2e8f0; border-radius: 6px;
+  font-size: 14px; color: inherit; }
+.est-patch-list .est-patch-all { grid-column: 1 / -1; font-size: 12px; }
 .est-patch-preview { margin: 0 16px 12px; max-height: 280px; overflow: auto; border: 1px solid #eef1f6; border-radius: 6px; font-size: 12.5px; }
 .est-patch-preview th { position: sticky; top: 0; background: #f8fafd; }
 
@@ -1458,6 +1466,9 @@ body.drawer-open .ck-pip { bottom: calc(var(--drawer-h, 300px) + 8px); }
 .est-pivot td { padding: 6px 12px; border-bottom: 1px solid #f1f4f8; vertical-align: middle; }
 .est-pivot .n { text-align: right; font-variant-numeric: tabular-nums; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; white-space: nowrap; }
 .est-pivot .pv-hub td { background: #f1f5f9; font-weight: 700; }
+.est-pivot .pv-approve { margin: 0 8px 0 0; vertical-align: -2px; cursor: pointer; }
+.est-pivot .pv-hub.is-approved td { background: #ecfdf3; }
+.est-pivot .pv-hub.is-approved td:first-child { box-shadow: inset 3px 0 0 #16a34a; }
 .est-pivot .pv-cg td:first-child { padding-left: 22px; }
 .est-pivot .pv-line td:first-child { padding-left: 46px; }
 .est-pivot .open td { background: #fbfdff; }
