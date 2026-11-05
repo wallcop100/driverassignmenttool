@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { canFill, canReplace, currentOptions, fixPreset, fmt, ratingsOf } from '../typeFaults.js';
+import { canFill, canReplace, currentOptions, fmt, leaves, ratingsOf } from '../typeFaults.js';
 
 // What is wrong with a type, at a size you can read. This was a title="" tooltip,
 // which meant the full sentence - the one that says whether the datasheet match
@@ -10,19 +10,28 @@ import { canFill, canReplace, currentOptions, fixPreset, fmt, ratingsOf } from '
 // belongs next to the reason for it.
 export default function FaultDialog({ t, spec, faults, onClose, onFix, onAsk }) {
   const opts = currentOptions(t, spec);
-  const fill = onFix && canFill(t, spec);
-  const replace = onFix && canReplace(t, spec);
-  // The one blank a spec page cannot fill: which current a CC driver is set to,
-  // when neither the Ref nor the Name says. Asked here, so a fix fills it (KWNT6U).
+  // The one thing a spec page cannot say: which current a CC driver is set to,
+  // when neither the Ref nor the Name says (KWNT6U), or they disagree. Asked
+  // first, because a fix without it would leave the card flagged (9GYN2L).
+  const askCurrent = onFix && spec?.powerType === 'CC'
+    && (opts.length > 1 || (t.currentA == null && !opts.length));
   const [ma, setMa] = useState('');
-  const askCurrent = onFix && spec?.powerType === 'CC' && t.currentA == null && !opts.length;
-  const a = Number(ma) > 0 ? Number(ma) / 1000 : undefined;
-  // anything else left blank - no match, or a DC/DC driver with no supply - is the wizard's to ask
+  const [picked, setPicked] = useState(null);
+  const typed = Number(ma) > 0 ? Number(ma) / 1000 : null;
+  const inRange = (x) => x != null && (spec?.minA == null || (x >= spec.minA && x <= spec.maxA));
+  const a = !askCurrent ? undefined : opts.length > 1 ? picked : inRange(typed) ? typed : null;
+  // Only a fix that leaves the card clean is offered; one that needs the current
+  // waits for it. Judged at a current in range when none is given yet.
+  const trial = a ?? opts[0]?.a ?? spec?.minA ?? undefined;
+  const completes = (mode) => !leaves(t, spec, mode, askCurrent ? trial : a).length;
+  const fill = onFix && (canFill(t, spec) || opts.length > 1) && completes('fill');
+  const replace = onFix && canReplace(t, spec) && completes('replace');
+  const ready = !askCurrent || a != null;
+  // a fix the spec page can't finish is withheld, and says what it would leave
+  const short = !fill && !replace && onFix && (canFill(t, spec) || canReplace(t, spec))
+    && leaves(t, spec, canFill(t, spec) ? 'fill' : 'replace', trial)[0]?.[0];
+  // a blank no fix can settle - no match, or a DC/DC driver with no supply - is the wizard's to ask
   const blanks = faults.some((f) => f[2] !== 'disagrees');
-  // A fix that leaves another fault keeps the dialog open; without this it looked
-  // as if the button did nothing (9GYN2L).
-  const [fixed, setFixed] = useState(false);
-  const fix = (mode, a) => { onFix(mode, a); setFixed(true); };
 
   return (
     <div className="nt-backdrop" onClick={(e) => e.target === e.currentTarget && onClose()}>
@@ -43,13 +52,6 @@ export default function FaultDialog({ t, spec, faults, onClose, onFix, onAsk }) 
           })}{spec.minA != null ? ` · ${spec.minA}–${spec.maxA}A` : ''}</span>}
         </div>
 
-        {fixed && (
-          <div className="fd-fixed">
-            <span className="material-icons" aria-hidden="true">check</span>
-            Filled from the {spec?.name} spec page. {faults.length === 1 ? 'This is' : 'These are'} still left:
-          </div>
-        )}
-
         <ul className="fd-list">
           {faults.map(([short, full]) => (
             <li key={short}>
@@ -59,40 +61,55 @@ export default function FaultDialog({ t, spec, faults, onClose, onFix, onAsk }) 
           ))}
         </ul>
 
-        {askCurrent && (
-          <label className="fld sw-part">
+        {askCurrent && (fill || replace) && (
+          <div className="fld sw-part fd-current">
             <span className="fld-col">Driven at what current?</span>
-            <span className="fld-box">
-              <input type="number" min="0" step="10" style={{ width: 90 }}
-                placeholder={spec.minA != null ? `${spec.minA * 1000}–${spec.maxA * 1000}` : 'mA'}
-                value={ma} onChange={(e) => setMa(e.target.value)} />
-              mA
+            {opts.length > 1 ? (
+              <span className="fd-picks" role="group" aria-label="Current">
+                {opts.map((o) => (
+                  <button key={o.from} type="button" aria-pressed={picked === o.a}
+                    className={`btn btn-sm ${picked === o.a ? 'btn-primary' : 'btn-outline-primary'}`}
+                    onClick={() => setPicked(o.a)}>
+                    {o.a}A <small>per the {o.from}</small>
+                  </button>
+                ))}
+              </span>
+            ) : (
+              <span className="fld-box">
+                <input type="number" min="0" step="10" style={{ width: 120 }} aria-label="Current in mA" autoFocus
+                  placeholder={spec.minA != null ? `${spec.minA * 1000}–${spec.maxA * 1000}` : 'mA'}
+                  value={ma} onChange={(e) => setMa(e.target.value)} />
+                mA
+              </span>
+            )}
+            <span className="fd-hint">
+              {opts.length > 1 ? 'the Ref and the Name disagree; the Name is corrected to match'
+                : typed != null && !inRange(typed) ? `outside the ${spec.minA * 1000}–${spec.maxA * 1000}mA the spec page gives`
+                  : 'neither the Ref nor the Name says'}
             </span>
-            <span className="fld-ds">neither the Ref nor the Name says</span>
-          </label>
+          </div>
+        )}
+
+        {short && (
+          <div className="fd-note">
+            The {spec.name} spec page can't settle this on its own: it would still leave <b>{short}</b>.
+            The questions ask for what it needs.
+          </div>
         )}
 
         <div className="fd-foot">
           {fill && (
-            <button className="btn btn-sm btn-outline-primary" onClick={() => fix('fill', a)}>
-              Fill blanks from {spec.name}
+            <button className="btn btn-sm btn-outline-primary" disabled={!ready} onClick={() => onFix('fill', a)}>
+              {canFill(t, spec) ? `Fill blanks from ${spec.name}` : `Set CurrentRange to ${a ?? '…'}A`}
             </button>
           )}
           {replace && (
-            <button className="btn btn-sm btn-outline-warning" onClick={() => fix('replace', a)}>
+            <button className="btn btn-sm btn-outline-warning" disabled={!ready} onClick={() => onFix('replace', a)}>
               Use the spec page ({fmt(spec.maxPowerW)}W)
             </button>
           )}
-          {/* ref and name disagree about the current - pick one; the Name is
-              corrected to match and the Ref is left alone */}
-          {onFix && opts.length > 1 && opts.map((o) => (
-            <button key={o.from} className="btn btn-sm btn-outline-secondary"
-              onClick={() => fix('fill', o.a)}>
-              Set CurrentRange to {o.a}A <em className="text-secondary">per the {o.from}</em>
-            </button>
-          ))}
-          {onAsk && blanks && !askCurrent && (
-            <button className="btn btn-sm btn-outline-secondary" onClick={onAsk}>
+          {onAsk && blanks && !fill && !replace && (
+            <button className="btn btn-sm btn-outline-primary" onClick={onAsk}>
               Answer the questions
             </button>
           )}

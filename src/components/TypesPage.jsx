@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import * as api from '../api.js';
 import { bannedNodes, driverTypes, filledHere, fixNodeName, needsSetup, resolveSpec, statedAttributes } from '../engine.js';
 import { effectiveDrivers } from '../state.js';
-import { canFill, canReplace, currentOptions, faults, fixPreset, fmt } from '../typeFaults.js';
+import { canFill, canReplace, currentOptions, faults, fixPreset, fmt, leaves } from '../typeFaults.js';
 import FaultDialog from './FaultDialog.jsx';
 import NewTypeDialog from './NewTypeDialog.jsx';
 import SetupWizard from './SetupWizard.jsx';
@@ -256,9 +256,11 @@ function TypeRow(props) {
   const { t, spec, f, zone, back, dispatch, presets, inventory, editing, draft, setDraft,
     openEdit, closeEdit, menuOpen, toggleMenu, closeMenu, onWarn, inHub } = props;
   const [qty, setQty] = useState(1);
-  const opts = currentOptions(t, spec);
-  const fill = canFill(t, spec);
-  const replace = canReplace(t, spec);
+  // Only what leaves the card clean in one press; anything that needs the
+  // current asked, or the questions, goes through What to check (9GYN2L).
+  const opts = currentOptions(t, spec).filter((o) => !leaves(t, spec, 'fill', o.a).length);
+  const fill = canFill(t, spec) && currentOptions(t, spec).length < 2 && !leaves(t, spec, 'fill').length;
+  const replace = canReplace(t, spec) && currentOptions(t, spec).length < 2 && !leaves(t, spec, 'replace').length;
   const apply = (mode, a) => {
     dispatch({ type: 'SET_PRESET', preset: fixPreset(t, spec, mode, a) });
     closeMenu();
@@ -304,7 +306,10 @@ function TypeRow(props) {
             Discard pending change
           </button>
         )}
-        {!fill && !replace && !t.preset && opts.length < 2 && (
+        {f.length > 0 && !fill && !replace && opts.length < 2 && (
+          <button onClick={() => { closeMenu(); onWarn(); }}>What to check…</button>
+        )}
+        {!f.length && !fill && !replace && !t.preset && opts.length < 2 && (
           <span className="tp-menu-none">Nothing to fix</span>
         )}
       </Menu>

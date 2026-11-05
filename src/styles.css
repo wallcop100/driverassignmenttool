@@ -666,11 +666,11 @@ body { background: #f6f8fb; }
   padding: 10px 16px; background: #f8fafd; border-bottom: 1px solid #eef1f6;
   font-variant-numeric: tabular-nums;
 }
-.fd-fixed {
-  display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: #1a7f37;
-  padding: 8px 16px 0;
-}
-.fd-fixed .material-icons { font-size: 16px; }
+.fd-current { padding: 4px 16px 0; max-width: none; }
+.fd-picks { display: inline-flex; gap: 6px; }
+.fd-hint { display: block; font-size: 12px; color: #64748b; margin-top: 4px; }
+.fd-note { font-size: 12.5px; color: #475569; padding: 0 16px 12px; line-height: 1.45; }
+.fd-picks small { opacity: .75; margin-left: 3px; }
 .fd-list { list-style: none; margin: 0; padding: 4px 16px 12px; overflow-y: auto; }
 .fd-list li { display: flex; flex-direction: column; gap: 2px; padding: 11px 0; border-bottom: 1px solid #f4f6fa; }
 .fd-list li:last-child { border-bottom: 0; }

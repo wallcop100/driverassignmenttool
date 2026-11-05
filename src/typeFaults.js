@@ -2,7 +2,7 @@
 // states against the datasheet the type's Name matched. No JSX and no React, so
 // `node --test` can cover the judgement itself rather than only the screens
 // built on it.
-import { atCurrent, checkOf, combine, currentFromName, currentFromRef, sharedSupply } from './engine.js';
+import { atCurrent, checkOf, combine, currentFromName, currentFromRef, presetToType, sharedSupply } from './engine.js';
 
 export const fmt = (n) => {
   if (n == null || n === '') return null;
@@ -117,6 +117,10 @@ export function fixPreset(t, spec, mode, currentA) {
     origin: fromShared(spec) ? 'shared' : 'datasheet',
   };
 }
+
+// What a fix would still leave flagged. A fix is only offered when this is empty:
+// one that fills some blanks and leaves the card "to check" reads as broken (9GYN2L).
+export const leaves = (t, spec, mode, currentA) => faults(presetToType(fixPreset(t, spec, mode, currentA)), spec);
 
 // Which of the two fixes a type can take. Judged against what the card shows - 
 // pending preset included - so filling the blanks does not take the other away.
