@@ -134,8 +134,9 @@ export default function ReviewModal({ state, dispatch, onClose }) {
                             {t.drivers > 0 && ` · used by ${t.drivers} driver${t.drivers > 1 ? 's' : ''} here`}
                           </td>
                           <td className="text-end">
-                            <button className="btn btn-sm btn-link p-0"
-                              title="Drop this and leave the DesignDB row as it is"
+                            <button className="btn btn-sm btn-link p-0" disabled={t.pinned}
+                              title={t.pinned ? 'A driver added here is this type. Remove the driver first.'
+                                : 'Drop this and leave the DesignDB row as it is'}
                               onClick={() => dispatch({ type: 'DELETE_PRESET', typeRef: t.typeRef })}>
                               <span className="material-icons small-icon">undo</span>
                             </button>

@@ -1,6 +1,6 @@
 # driverassignmenttool — state
 
-Updated: 2026-11-05
+Updated: 2026-11-14
 
 <!-- Now / Next / Blocked are rewritten in place and never grow. Finish something, delete the
      line. Only Log appends. Format: /srv/projects/FORMAT.md -->
@@ -29,6 +29,8 @@ names and badge. `dat-autodeploy.timer` keeps Connected on Pages' build. The hos
 
 
 ## Log
+
+- **2026-11-14 (state machine audit, branch `claude/wonderful-goodall-ughyxj`):** Escape put `null` in the selection, so every driver read as full and a node click wrote a null cable. Correcting a `:` node left the form drivers on the old name with their cables on a key nothing drew, undo across it brought old keys back, discarding the preset stranded them, and `fixNodeSyntax` was never saved, so a resume or Patch all hubs lost the sweep. A preset changing an added driver's outputs stranded its cables. An invented type could be discarded under a driver added as one, which crashed `driverLoad`. `REVERT_KEY` copied a moved cable. Late `dat:types` rebuilt over added or deleted drivers, forced types, layouts and newer presets. Ctrl+Z fired on every page and in inputs, and ⌘Z never did. All fixed with tests; `npm test` 385 passing (bugReports needs companion-kit, which this container couldn't install). `npm run build` and a browser pass not run here.
 
 - **2026-11-05 (Assessment tweaks and hub approval, uncommitted):** The line kebab ("How N was worked out", "Change driver type") now sits beside the driver-type chip. View shows Expand all or Collapse all, never both. Standalone only, a hub row has a tick that approves it for the Elements patch (`approvedHubs` in state, kept out of undo and saved in the session). The patch dialog's new Hubs choice offers Selected (an "N of M approved" `<details>` holding the editable tick list), All, or One hub (a select). Routed to a hub, it opens on One hub. With nothing selected, Copy is disabled. A tick approves the hub's estimate as it stands: a hash of its patch rows. When the estimate changes, for example a forced type, the tick is cleared. The Filter doesn't count as a change: the hash is taken from the unfiltered estimate. Checked in Playwright on the demo: tick, dialog, force a type, re-tick, then Resume. The overlay harness has no ticks and its dialog is unchanged.
 

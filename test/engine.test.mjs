@@ -1686,3 +1686,18 @@ test('DesignDB segments are packed whole; when they disagree with the assessment
   assert.match(b.pieceIssue, /total 6 but the assessment says 12/);
   assert.equal(b.working.segments.used, 'assessment');
 });
+
+test('a corrected node name reaches the drivers, and the export still carries their cables', () => {
+  const form = 'Pullzone,ParentElementRef,ElementRef,ElementTypeRef,Driver Restrictions,Node Restrictions,CurrentNodePowerInfo,Node,ToEntityType,ToEntityRefs,ControlGroup\n'
+    + 'HUB-A,,E1,T-DT8,185W | 24V,,,OP.1:2,Link,X50350,\n';
+  const links = fs.readFileSync(new URL('../src/demo/links.csv', import.meta.url), 'utf-8').split(/\r?\n/).slice(0, 3).join('\n');
+  const preset = { typeRef: 'T-DT8', powerType: 'CV', maxPowerW: 185, outputVoltageV: 24, outputs: 1, nodeNames: ['OP.1-2'] };
+  const m = engine.buildModel(form, links, null, [preset]);
+  // the driver's node follows the type, so the re-spelled assignment key has a node to sit on
+  assert.deepEqual(m.drivers[0].nodes.map((n) => n.name), ['OP.1-2']);
+  // while what the DesignDB itself says is left alone
+  assert.deepEqual(m.inventory.find((t) => t.typeRef === 'T-DT8').designDB.nodes.map((n) => n.name), ['OP.1:2']);
+  // a cable placed on the corrected node is in the export, on the row the DesignDB still names with ':'
+  const csv = engine.exportCsv(m, { 'E1|OP.1-2': { toEntityType: 'Link', refs: ['X50350', 'X50351'] } }, []);
+  assert.match(csv, /"?OP\.1:2"?,"?Link"?,"?X50350,X50351"?/);
+});
