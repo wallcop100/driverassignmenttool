@@ -143,14 +143,22 @@ export default function App({ domain = driversDomain }) {
     (typesText) => {
       types.current = typesText;
       if (!hasModel.current || !payload.current) return;
-      if (diffRows(stateRef.current).length) {
+      // pristine means no work of any kind, not only no cable moved: a driver
+      // added or deleted and a forced type are lost to a rebuild just the same
+      const s = stateRef.current;
+      if (diffRows(s).length || s.addedDrivers.length || s.deletedDrivers.length
+        || Object.keys(s.forcedTypes).length) {
         setNotice('Driver type definitions arrived after your changes - reopen this hub to apply them.');
         return;
       }
       // the same reading of the payload as the first time, with the library now
       const init = { ...fresh.current, model: domain.parseInit(payload.current, typesText) };
       fresh.current = init;
-      dispatch({ type: 'INIT', ...init });
+      // what belongs to the set or the session is carried as it stands now, and
+      // the person stays on the page they are on
+      const here = s.view.zone == null || init.model.zones.includes(s.view.zone) ? s.view : init.view;
+      dispatch({ type: 'INIT', ...init, view: here, presets: s.presets, typeSizes: s.typeSizes, tbc: s.tbc,
+        recipes: s.recipes, jboxes: s.jboxes, ownLine: s.ownLine, layouts: s.layouts });
     });
     embed.sendReady();
     return off;
@@ -208,16 +216,21 @@ export default function App({ domain = driversDomain }) {
   useEffect(() => {
     saveSession(state);
     if (embedded && model) embed.send({ type: embed.topic('dirty'), changeCount: changeCount(state) });
-  }, [model, assignments, addedDrivers, state.prefs, state.presets, state.typeSizes, state.tbc, state.recipes, state.jboxes, state.forcedTypes, state.approvedHubs, state.rowFilter, state.ownLine, state.layouts, state.view]);
+  }, [model, assignments, addedDrivers, state.deletedDrivers, state.fixNodeSyntax, state.prefs, state.presets, state.typeSizes, state.tbc, state.recipes, state.jboxes, state.forcedTypes, state.approvedHubs, state.rowFilter, state.ownLine, state.layouts, state.view]);
 
   useEffect(() => {
     const onKey = (e) => {
       if (e.key === 'Escape') dispatch({ type: 'SELECT_LINKS', linkRef: null, additive: false });
-      if (e.ctrlKey && e.key.toLowerCase() === 'z') {
+      // Undo is the hub page's and the estimate's. Anywhere else, or while typing,
+      // it would take back a cable move nobody can see (and the text undo with it).
+      const mod = e.ctrlKey || e.metaKey;
+      if (!mod || !['zone', 'estimate'].includes(pageRef.current)) return;
+      if (e.target.closest?.('input, select, textarea, [contenteditable]')) return;
+      if (e.key.toLowerCase() === 'z') {
         e.preventDefault();
         dispatch({ type: e.shiftKey ? 'REDO' : 'UNDO' });
       }
-      if (e.ctrlKey && e.key.toLowerCase() === 'y') { e.preventDefault(); dispatch({ type: 'REDO' }); }
+      if (e.key.toLowerCase() === 'y') { e.preventDefault(); dispatch({ type: 'REDO' }); }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);

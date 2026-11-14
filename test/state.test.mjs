@@ -380,3 +380,112 @@ test('APPROVE_HUB ticks hubs for the patch, outside undo, and survives a restore
   const back = reducer(init(), { type: 'RESTORE', saved: { model, assignments: {}, approvedHubs: { 'HUB-C': 'c1' } } });
   assert.deepEqual(back.approvedHubs, { 'HUB-C': 'c1' });
 });
+
+// ---- state machine: transitions that left the state in a shape nothing draws ----
+
+test('Escape clears the selection and never selects "no cable"', () => {
+  let s = reducer(init(), { type: 'SELECT_LINKS', linkRef: null, additive: false });
+  assert.deepEqual(s.selectedLinks, []);
+  s = reducer(s, { type: 'SELECT_LINKS', linkRef: 'X1', additive: false });
+  s = reducer(s, { type: 'SELECT_LINKS', linkRef: null, additive: false });
+  assert.deepEqual(s.selectedLinks, []);
+  // and a null never lands on a node
+  s = reducer(s, { type: 'MOVE_MANY', linkRefs: [null], toKey: 'D|OP.2' });
+  assert.deepEqual(s.assignments['D|OP.2'].refs, []);
+  assert.equal(s.undo.length, 0);
+});
+
+test('dropping a cable back where it is is not an undo step', () => {
+  let s = reducer(init(), { type: 'MOVE', linkRef: 'X1', toKey: 'D|OP.1' });
+  assert.equal(s.undo.length, 0);
+  s = reducer(s, { type: 'MOVE', linkRef: 'X9', toKey: null });
+  assert.equal(s.undo.length, 0);
+  s = reducer(s, { type: 'MOVE_MANY', linkRefs: ['X1', 'X1'], toKey: 'D|OP.2' });
+  assert.deepEqual(s.assignments['D|OP.2'].refs, ['X1']);
+});
+
+test('REVERT_KEY brings a moved cable back rather than copying it', () => {
+  let s = reducer(init(), { type: 'MOVE', linkRef: 'X1', toKey: 'D|OP.2' });
+  s = reducer(s, { type: 'REVERT_KEY', key: 'D|OP.1' });
+  assert.deepEqual(s.assignments['D|OP.1'].refs, ['X1']);
+  assert.deepEqual(s.assignments['D|OP.2'].refs, []);
+});
+
+const dt8 = () => {
+  const m = {
+    inventory: [{ typeRef: 'T-DT8', powerType: 'CV', maxPowerW: 185, outputVoltageV: 24,
+      ballast: 1, nodes: [{ name: 'OP.1:2', maxFvV: null, maxLoadW: null }] }],
+    drivers: [{ ref: 'E1', zone: 'Z', typeRef: 'T-DT8', nodes: [{ name: 'OP.1:2' }] }],
+    baseline: { 'E1|OP.1:2': { toEntityType: 'Link', refs: ['X1', 'X2'] } },
+    links: [],
+  };
+  return reducer(initialState, { type: 'INIT', model: m });
+};
+const FIX = { type: 'FIX_NODE_SYNTAX', types: [{ typeRef: 'T-DT8', nodeNames: ['OP.1-2'] }] };
+
+test('undo across a node-name correction keeps the cables on the corrected node', () => {
+  let s = reducer(dt8(), { type: 'MOVE', linkRef: 'X1', toKey: null });
+  s = reducer(s, FIX);
+  // a type correction, like any preset: not a step of its own
+  assert.equal(s.undo.length, 1);
+  s = reducer(s, { type: 'UNDO' });
+  assert.deepEqual(Object.keys(s.assignments), ['E1|OP.1-2']);
+  assert.deepEqual(s.assignments['E1|OP.1-2'].refs, ['X1', 'X2']);
+  assert.equal(s.fixNodeSyntax, true);
+  s = reducer(s, { type: 'REDO' });
+  assert.deepEqual(s.assignments['E1|OP.1-2'].refs, ['X2']);
+});
+
+test('discarding a node-name correction puts the keys back and stops the sweep', () => {
+  let s = reducer(dt8(), FIX);
+  s = reducer(s, { type: 'DELETE_PRESET', typeRef: 'T-DT8' });
+  assert.deepEqual(s.assignments['E1|OP.1:2'].refs, ['X1', 'X2']);
+  assert.ok(!('E1|OP.1-2' in s.assignments));
+  assert.equal(s.fixNodeSyntax, false);
+});
+
+test('a preset that changes a type\'s outputs takes an added driver\'s cables with it', () => {
+  const two = { typeRef: 'T-NEW', powerType: 'CV', maxPowerW: 100, outputVoltageV: 24, outputs: 2, invented: true };
+  let s = reducer(init(), { type: 'SET_PRESET', preset: two });
+  s = reducer(s, { type: 'ADD_DRIVER', typeRef: 'T-NEW', zone: 'Z' });
+  const ref = s.addedDrivers[0].ref;
+  s = reducer(s, { type: 'MOVE', linkRef: 'A', toKey: `${ref}|OP.1` });
+  s = reducer(s, { type: 'MOVE', linkRef: 'B', toKey: `${ref}|OP.2` });
+  // renamed by position, and the output that is gone hands its cable back to the tray
+  s = reducer(s, { type: 'SET_PRESET', preset: { ...two, outputs: 1, nodeNames: ['OP.1-2'] } });
+  assert.deepEqual(Object.keys(s.assignments).filter((k) => k.startsWith(ref)), [`${ref}|OP.1-2`]);
+  assert.deepEqual(s.assignments[`${ref}|OP.1-2`].refs, ['A']);
+  // the undo steps were taken along, so going back cannot revive OP.2
+  s = reducer(s, { type: 'UNDO' });
+  assert.ok(!(`${ref}|OP.2` in s.assignments));
+});
+
+test('a type that exists only as a preset cannot be discarded under a driver added as one', () => {
+  const p = { typeRef: 'T-NEW', powerType: 'CV', maxPowerW: 100, outputVoltageV: 24, outputs: 1, invented: true };
+  let s = reducer(init(), { type: 'SET_PRESET', preset: p });
+  s = reducer(s, { type: 'ADD_DRIVER', typeRef: 'T-NEW', zone: 'Z' });
+  assert.equal(st.presetPinned(s, 'T-NEW'), true);
+  assert.equal(reducer(s, { type: 'DELETE_PRESET', typeRef: 'T-NEW' }), s);
+  s = reducer(s, { type: 'REMOVE_DRIVER', ref: s.addedDrivers[0].ref });
+  s = reducer(s, { type: 'DELETE_PRESET', typeRef: 'T-NEW' });
+  assert.deepEqual(s.presets, {});
+  // undo brings the driver back with no type to describe it: drawn with no outputs, not a crash
+  s = reducer(s, { type: 'UNDO' });
+  assert.deepEqual(st.effectiveDrivers(s.model, s.addedDrivers, [])[1].nodes, []);
+});
+
+test('removing a driver the hub does not have changes nothing', () => {
+  const s = init();
+  assert.equal(reducer(s, { type: 'REMOVE_DRIVER', ref: 'NOPE' }), s);
+  assert.equal(reducer(s, { type: 'RESTORE_DRIVER', ref: 'D' }), s);
+});
+
+test('a resumed session still sweeps the banned node out of LinksMap', async () => {
+  const store = new Map();
+  globalThis.localStorage = { getItem: (k) => store.get(k) ?? null, setItem: (k, v) => store.set(k, v), removeItem: (k) => store.delete(k) };
+  const { saveSession, loadSession } = await import('../src/persist.js');
+  saveSession(reducer(dt8(), FIX));
+  const back = reducer(initialState, { type: 'RESTORE', saved: loadSession() });
+  assert.equal(back.fixNodeSyntax, true);
+  delete globalThis.localStorage;
+});

@@ -1,4 +1,4 @@
-import { nextDriverRef, outRef, presetToType, sameRefs } from './engine.js';
+import { fixNodeName, nextDriverRef, outRef, presetToType, sameRefs } from './engine.js';
 
 // Added drivers all export as the same placeholder ref; outRef strips the
 // internal tag that keeps them apart. Re-exported so components have one import.
@@ -95,6 +95,82 @@ const typeAsPreset = (t) => ({
   invented: false,
 });
 
+// ---- a type's node list changing under the cables already on it ----
+// Assignments are keyed by node name, so a preset that renames or removes a node
+// has to take the keys with it, in the undo and redo steps as well: presets stay
+// out of undo, and a step restored later would otherwise bring back keys for
+// nodes no driver has, with the cables on them neither placed nor in the tray.
+
+const typeNodes = (state, typeRef) => (state.presets[typeRef]
+  ? presetToType(state.presets[typeRef]).nodes
+  : state.model?.inventory?.find((t) => t.typeRef === typeRef)?.nodes) ?? [];
+
+// What the DesignDB itself says the type's nodes are; null when the type only exists as a preset.
+function designNodes(state, typeRef) {
+  const t = state.model?.inventory?.find((x) => x.typeRef === typeRef);
+  if (!t || t.designDB === null) return null;
+  return t.designDB?.nodes ?? t.nodes ?? [];
+}
+
+function nodeChanges(state, typeRef, oldNodes, newNodes) {
+  const now = newNodes.map((n) => n.name);
+  const rename = new Map();
+  const drop = new Set();
+  // A driver from the form keeps its own node names, except a banned ':' the
+  // type now spells with '-' (engine applyPresets). The baseline has the names it came with.
+  const ofType = new Set((state.model?.drivers ?? []).filter((d) => d.typeRef === typeRef).map((d) => d.ref));
+  for (const key of Object.keys(state.model?.baseline ?? {})) {
+    const at = key.indexOf('|');
+    const ref = key.slice(0, at);
+    const node = key.slice(at + 1);
+    const fixed = fixNodeName(node);
+    if (fixed === node || !ofType.has(ref)) continue;
+    if (now.includes(node)) rename.set(keyOf(ref, fixed), key);
+    else if (now.includes(fixed)) rename.set(key, keyOf(ref, fixed));
+  }
+  // One added here takes the type's node list as it stands, so its keys follow by position.
+  const added = new Set([state, ...state.undo, ...state.redo].flatMap((x) => x.addedDrivers ?? [])
+    .filter((d) => d.typeRef === typeRef).map((d) => d.ref));
+  for (const ref of added) {
+    oldNodes.forEach((n, i) => {
+      if (now[i] == null) drop.add(keyOf(ref, n.name));        // the output is gone: its cables go back to the tray
+      else if (now[i] !== n.name) rename.set(keyOf(ref, n.name), keyOf(ref, now[i]));
+    });
+  }
+  return { rename, drop };
+}
+
+function respell(assignments, { rename, drop }) {
+  const out = {};
+  for (const [k, v] of Object.entries(assignments)) {
+    if (drop.has(k)) continue;
+    const to = rename.get(k) ?? k;
+    out[to] = out[to]
+      ? { ...out[to], toEntityType: out[to].toEntityType || v.toEntityType, refs: [...out[to].refs, ...v.refs] }
+      : v;
+  }
+  return out;
+}
+
+// the fields of `state` a node change touches; {} when it touches none
+function respellAll(state, ch) {
+  if (!ch.rename.size && !ch.drop.size) return {};
+  const step = (x) => ({ ...x, assignments: respell(x.assignments, ch) });
+  return { assignments: respell(state.assignments, ch), undo: state.undo.map(step), redo: state.redo.map(step) };
+}
+
+// Does any correction still held rename a banned ':' node? That is what the LinksMap sweep is for.
+const stillFixes = (state, presets) => Object.values(presets).some((p) => {
+  const t = state.model?.inventory?.find((x) => x.typeRef === p.typeRef);
+  return (t?.designDB?.nodes ?? t?.nodes ?? []).some((n) => fixNodeName(n.name) !== n.name
+    && (p.nodeNames ?? []).includes(fixNodeName(n.name)));
+});
+
+// A type that exists only as a preset, with a driver added here that is one.
+// DELETE_PRESET refuses it, so the pages don't offer it: remove the driver first.
+export const presetPinned = (state, typeRef) => !!state.presets[typeRef]
+  && !designNodes(state, typeRef) && state.addedDrivers.some((d) => d.typeRef === typeRef);
+
 // what an undo step restores: the cables, the drivers, and the estimate's driver-type choices (report TRF856)
 const snapOf = (s) => ({
   assignments: s.assignments, addedDrivers: s.addedDrivers, deletedDrivers: s.deletedDrivers,
@@ -138,8 +214,12 @@ export function reducer(state, action) {
 
     case 'MOVE': {
       const { linkRef, toKey } = action; // toKey null = back to tray
+      if (linkRef == null) return state;
       const target = state.assignments[toKey];
       if (toKey && target?.refs.length && target.toEntityType === 'Position') return state; // uniformity
+      // already where it is going: not an edit, so not an undo step
+      const placed = Object.values(state.assignments).some((e) => e.refs.includes(linkRef));
+      if (toKey ? target?.refs.includes(linkRef) : !placed) return { ...state, ...CLEAR_MODES };
       const assignments = cloneAssignments(state.assignments);
       for (const entry of Object.values(assignments)) {
         entry.refs = entry.refs.filter((r) => r !== linkRef);
@@ -154,7 +234,9 @@ export function reducer(state, action) {
 
     case 'MOVE_MANY': {
       // move several links at once - a ControlGroup (#2) or a multi-selection (#8).
-      const { linkRefs, toKey } = action; // toKey null = unassign all
+      const { toKey } = action; // toKey null = unassign all
+      const linkRefs = [...new Set(action.linkRefs)].filter((r) => r != null);
+      if (!linkRefs.length) return { ...state, ...CLEAR_MODES };
       const target = state.assignments[toKey];
       if (toKey && target?.refs.length && target.toEntityType === 'Position') return state;
       const assignments = cloneAssignments(state.assignments);
@@ -191,6 +273,9 @@ export function reducer(state, action) {
       const { key } = action;
       const assignments = cloneAssignments(state.assignments);
       const base = state.model.baseline[key];
+      // a cable it started with may have been moved elsewhere since: it comes back, not copied
+      const back = new Set(base?.refs ?? []);
+      for (const entry of Object.values(assignments)) entry.refs = entry.refs.filter((r) => !back.has(r));
       assignments[key] = base
         ? { toEntityType: base.toEntityType, refs: [...base.refs] }
         : { toEntityType: '', refs: [] }; // added-driver node has no baseline
@@ -250,6 +335,7 @@ export function reducer(state, action) {
     case 'REMOVE_DRIVER': {
       const { ref } = action;
       const added = state.addedDrivers.some((d) => d.ref === ref);
+      if (!added && !state.model.drivers.some((d) => d.ref === ref)) return state;
       const assignments = cloneAssignments(state.assignments);
       // its cables go back to the tray either way - a deleted driver cannot keep
       // them, and the patch has to repoint them somewhere
@@ -265,6 +351,7 @@ export function reducer(state, action) {
 
     case 'RESTORE_DRIVER': {
       const { ref } = action;
+      if (!state.deletedDrivers.includes(ref)) return state;
       const driver = state.model.drivers.find((d) => d.ref === ref);
       const assignments = cloneAssignments(state.assignments);
       for (const node of driver?.nodes ?? []) {
@@ -285,35 +372,22 @@ export function reducer(state, action) {
     case 'FIX_NODE_SYNTAX': {
       const { types } = action;      // [{ typeRef, nodeNames }]
       if (!types.length) return state;
-      const presets = { ...state.presets };
-      const byType = new Map();
+      // A type correction, so like any preset it is not an undo step: the keys
+      // are re-spelled in the undo and redo steps too, one type at a time.
+      let next = state;
       for (const t of types) {
-        const cur = state.model.inventory.find((x) => x.typeRef === t.typeRef);
+        const cur = next.model.inventory.find((x) => x.typeRef === t.typeRef);
         if (!cur) continue;
-        byType.set(t.typeRef, t.nodeNames);
-        presets[t.typeRef] = {
-          ...(presets[t.typeRef] ?? typeAsPreset(cur)),
+        const preset = {
+          ...(next.presets[t.typeRef] ?? typeAsPreset(cur)),
           typeRef: t.typeRef,
           nodeNames: t.nodeNames,
           outputs: t.nodeNames.length,
         };
+        const ch = nodeChanges(next, t.typeRef, typeNodes(next, t.typeRef), presetToType(preset).nodes);
+        next = { ...next, ...respellAll(next, ch), presets: { ...next.presets, [t.typeRef]: preset } };
       }
-      // re-spell the assignment keys of every driver of those types
-      const drivers = [...state.model.drivers, ...state.addedDrivers];
-      const rename = new Map();
-      for (const d of drivers) {
-        const names = byType.get(d.typeRef);
-        if (!names) continue;
-        const old = state.model.inventory.find((x) => x.typeRef === d.typeRef)?.nodes ?? [];
-        old.forEach((n, i) => {
-          if (names[i] && names[i] !== n.name) rename.set(keyOf(d.ref, n.name), keyOf(d.ref, names[i]));
-        });
-      }
-      const assignments = {};
-      for (const [k, v] of Object.entries(state.assignments)) {
-        assignments[rename.get(k) ?? k] = { ...v, refs: [...v.refs] };
-      }
-      return withUndo(state, { presets, assignments, fixNodeSyntax: true });
+      return next === state ? state : { ...next, fixNodeSyntax: true };
     }
 
     case 'APPLY_PLAN': {
@@ -399,12 +473,26 @@ export function reducer(state, action) {
     // what has been. Keeping them out of the undo stack means Ctrl+Z stays about
     // cable moves, and a preset cannot be silently un-defined under a driver
     // that is using it.
-    case 'SET_PRESET':
-      return { ...state, presets: { ...state.presets, [action.preset.typeRef]: action.preset } };
+    case 'SET_PRESET': {
+      const p = action.preset;
+      const ch = nodeChanges(state, p.typeRef, typeNodes(state, p.typeRef), presetToType(p).nodes);
+      return { ...state, ...respellAll(state, ch), presets: { ...state.presets, [p.typeRef]: p } };
+    }
     case 'DELETE_PRESET': {
+      const p = state.presets[action.typeRef];
+      if (!p) return state;
+      const design = designNodes(state, action.typeRef);
+      // the type exists only as this preset, and a driver added here is one: remove the driver first
+      if (presetPinned(state, action.typeRef)) return state;
       const presets = { ...state.presets };
       delete presets[action.typeRef];
-      return { ...state, presets };
+      const ch = design ? nodeChanges(state, action.typeRef, presetToType(p).nodes, design) : null;
+      return {
+        ...state,
+        ...(ch ? respellAll(state, ch) : {}),
+        presets,
+        fixNodeSyntax: state.fixNodeSyntax && stillFixes(state, presets),
+      };
     }
     // A size typed in the space layout, and a TBC flag. Both belong to the set
     // like presets, and stay out of undo for the same reason. null clears one.
@@ -481,6 +569,7 @@ export function reducer(state, action) {
     case 'SELECT_LINKS': {
       // additive (Ctrl/⌘) toggles; plain click selects one (or deselects if it was the only one)
       const { linkRef, additive } = action;
+      if (linkRef == null) return { ...state, ...CLEAR_MODES }; // Escape: nothing selected, every mode off
       const cur = state.selectedLinks;
       let selectedLinks;
       if (additive) selectedLinks = cur.includes(linkRef) ? cur.filter((r) => r !== linkRef) : [...cur, linkRef];
@@ -515,7 +604,8 @@ export function effectiveDrivers(model, addedDrivers, deletedDrivers) {
   const gone = new Set(deletedDrivers ?? []);
   return [
     ...model.drivers.filter((d) => !gone.has(d.ref)),
-    ...(addedDrivers ?? []).map((a) => ({ ...byType[a.typeRef], ref: a.ref, zone: a.zone, added: true, split: a.split ?? null })),
+    // nodes: [] for a type nothing describes any more, so nothing downstream reads undefined
+    ...(addedDrivers ?? []).map((a) => ({ nodes: [], typeRef: a.typeRef, ...byType[a.typeRef], ref: a.ref, zone: a.zone, added: true, split: a.split ?? null })),
   ];
 }
 
@@ -766,6 +856,7 @@ export function provisionalTypes(state) {
       typeRef: p.typeRef,
       invented: !!p.invented,
       origin: p.origin ?? 'edited',
+      pinned: presetPinned(state, p.typeRef),
       drivers: all.filter((d) => d.typeRef === p.typeRef).length,
     }))
     .sort((a, b) => a.typeRef.localeCompare(b.typeRef));
