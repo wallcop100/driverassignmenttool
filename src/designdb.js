@@ -9,7 +9,9 @@ import Papa from 'papaparse';
 
 const COLUMNS = ['ElementTypeRef', 'ElementTypeName', 'MaxPower(W)', 'CurrentRange', 'OutputVoltage(V)',
   'NodeMaxPower(W)', 'NodeMaxForwardVoltage(fV)', 'NodeCurrent', 'ControlType', 'BallastCountPerUoM',
-  'Channels', 'Parameters', 'IsTBC', 'IsPropertiesTBC'];
+  'Channels', 'Parameters', 'IsTBC', 'IsPropertiesTBC', 'Notes'];
+// The free-text columns a driver type's "For A2, A6 type's" can sit in, joined as the overlay joins them
+const NOTE_COLUMNS = ['Description', 'Details', 'InternalNotesText', 'ExternalNotesText'];
 
 const s = (v) => (v == null ? '' : String(v).trim());
 const live = (r) => s(r.IsDeleted) === '';
@@ -51,6 +53,7 @@ export function typesCsvFromSheets({ ElementTypes = [], Elements = [], Positions
       ElementTypeRef: s(t.Ref),
       ElementTypeName: s(t.Name),
       Channels: String(channels(t.Parameters)),
+      Notes: NOTE_COLUMNS.map((c) => s(t[c])).filter(Boolean).join(' | '),
     }));
   return Papa.unparse({ fields: COLUMNS, data: rows.map((r) => COLUMNS.map((c) => r[c])) });
 }
@@ -140,6 +143,11 @@ export function positionPieces(rows, uom, locations = []) {
   return out;
 }
 
+// PositionType Ref -> its label (ExtRef), where it has one. DJ 100874 sends only the
+// Ref, and a driver type's notes name fittings by label.
+export const positionLabels = (rows) => Object.fromEntries(rows.filter(live)
+  .filter((r) => s(r.Ref) && s(r.ExtRef)).map((r) => [s(r.Ref), s(r.ExtRef)]));
+
 export const isWorkbook = (file) => /\.xls[xm]$/i.test(file.name);
 
 // SheetJS is only loaded when somebody drops a workbook, so the CSV path stays light.
@@ -155,6 +163,7 @@ export async function readDesignDb(file) {
   return {
     types: typesCsvFromSheets(sheets),
     uom,
+    labels: positionLabels(rows('PositionTypes')),
     pieces: positionPieces(sheets.Positions, uom, rows('Locations')),
     ...hubsFromSheets(sheets),
   };

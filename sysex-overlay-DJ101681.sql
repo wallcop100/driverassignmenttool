@@ -1,4 +1,7 @@
 -- SysEx Overlay - Lighting Interactive Driver Assignment --
+-- V1.16 -- (DJ 101681: not yet saved live. V1.16 adds a Notes column to the type library (Description, Details,
+--          Internal/ExternalNotesText joined) and PositionTypeBestRef to the assessment, so a driver type
+--          noted "For A2" is reserved for A2 fittings.
 -- V1.15 -- (DJ 101681: revision 102, 2026-11-17. V1.15 adds Unit_ControlAddressCount and the +ve/-ve/MAX
 --          SecondaryPowerNodes to the assessment, as DJ 100874 sends them, so tunable fittings are flagged embedded.
 -- V1.14 -- (DJ 101681: saved as revision 97, 2026-10-27; V1.13 was revision 92. V1.14 adds the PositionType's UoM to the
@@ -20,7 +23,7 @@ DECLARE @ToolPath         AS varchar(200) = '/driverassignmenttool/api/';
 DECLARE @DataVersion      AS varchar(50)  = '';           -- blank = @SystemSetID. See notes.
 -- Sent in dat:init. The tool compares it with the version it was built against and
 -- tells the user to update this overlay when they differ - bump it on every save.
-DECLARE @OverlayVersion   AS varchar(20)  = '1.15';
+DECLARE @OverlayVersion   AS varchar(20)  = '1.16';
 
 -- SysEx Overlay - Lighting - Driver Assignment Tool. Puts a launcher on every
 -- PSU-HUB position. Design rationale and load-bearing gotchas (setup order,
@@ -122,7 +125,7 @@ DECLARE @EntityTypeFilter AS varchar(max) = @Container_TypeRef;
    composed string for older hosts. */
 DECLARE @TypesCsv varchar(max);
 SELECT @TypesCsv = '"ElementTypeRef","ElementTypeName","MaxPower(W)","CurrentRange","OutputVoltage(V)",'
-+ '"NodeMaxPower(W)","NodeMaxForwardVoltage(fV)","NodeCurrent","ControlType","BallastCountPerUoM","Channels","Parameters","IsTBC","IsPropertiesTBC"'
++ '"NodeMaxPower(W)","NodeMaxForwardVoltage(fV)","NodeCurrent","ControlType","BallastCountPerUoM","Channels","Parameters","IsTBC","IsPropertiesTBC","Notes"'
 + @NL + STRING_AGG(CONVERT(varchar(max),
     '"'+REPLACE(ISNULL(t.Ref,''),'"','""')+'",'
   + '"'+REPLACE(ISNULL(t.Name,''),'"','""')+'",'
@@ -141,11 +144,18 @@ SELECT @TypesCsv = '"ElementTypeRef","ElementTypeName","MaxPower(W)","CurrentRan
   + '"'+REPLACE(ISNULL(t.Parameters,''),'"','""')+'",'
   -- to be confirmed, as the workbook has it, so the space layout can hatch it
   + '"'+ISNULL(CONVERT(varchar(10),t.IsTBC),'')+'",'
-  + '"'+ISNULL(CONVERT(varchar(10),t.IsPropertiesTBC),'')+'"'
+  + '"'+ISNULL(CONVERT(varchar(10),t.IsPropertiesTBC),'')+'",'
+  -- V1.16: the free text a type's "For A2, A6 type's" sits in. The tool reserves
+  -- the type for the fittings it names (noteTargets in engine.js).
+  + '"'+REPLACE(ISNULL(t.Notes,''),'"','""')+'"'
   ), @NL) WITHIN GROUP (ORDER BY t.Ref)
 FROM (SELECT Ref, Name, [MaxPower(W)], CurrentRange, [OutputVoltage(V)],
              [NodeMaxPower(W)], [NodeMaxForwardVoltage(fV)], NodeCurrent,
              ControlType, BallastCountPerUoM, Parameters, IsTBC, IsPropertiesTBC,
+             STUFF(ISNULL(' | '+NULLIF(CONVERT(varchar(max),Description),''),'')
+                 + ISNULL(' | '+NULLIF(CONVERT(varchar(max),Details),''),'')
+                 + ISNULL(' | '+NULLIF(CONVERT(varchar(max),InternalNotesText),''),'')
+                 + ISNULL(' | '+NULLIF(CONVERT(varchar(max),ExternalNotesText),''),''),1,3,'') AS Notes,
              CASE WHEN ISNULL(Parameters,'') LIKE '%<%'
                     THEN LEN(Parameters) - LEN(REPLACE(Parameters,'<',''))
                   -- no direction markers: every comma separated entry is a node
@@ -212,7 +222,9 @@ SELECT
        -- V1.15: the channel columns DJ 100874 sends, so the tool can flag and size tunable / colour fittings
        MAX(ISNULL(pt.ControlAddressCount,0))       AS Unit_ControlAddressCount,
        MAX(ISNULL(pt.[SecondaryPowerNodes_+ve],0)) AS [SecondaryPowerNodes_+ve],
-       MAX(ISNULL(pt.[SecondaryPowerNodes_-ve],0)) AS [SecondaryPowerNodes_-ve]
+       MAX(ISNULL(pt.[SecondaryPowerNodes_-ve],0)) AS [SecondaryPowerNodes_-ve],
+       -- V1.16: the fitting's label, BestRef = COALESCE(ExtRef, Ref): what a driver type's "For A2" names it by
+       MAX(COALESCE(NULLIF(pt.ExtRef,''), pt.Ref))  AS PositionTypeBestRef
 INTO #SPRequirements
 FROM #CalculatedPositions cp
 JOIN #Positions h ON h.Ref = cp.Link_SecondaryPowerRef
@@ -322,7 +334,7 @@ IF OBJECT_ID('tempdb..#DataCsv') IS NOT NULL DROP TABLE #DataCsv;
 SELECT r.HubLabel,
   '"Link_SecondaryPowerRef","LocationName","ControlTypeRef","ControlGrouptext","PositionTypeRef",'
 + '"SumQuantity","CC/CV","CV_Voltage","CC_Current","SumVf","SumPower","UoM",'
-+ '"Unit_ControlAddressCount","SecondaryPowerNodes_+ve","SecondaryPowerNodes_-ve","MAX_SecondaryPowerNodes"'
++ '"Unit_ControlAddressCount","SecondaryPowerNodes_+ve","SecondaryPowerNodes_-ve","MAX_SecondaryPowerNodes","PositionTypeBestRef"'
 + @NL + STRING_AGG(CONVERT(varchar(max),
     '"'+REPLACE(ISNULL(CONVERT(varchar(max),r.HubRef),''),'"','""')+'",'
   + '"'+REPLACE(ISNULL(CONVERT(varchar(max),r.LocationName),''),'"','""')+'",'
@@ -339,7 +351,8 @@ SELECT r.HubLabel,
   + '"'+CONVERT(varchar(20),r.Unit_ControlAddressCount)+'",'
   + '"'+CONVERT(varchar(20),r.[SecondaryPowerNodes_+ve])+'",'
   + '"'+CONVERT(varchar(20),r.[SecondaryPowerNodes_-ve])+'",'
-  + '"'+CONVERT(varchar(20),IIF(r.[SecondaryPowerNodes_+ve]>r.[SecondaryPowerNodes_-ve],r.[SecondaryPowerNodes_+ve],r.[SecondaryPowerNodes_-ve]))+'"'
+  + '"'+CONVERT(varchar(20),IIF(r.[SecondaryPowerNodes_+ve]>r.[SecondaryPowerNodes_-ve],r.[SecondaryPowerNodes_+ve],r.[SecondaryPowerNodes_-ve]))+'",'
+  + '"'+REPLACE(ISNULL(CONVERT(varchar(max),r.PositionTypeBestRef),''),'"','""')+'"'
   ), @NL) WITHIN GROUP (ORDER BY r.ControlGrouptext, r.PositionTypeRef) AS Csv
 INTO #DataCsv
 FROM #SPRequirements r

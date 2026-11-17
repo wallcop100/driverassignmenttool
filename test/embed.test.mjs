@@ -122,10 +122,10 @@ test('the overlay file states the version the tool expects', async () => {
 });
 
 test('only a newer overlay offers a reload, and the reload keeps the query', () => {
-  const want = { version: '1.15' };
-  assert.equal(toolIsBehind('1.16', want), true);
-  assert.equal(toolIsBehind('1.15', want), false);
-  assert.equal(toolIsBehind('1.14', want), false);   // that one needs the overlay updated instead
+  const want = { version: '1.16' };
+  assert.equal(toolIsBehind('1.17', want), true);
+  assert.equal(toolIsBehind('1.16', want), false);
+  assert.equal(toolIsBehind('1.15', want), false);   // that one needs the overlay updated instead
   assert.equal(toolIsBehind(undefined, want), false);
   const u = new URL(freshUrl('https://x.io/driverassignmenttool/api/?parentOrigin=https%3A%2F%2Fk.co&t=1', 42));
   assert.equal(u.searchParams.get('parentOrigin'), 'https://k.co');

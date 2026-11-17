@@ -834,6 +834,16 @@ export default function EstimatePage({ state, dispatch, zone }) {
       <td className="n">{unmatched ? '–' : l.count}</td>
       <td className="pv-flags">
         <ChannelIcon refs={l.rows} />
+        {l.noted && !l.forced && (
+          <Tooltip content={[['Noted for these fittings', ''], `${l.typeRef}'s notes say "${l.noted}", so it is picked here and kept off every other fitting.`]}>
+            <Icon name="sticky_note_2" cls="est-noted" label="Noted for these fittings" />
+          </Tooltip>
+        )}
+        {l.noteIssue && (
+          <Tooltip content={[['Noted type doesn’t fit', ''], `${l.noteIssue}. Sized on the next best type instead.`]}>
+            <Icon name="report_problem" cls="est-forced bad" label="Noted type doesn't fit" />
+          </Tooltip>
+        )}
         {!l.forced && l.positionTypes?.some((pt) => /Em?$/.test(pt) && isOwnLine(pt, state.ownLine)) && (
           <Tooltip content={[['May be emergency', ''], `${l.positionTypes.filter((pt) => /Em?$/.test(pt)).join(', ')} ends in E or Em, so it may be an emergency fitting and has its own line. If it is, change the driver type (⋮) to an emergency driver.`]}>
             <Icon name="emergency" cls="est-em" label="May be emergency" />

@@ -159,6 +159,7 @@ export function parseTypes(text) {
         nodeRestrictions: nodeStr || composeNodeRestrictions(explicit ? explicitNode(row) : {}),
         ballast: num(row.BallastCountPerUoM),
         controlType: s(row.ControlType) || null,
+        ...noteTargets(row.Notes),
         nodes: [],
       });
     }
@@ -353,6 +354,8 @@ export function parseAssessment(text, zoneAlias = {}) {
       controlGroup: s(row.ControlGrouptext),
       location: s(row.LocationName),
       positionType: s(row.PositionTypeRef),
+      // the PositionType's label, COALESCE(ExtRef, Ref): what a driver type's notes name it by
+      ptLabel: s(row.PositionTypeBestRef) || null,
       // The PositionType's UoM: 'm' for linear, blank for a counted fitting. Only
       // sent from overlay V1.14; without it a quantity is a plain count.
       uom: s(row.UoM) || null,
@@ -1044,8 +1047,41 @@ function mismatchOf(t, links, allowLocal) {
   return 'its ratings are incomplete';
 }
 
-function sizingCandidates(inventory, links, allowLocal = false) {
+// A driver type's notes can name the fittings it is for: "For A2, A6 type's",
+// "Used with K1", "For D17 fittings". Such a type is RESERVED for them: it is
+// the first pick for those fittings and never offered for any other (a DT8 part
+// set to one LightShape profile is the wrong part for every other fitting).
+// Only ref-shaped words count (letters then a digit), so "for potential remote
+// drivers" names nothing. The notes are Description, Details, InternalNotesText
+// and ExternalNotesText, sent joined as one Notes column.
+const NOTE_LEAD = /\b(?:used\s+(?:for|with|on)|only\s+for|intended\s+for|suits|for)\s+([^.;:\n|()]+)/gi;
+const REFISH = /^[a-z]{1,4}\d+[a-z0-9-]*$/i;
+export function noteTargets(text) {
+  const pts = [];
+  const said = [];
+  for (const m of String(text ?? '').matchAll(NOTE_LEAD)) {
+    const toks = m[1].split(/[\s,&/]+|\band\b/i).map((t) => t.replace(/['’]s$/i, '')).filter((t) => REFISH.test(t));
+    if (toks.length) { pts.push(...toks); said.push(m[0].trim()); }
+  }
+  const labels = [...new Map(pts.map((t) => [t.toLowerCase(), t])).values()];
+  return { forPts: labels.map((t) => t.toLowerCase()), forLabels: labels, forNote: said.join('; ') || null };
+}
+// A fitting answers to its PositionType Ref and to its label, BestRef = COALESCE(ExtRef, Ref)
+export const fittingKeys = (r) => [r?.positionType, r?.ptLabel].filter(Boolean).map((x) => x.toLowerCase());
+// Every fitting type the model knows. A note naming none of them (a part number,
+// "Used with LIN200D") reserves nothing, or the type could never be picked.
+export const knownFittings = (model) => new Set([...(model?.requirements ?? []), ...(model?.links ?? [])].flatMap(fittingKeys));
+export const reservedFor = (t, known) => (t?.forPts ?? []).filter((p) => known.has(p));
+// The fittings' types this driver type is noted for: all of them, or it isn't.
+export const notedFor = (t, rows, known) => {
+  const rf = reservedFor(t, known);
+  return rf.length > 0 && rows.length > 0 && rows.every((r) => fittingKeys(r).some((k) => rf.includes(k)));
+};
+const noteAllows = (t, rows, known) => !reservedFor(t, known).length || notedFor(t, rows, known);
+
+function sizingCandidates(inventory, links, allowLocal = false, known = null) {
   return inventory.filter((t) => {
+    if (known && !noteAllows(t, links, known)) return false;
     // Local (switched, unaddressed) stock is off the table unless asked for
     if (!allowLocal && isLocal(t.controlType)) return false;
     if (!t.powerType || t.maxPowerW == null || !t.nodes.length) return false;
@@ -1061,16 +1097,16 @@ function sizingCandidates(inventory, links, allowLocal = false) {
 // capacity. Types that can't take the single biggest cable are out - no amount
 // of them would ever fit it.
 // fewest drivers → ordinary before emergency → least wasted capacity
-const betterFit = (a, b) => a.count - b.count || a.em - b.em || a.waste - b.waste;
+const betterFit = (a, b) => b.noted - a.noted || a.count - b.count || a.em - b.em || a.waste - b.waste;
 
-function pickType(inventory, links, margin, allowLocal = false) {
+function pickType(inventory, links, margin, allowLocal = false, known = null) {
   const keep = (1 - margin);
   const totalW = sum(links.map((l) => l.loadW ?? 0));
   const totalFv = sum(links.map((l) => l.fvV ?? 0));
   const maxW = Math.max(...links.map((l) => l.loadW ?? 0));
   const maxFv = Math.max(...links.map((l) => l.fvV ?? 0));
   let best = null;
-  for (const t of sizingCandidates(inventory, links, allowLocal)) {
+  for (const t of sizingCandidates(inventory, links, allowLocal, known)) {
     const nodeW = Math.min(...t.nodes.map((n) => n.maxLoadW ?? Infinity), t.maxPowerW) * keep;
     const nodeFv = Math.min(...t.nodes.map((n) => n.maxFvV ?? Infinity)) * keep;
     if (maxW > nodeW || maxFv > nodeFv) continue;
@@ -1078,7 +1114,8 @@ function pickType(inventory, links, margin, allowLocal = false) {
     const perDriverFv = nodeFv * t.nodes.length;
     const count = Math.max(1, Math.ceil(totalW / perDriverW),
       Number.isFinite(perDriverFv) ? Math.ceil(totalFv / perDriverFv) : 1);
-    const cand = { t, count, waste: count * perDriverW - totalW, em: isEmergency(t.typeRef) ? 1 : 0 };
+    const cand = { t, count, waste: count * perDriverW - totalW, em: isEmergency(t.typeRef) ? 1 : 0,
+      noted: known && notedFor(t, links, known) ? 1 : 0 };
     if (!best || betterFit(cand, best) < 0) best = cand;
   }
   return best;
@@ -1113,7 +1150,7 @@ export function planDrivers(model, assignments, added, zone, opts = {}) {
   const unmatched = [];
 
   for (const [key, links] of [...buckets.entries()].sort()) {
-    const choice = pickType(ctx.model.inventory, links, margin, allowLocal);
+    const choice = pickType(ctx.model.inventory, links, margin, allowLocal, knownFittings(ctx.model));
     if (!choice) { unmatched.push({ key, count: links.length }); continue; }
     const refs = links.map((l) => l.ref);
     let count = Math.min(choice.count, refs.length);
@@ -1152,6 +1189,7 @@ export function planDrivers(model, assignments, added, zone, opts = {}) {
 // Ways to rank driver types that all fit: [key, why a loser lost on it].
 const RANK = {
   em: [(c) => c.em, 'emergency stock'],
+  noted: [(c) => -c.noted, 'not noted for these fittings'],
   outputs: [(c) => c.t.nodes.length, 'more outputs'],
   count: [(c) => c.count, 'more drivers'],
   spareOutputs: [(c) => -c.spareOutputs, 'fewer spare outputs'],
@@ -1272,6 +1310,9 @@ export function planFromRequirements(model, zone, opts = {}) {
   // drivers. That is the point: an estimate that packs everything as tightly as
   // it will go has quietly made design decisions the detail stage has not taken
   // yet, and it prices for a best case nobody has agreed to.
+  const known = knownFittings(model);
+  const reserving = (model.inventory ?? []).filter((t) => reservedFor(t, known).length);
+  const isNoted = (r) => reserving.some((t) => notedFor(t, [r], known));
   const buckets = new Map();
   for (const r of rows) {
     const key = [
@@ -1279,7 +1320,8 @@ export function planFromRequirements(model, zone, opts = {}) {
       r.controlType || null,                           // nor a DALI fitting a Local driver
       channelClass(r) && `${channelClass(r)} ${r.ref}`, // tunable and multi-address: one line per row, to be checked
       restrictControlGroup ? (r.controlGroup || '-') : null,
-      splitByType || isOwnLine(r.positionType, ownLine) ? (r.positionType || '-') : null,
+      // a fitting a driver type is noted for has its own line, so the noted type can take it
+      splitByType || isOwnLine(r.positionType, ownLine) || isNoted(r) ? (r.positionType || '-') : null,
       splitByLocation ? (r.location || '-') : null,
     ].filter((x) => x != null).join(' · ');
     if (!buckets.has(key)) buckets.set(key, []);
@@ -1445,10 +1487,17 @@ export function planFromRequirements(model, zone, opts = {}) {
       // just because it has one output.
       return cand;
     };
-    const cands = sizingCandidates(model.inventory, units, allowLocal).map(size).filter(Boolean);
+    const fits = sizingCandidates(model.inventory, units, allowLocal, known);
+    const cands = fits.map(size).filter(Boolean);
+    for (const c of cands) c.noted = notedFor(c.t, units, known) ? 1 : 0;
+    // a type noted for these fittings that cannot take them: say so, the pick falls back
+    const notedTypes = (model.inventory ?? []).filter((t) => notedFor(t, units, known));
+    const noteIssue = notedTypes.length && !cands.some((c) => c.noted)
+      ? `${notedTypes.map((t) => t.typeRef).join(', ')} ${notedTypes.length === 1 ? 'is' : 'are'} noted for ${[...new Set(units.map((r) => r.ptLabel || r.positionType))].join(', ')} but can't take them: ${notedTypes.map((t) => (fits.includes(t) ? 'too small for one fitting per output' : mismatchOf(t, units, allowLocal))).join('; ')}`
+      : null;
     // Emergency stock is always last. Then each mode's rules in turn, and the
     // first rule that tells two apart is also why the loser lost.
-    const rules = [RANK.em, ...PICK_BY[pickBy] ?? PICK_BY.single];
+    const rules = [RANK.em, RANK.noted, ...PICK_BY[pickBy] ?? PICK_BY.single];
     const better = (a, b) => rules.reduce((d, [f]) => d || f(a) - f(b), 0);
     cands.sort(better);
     const auto = cands[0];
@@ -1465,7 +1514,10 @@ export function planFromRequirements(model, zone, opts = {}) {
       const t = model.inventory.find((x) => x.typeRef === want);
       const c = cands.find((x) => x.t.typeRef === want) ?? (t && size(t));
       if (c) {
-        if (!cands.includes(c)) c.mismatch = mismatchOf(t, units, allowLocal);
+        if (!cands.includes(c)) {
+          c.mismatch = noteAllows(t, units, known) ? mismatchOf(t, units, allowLocal)
+            : `reserved by its notes ("${t.forNote}")`;
+        }
         best = c;
       } else {
         forcedIssue = t ? `${want} cannot take one of these fittings per output` : `${want} is not in the type library`;
@@ -1494,10 +1546,11 @@ export function planFromRequirements(model, zone, opts = {}) {
       considered: [...(cands.includes(best) ? [] : [best]), ...cands.slice(0, 6)].map((c) => ({
         typeRef: c.t.typeRef, name: c.t.name || '',
         count: c.count, outputs: c.t.nodes.length, spareW: Math.round(c.waste), spareOutputs: c.spareOutputs, em: !!c.em,
-        taken: c === best, auto: c === auto, mismatch: c.mismatch ?? null,
+        taken: c === best, auto: c === auto, mismatch: c.mismatch ?? null, noted: !!c.noted,
         lostOn: c === auto || !cands.includes(c) ? null : lostOn(c) })),
       fitTypes: cands.map((c) => c.t.typeRef),
       forced: want, forcedIssue, mismatch: best.mismatch ?? null, pieceIssue,
+      noted: best.noted ? best.t.forNote : null, noteIssue,
       loadW: totalW,
       controlGroup: group[0].controlGroup,
       // fittings per ControlGroup, in order, so a patch can name each driver

@@ -342,3 +342,9 @@ Not committed.
 
 ### 2026-11-17 — Tunable flags embedded (overlay V1.15)
 - Embedded, no tunable/colour flag showed and channels weren't sized: the overlay's assessment had no ControlAddressCount or SecondaryPowerNodes columns, so `channelClass` was always null. V1.15 (DJ 101681 revision 102) sends `Unit_ControlAddressCount`, `SecondaryPowerNodes_+ve/-ve` and `MAX_SecondaryPowerNodes` from `#PositionTypes`, as DJ 100874 does. Not yet run live from here.
+
+### 2026-11-17 — Driver types reserved by their notes (overlay V1.16)
+- A type whose Description, Details, InternalNotesText or ExternalNotesText says "For A2, A6 type's", "Used with/for/on …", "Only for …", "Intended for …" or "Suits …" is reserved for those fittings (`noteTargets`, engine.js). It ranks first for them (`RANK.noted`, after emergency) and is never a candidate for any other. Only ref-shaped words count, and only those matching a fitting type in the job (`knownFittings`), so "Used with LIN200D" reserves nothing.
+- Fittings match on the PositionType Ref or its label, BestRef = COALESCE(ExtRef, Ref). Embedded, the overlay sends `PositionTypeBestRef`. Standalone, DJ 100874 sends only the Ref, so the label comes from the DesignDB's PositionTypes sheet (`positionLabels`, `ptLabels` in api.js).
+- A fitting with a noted type gets its own line even with "keep fitting types apart" off. A noted type that can't take its fittings leaves the next best pick, flagged (`noteIssue`). Forcing a reserved type onto other fittings is allowed but shows as a mismatch.
+- Type cards show "For A2, A6"; the estimate line shows a note flag.

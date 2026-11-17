@@ -28,6 +28,11 @@ export default function TypeCard({ t, faults, onWarn, children, below, className
           {` · ${t.nodes?.length ?? 1} out`}{t.ballast ? ` · ${t.ballast}CH` : ''}
         </span>
       </div>
+      {t.forPts?.length > 0 && (
+        <span className="tp-for" title={`Reserved by its notes: ${t.forNote}`}>
+          For {(t.forLabels ?? t.forPts).join(', ')}
+        </span>
+      )}
       <div className="tp-foot">
         {faults.length > 0 && (
           <button type="button" className="tp-warn" onClick={onWarn}>

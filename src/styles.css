@@ -564,6 +564,9 @@ body { background: #f6f8fb; }
 .est-ch svg, .est-ch .material-icons { width: 14px; height: 14px; font-size: 14px; }
 .est-ch-tunable { background: #fff4d6; color: #7d4e00; border: 1px solid #fecd62; }
 .est-ch-multi { background: #fbe4f2; color: #8a1a5c; border: 1px solid #f0a6d2; }
+.est-noted { color: #0f766e; }
+.tp-for { display: inline-block; margin-top: 2px; font-size: 11px; font-weight: 600; color: #0f766e;
+  background: #e6f6f4; border: 1px solid #99d5cd; border-radius: 4px; padding: 1px 6px; }
 .est-tr-ch { display: flex; align-items: center; gap: 6px; }
 .est-ct { display: inline-block; font-size: 11px; font-weight: 600; line-height: 1; color: #fff;
   padding: 3px 6px; border-radius: 4px; margin-right: 3px; }
