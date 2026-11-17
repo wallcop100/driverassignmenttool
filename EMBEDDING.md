@@ -429,7 +429,11 @@ Columns actually used:
 
 ### Links Assignment CSV (`links`)
 
-Required column: **`LinkRef`** (must be unique).
+Required column: **`LinkRef`**. One cable can take several rows: LinkList gives one per room and
+PositionType, each carrying only its own destinations' load. The tool adds `LinkSumPower(W)` and
+`LinkForwardVoltage(Vf)` across them and joins the rooms and PositionTypes. If the rows disagree on
+`PullZone`, `LinkTypeRef`, `ControlGroupText`, `SecondaryPowerType`, `LinkCurrent`, `LinkVoltage(V)` or
+`ControlType` (a blank doesn't count), the cable still loads but fails validation (`LinkRows`).
 
 | Column | Used for |
 |---|---|

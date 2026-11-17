@@ -1,20 +1,22 @@
 # driverassignmenttool — state
 
-Updated: 2026-11-14
+Updated: 2026-11-17
 
 <!-- Now / Next / Blocked are rewritten in place and never grow. Finish something, delete the
      line. Only Log appends. Format: /srv/projects/FORMAT.md -->
 
 ## Now
 
-`main` is 597784d (#43, 2026-11-04), shipping #22–#42, up to the working-trace redesign (#41) and
-channel-aware sizing with the Control Type column (#42). The self-hosting app side (#9) has the companion probe, sent bug reports, build
+`main` is 3864673 (#56, 2026-11-05), shipping #44–#55, up to driver families (#51), What to check
+fixes (#54) and hub approval on the Assessment (#55). The self-hosting app side (#9) has the companion probe, sent bug reports, build
 names and badge. `dat-autodeploy.timer` keeps Connected on Pages' build. The host side, `/data/projects/dat_bridge`, is live on
 `drivers.erikrees.co.uk` and `drivers-dev.wallcop.org`. Reports land in datajoin (#19 live
 2026-10-27).
 
 ## Next
 
+- Open reports (`REPORTS_PLAN.md`): EECDB2 and CBEK3X are fixed on branch `fix/dat-reports-1117`
+  (not committed yet). Next: PR to `dev`, ship to `main`, then resolve all four reports.
 0. Driver traces (`TRACES_PLAN.md` §9): phases 1–8 done. The app side is on `dev` (PR #52,
    merged 2026-11-04). The server side is datajoin branch `dat-part-reasons`:
    its tests haven't been run, then it needs a PR and Erik's merge. Until it is live, a `{reason}`
@@ -29,6 +31,8 @@ names and badge. `dat-autodeploy.timer` keeps Connected on Pages' build. The hos
 
 
 ## Log
+
+- **2026-11-17 (reports EECDB2, CBEK3X):** `REPORTS_PLAN.md`. LinkList gives one row per LinkRef × room × PositionType, and each row carries only its own destinations' load (`#LinkDataRaw` is keyed by LinkRefRowKey). Checked on 110084 X500427 and 109833 X500641. `parseLinks` now adds the rows together. Before, it kept the first row, which halved X500641. Rows that disagree no longer throw: the cable loads with `clash`, and `validate()` / the Block FAIL it as `LinkRows` (Erik: load and flag). `faults()` flags a blank ControlType. `npm test` 397 pass and the build is clean; no browser pass. XE8PNC is live via f32eb23 (#58) and DJ 101681 V1.15 rev 102; 9GYN2L is fixed by #53/#54. Neither is resolved yet.
 
 - **2026-11-14 (state machine audit, branch `claude/wonderful-goodall-ughyxj`):** Escape put `null` in the selection, so every driver read as full and a node click wrote a null cable. Correcting a `:` node left the form drivers on the old name with their cables on a key nothing drew, undo across it brought old keys back, discarding the preset stranded them, and `fixNodeSyntax` was never saved, so a resume or Patch all hubs lost the sweep. A preset changing an added driver's outputs stranded its cables. An invented type could be discarded under a driver added as one, which crashed `driverLoad`. `REVERT_KEY` copied a moved cable. Late `dat:types` rebuilt over added or deleted drivers, forced types, layouts and newer presets. Ctrl+Z fired on every page and in inputs, and ⌘Z never did. All fixed with tests; `npm test` 385 passing (bugReports needs companion-kit, which this container couldn't install). `npm run build` and a browser pass not run here.
 

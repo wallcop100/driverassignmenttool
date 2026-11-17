@@ -3,8 +3,12 @@ import { LabelContext } from '../labelContext.js';
 import { useDomain } from '../core/domain.js';
 import { cgColor, labelText, severityOf } from '../state.js';
 import Tooltip from './Tooltip.jsx';
+import { linkClashMessage } from '../engine.js';
 
-export default function Block({ link, linkRef, flags = [], pending, selected, dispatch, draggable = true, groups }) {
+export default function Block({ link, linkRef, flags: placed = [], pending, selected, dispatch, draggable = true, groups }) {
+  // an unplaced cable has no validate() flags, but a clash is wrong wherever it sits
+  const flags = link?.clash && !placed.some((f) => f.check === 'LinkRows')
+    ? [...placed, { level: 'FAIL', check: 'LinkRows', message: linkClashMessage(link) }] : placed;
   const domain = useDomain();
   const labelFields = useContext(LabelContext);
   const ref = link?.ref ?? linkRef;
