@@ -241,44 +241,53 @@ function parseForm(text) {
 // A hub with no cables yet is the circumstance the estimate mode exists for, so
 // a header-only links file parses to nothing rather than throwing.
 //
-// One cable feeding fittings in two rooms comes out of the link list as two rows
-// that differ only in ToLocationName (_GENERATIVE-X500641, set 109833). That is
-// one cable, so the rooms are joined onto it. Rows that differ in anything else
-// are two different things under one ref, and stay an error.
+// One cable can come out of the link list as several rows: LinkList (DJ 101585)
+// gives a row per LinkRef x room x PositionType, and each row carries only its
+// own destinations' load (#LinkDataRaw is one row per LinksMap row). So the rows
+// are parts of one cable and add up: 110084 X500427 is B2b 3W + B2c 9W = 12W, and
+// 109833 X500641 is 4.5W in each of two rooms = 9W. Taking one row's figures
+// halved X500641's load.
+//
+// Columns that must agree across the rows, blank meaning "not stated". When they
+// don't, the cable still loads, carrying `clash`, and validate() fails it: one
+// bad cable should not take the whole hub down (report EECDB2).
+const LINK_AGREE = ['PullZone', 'LinkTypeRef', 'ControlGroupText', 'SecondaryPowerType',
+  'LinkCurrent', 'LinkVoltage(V)', 'ControlType'];
+
+export const linkClashMessage = (l) =>
+  `${l.ref}: its rows in the Links CSV disagree on ${l.clash.join(', ')} - fix the cable in the DesignDB`;
+
 function parseLinks(text) {
   const { rows } = readCsv(text, LINK_ESSENTIAL, 'Links Assignment CSV', true);
-  const links = [];
-  const seen = new Map();
-  // column names only: a value can be a location name, and this message is sent in crash reports
-  const differ = (a, b) => Object.keys({ ...a, ...b })
-    .filter((k) => k !== 'ToLocationName' && s(a[k]) !== s(b[k]));
+  const byRef = new Map();
   rows.forEach((row, i) => {
     const ref = s(row.LinkRef);
     if (!ref) throw new Error(`Links Assignment CSV: row ${i + 2} has no LinkRef`);
-    if (seen.has(ref)) {
-      const first = seen.get(ref);
-      const cols = differ(first.row, row);
-      if (cols.length) {
-        throw new Error(`Links Assignment CSV: duplicate LinkRef: ${ref} (rows ${first.i + 2} and ${i + 2} differ in ${cols.join(', ')})`);
-      }
-      const room = s(row.ToLocationName);
-      const rooms = first.link.location ? String(first.link.location).split('; ') : [];
-      if (room && !rooms.includes(room)) first.link.location = [...rooms, room].join('; ');
-      return;
-    }
-    const pt = s(row.SecondaryPowerType);
-    const link = {
-      ref, zone: row.PullZone, typeRef: row.LinkTypeRef,
-      loadW: num(row['LinkSumPower(W)']), currentA: num(row.LinkCurrent),
-      voltageV: num(row['LinkVoltage(V)']), fvV: num(row['LinkForwardVoltage(Vf)']),
-      powerType: pt === 'CC' || pt === 'CV' ? pt : null,
-      controlGroup: s(row.ControlGroupText), location: row.ToLocationName,
-      positionType: s(row.PositionType), threadCount: s(row.ThreadCount), controlType: s(row.ControlType),
-    };
-    links.push(link);
-    seen.set(ref, { row, link, i });
+    if (byRef.has(ref)) byRef.get(ref).push(row); else byRef.set(ref, [row]);
   });
-  return links;
+  return [...byRef].map(([ref, rs]) => {
+    const distinct = (col) => [...new Set(rs.map((r) => s(r[col])).filter(Boolean))];
+    const stated = (col) => distinct(col)[0] ?? '';
+    const sum = (col) => {
+      const v = rs.map((r) => num(r[col])).filter((n) => n != null);
+      return v.length ? +v.reduce((a, b) => a + b, 0).toFixed(6) : null;
+    };
+    const pt = stated('SecondaryPowerType');
+    const clash = LINK_AGREE.filter((c) => (c === 'LinkCurrent' || c === 'LinkVoltage(V)'
+      ? new Set(distinct(c).map(Number)).size : distinct(c).length) > 1);
+    const link = {
+      ref, zone: stated('PullZone'), typeRef: stated('LinkTypeRef'),
+      loadW: sum('LinkSumPower(W)'), currentA: num(stated('LinkCurrent')),
+      voltageV: num(stated('LinkVoltage(V)')), fvV: sum('LinkForwardVoltage(Vf)'), // in series
+      powerType: pt === 'CC' || pt === 'CV' ? pt : null,
+      controlGroup: stated('ControlGroupText'), location: distinct('ToLocationName').join('; '),
+      positionType: distinct('PositionType').join(', '), threadCount: distinct('ThreadCount').join(', '),
+      controlType: stated('ControlType'),
+    };
+    // column names only: a value can be a location name, and flags are sent in bug reports
+    if (clash.length) link.clash = clash;
+    return link;
+  });
 }
 
 // Which of the three modes the data puts us in, and why. The tool should not
@@ -604,6 +613,11 @@ function validateDriver(ctx, assignments, driver, opts = {}) {
   }
   const allLinks = Object.values(perNode).flat();
   if (!allLinks.length) return flags;
+
+  // 0. A cable whose rows disagree (parseLinks) - its figures cannot be trusted
+  for (const [nn, links] of Object.entries(perNode)) {
+    for (const l of links) if (l.clash) flag('FAIL', 'LinkRows', linkClashMessage(l), nn, l.ref);
+  }
 
   // 1. Driver Type Match
   if (driver.powerType == null) {

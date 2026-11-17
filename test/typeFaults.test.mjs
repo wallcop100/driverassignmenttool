@@ -24,6 +24,12 @@ test('a type stating nothing is flagged for it', () => {
   assert.match(f[1][0], /no CC\/CV/);
 });
 
+test('a blank ControlType is flagged: it matches no cable (CBEK3X)', () => {
+  const f = faults(type({ maxPowerW: 30, controlType: null }), SOLO);
+  assert.deepEqual(f.map((x) => x[0]), ['no ControlType - matches no cable']);
+  assert.equal(faults(type({ maxPowerW: 30, controlType: '  ' }), SOLO).length, 1);
+});
+
 test('a wattage the spec page disagrees with is attributed, not asserted', () => {
   const [[short, full]] = faults(type(), SOLO);
   assert.match(short, /185W here · spec page says 30W/);
@@ -104,7 +110,7 @@ test('a shared part is checked by a second person before it fills anything, and 
     windows: [{ a: 0.35, w: 19, fv: 54 }, { a: 0.7, w: 32, fv: 46 }],
   };
   const t = { typeRef: 'ET-CCR-D-350-1CH-01', name: 'TCI MP 32 HV K2 - 350mA', powerType: 'CC', maxPowerW: 19,
-    currentA: 0.35, nodes: [{ name: 'OP.1' }] };
+    currentA: 0.35, controlType: 'DALI', nodes: [{ name: 'OP.1' }] };
   const one = { yes: 1, no: 0, origins: 1, openNo: false, verdict: null };
   try {
     setSharedParts([{ ...mp32, votes: one }]);

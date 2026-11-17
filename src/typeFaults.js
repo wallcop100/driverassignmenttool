@@ -49,6 +49,11 @@ export function faults(t, spec) {
     out.push([`${t.currentA}A · ${page} range is ${spec.minA}–${spec.maxA}A`,
       `${t.currentA}A is outside the ${spec.minA}–${spec.maxA}A the ${spec.name} ${page} gives.`, 'disagrees']);
   }
+  // sizing needs a ControlType on both sides (controlTypeOk), so a blank one is left out (CBEK3X)
+  if (!String(t.controlType ?? '').trim()) {
+    out.push(['no ControlType - matches no cable',
+      'With no ControlType this driver matches no cable, so it is left out of sizing.']);
+  }
   return out;
 }
 
