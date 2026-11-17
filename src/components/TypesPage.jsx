@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import * as api from '../api.js';
 import { bannedNodes, driverTypes, filledHere, fixNodeName, needsSetup, resolveSpec, statedAttributes } from '../engine.js';
-import { effectiveDrivers } from '../state.js';
+import { effectiveDrivers, presetPinned } from '../state.js';
 import { canFill, canReplace, currentOptions, faults, fixPreset, fmt, leaves } from '../typeFaults.js';
 import FaultDialog from './FaultDialog.jsx';
 import NewTypeDialog from './NewTypeDialog.jsx';
@@ -222,7 +222,7 @@ export default function TypesPage({ state, dispatch, zone }) {
             menuOpen={menu === t.typeRef}
             toggleMenu={() => setMenu(menu === t.typeRef ? null : t.typeRef)}
             closeMenu={() => setMenu(null)}
-            inHub={inHub.has(t.typeRef)}
+            inHub={inHub.has(t.typeRef)} pinned={presetPinned(state, t.typeRef)}
             onWarn={() => setWarn(t.typeRef)} />
         ))}
         {!cards.length && (
@@ -254,7 +254,7 @@ export default function TypesPage({ state, dispatch, zone }) {
 
 function TypeRow(props) {
   const { t, spec, f, zone, back, dispatch, presets, inventory, editing, draft, setDraft,
-    openEdit, closeEdit, menuOpen, toggleMenu, closeMenu, onWarn, inHub } = props;
+    openEdit, closeEdit, menuOpen, toggleMenu, closeMenu, onWarn, inHub, pinned } = props;
   const [qty, setQty] = useState(1);
   // Only what leaves the card clean in one press; anything that needs the
   // current asked, or the questions, goes through What to check (9GYN2L).
@@ -273,7 +273,7 @@ function TypeRow(props) {
         <PresetEditor draft={draft} setDraft={setDraft} inventory={inventory}
           onSave={() => { dispatch({ type: 'SET_PRESET', preset: toPreset(draft) }); closeEdit(); }}
           onCancel={closeEdit}
-          onDelete={presets[draft.typeRef]
+          onDelete={presets[draft.typeRef] && !pinned
             ? () => { dispatch({ type: 'DELETE_PRESET', typeRef: draft.typeRef }); closeEdit(); }
             : null} />
       ) : null}>
@@ -300,7 +300,7 @@ function TypeRow(props) {
             Set CurrentRange to {o.a}A <em>per the {o.from}</em>
           </button>
         ))}
-        {t.preset && (
+        {t.preset && !pinned && (
           <button className="is-warn"
             onClick={() => { dispatch({ type: 'DELETE_PRESET', typeRef: t.typeRef }); closeMenu(); }}>
             Discard pending change
@@ -309,7 +309,7 @@ function TypeRow(props) {
         {f.length > 0 && !fill && !replace && opts.length < 2 && (
           <button onClick={() => { closeMenu(); onWarn(); }}>What to check…</button>
         )}
-        {!f.length && !fill && !replace && !t.preset && opts.length < 2 && (
+        {!f.length && !fill && !replace && !(t.preset && !pinned) && opts.length < 2 && (
           <span className="tp-menu-none">Nothing to fix</span>
         )}
       </Menu>

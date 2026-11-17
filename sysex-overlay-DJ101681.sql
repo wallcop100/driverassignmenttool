@@ -1,4 +1,6 @@
 -- SysEx Overlay - Lighting Interactive Driver Assignment --
+-- V1.15 -- (DJ 101681: revision 102, 2026-11-17. V1.15 adds Unit_ControlAddressCount and the +ve/-ve/MAX
+--          SecondaryPowerNodes to the assessment, as DJ 100874 sends them, so tunable fittings are flagged embedded.
 -- V1.14 -- (DJ 101681: saved as revision 97, 2026-10-27; V1.13 was revision 92. V1.14 adds the PositionType's UoM to the
 --          assessment, so a quantity reads as a count or as metres. V1.11 sends every Element in the hub; V1.12 (revision 86) sends the
 --          assessment for every hub and states @OverlayVersion; V1.13 gives every hub of a
@@ -18,7 +20,7 @@ DECLARE @ToolPath         AS varchar(200) = '/driverassignmenttool/api/';
 DECLARE @DataVersion      AS varchar(50)  = '';           -- blank = @SystemSetID. See notes.
 -- Sent in dat:init. The tool compares it with the version it was built against and
 -- tells the user to update this overlay when they differ - bump it on every save.
-DECLARE @OverlayVersion   AS varchar(20)  = '1.14';
+DECLARE @OverlayVersion   AS varchar(20)  = '1.15';
 
 -- SysEx Overlay - Lighting - Driver Assignment Tool. Puts a launcher on every
 -- PSU-HUB position. Design rationale and load-bearing gotchas (setup order,
@@ -206,7 +208,11 @@ SELECT
        NULLIF(MAX(cp.PositionVoltage),0)           AS CV_Voltage,
        NULLIF(MAX(cp.PositionCurrent),0)           AS CC_Current,
        NULLIF(SUM(cp.PositionVf),0)                AS SumVf,
-       SUM(cp.PositionLoad)                        AS SumPower
+       SUM(cp.PositionLoad)                        AS SumPower,
+       -- V1.15: the channel columns DJ 100874 sends, so the tool can flag and size tunable / colour fittings
+       MAX(ISNULL(pt.ControlAddressCount,0))       AS Unit_ControlAddressCount,
+       MAX(ISNULL(pt.[SecondaryPowerNodes_+ve],0)) AS [SecondaryPowerNodes_+ve],
+       MAX(ISNULL(pt.[SecondaryPowerNodes_-ve],0)) AS [SecondaryPowerNodes_-ve]
 INTO #SPRequirements
 FROM #CalculatedPositions cp
 JOIN #Positions h ON h.Ref = cp.Link_SecondaryPowerRef
@@ -315,7 +321,8 @@ GROUP BY l.PullZone;
 IF OBJECT_ID('tempdb..#DataCsv') IS NOT NULL DROP TABLE #DataCsv;
 SELECT r.HubLabel,
   '"Link_SecondaryPowerRef","LocationName","ControlTypeRef","ControlGrouptext","PositionTypeRef",'
-+ '"SumQuantity","CC/CV","CV_Voltage","CC_Current","SumVf","SumPower","UoM"'
++ '"SumQuantity","CC/CV","CV_Voltage","CC_Current","SumVf","SumPower","UoM",'
++ '"Unit_ControlAddressCount","SecondaryPowerNodes_+ve","SecondaryPowerNodes_-ve","MAX_SecondaryPowerNodes"'
 + @NL + STRING_AGG(CONVERT(varchar(max),
     '"'+REPLACE(ISNULL(CONVERT(varchar(max),r.HubRef),''),'"','""')+'",'
   + '"'+REPLACE(ISNULL(CONVERT(varchar(max),r.LocationName),''),'"','""')+'",'
@@ -328,7 +335,11 @@ SELECT r.HubLabel,
   + '"'+REPLACE(ISNULL(CONVERT(varchar(max),r.CC_Current),''),'"','""')+'",'
   + '"'+REPLACE(ISNULL(CONVERT(varchar(max),r.SumVf),''),'"','""')+'",'
   + '"'+REPLACE(ISNULL(CONVERT(varchar(max),r.SumPower),''),'"','""')+'",'
-  + '"'+REPLACE(ISNULL(CONVERT(varchar(max),r.UoM),''),'"','""')+'"'
+  + '"'+REPLACE(ISNULL(CONVERT(varchar(max),r.UoM),''),'"','""')+'",'
+  + '"'+CONVERT(varchar(20),r.Unit_ControlAddressCount)+'",'
+  + '"'+CONVERT(varchar(20),r.[SecondaryPowerNodes_+ve])+'",'
+  + '"'+CONVERT(varchar(20),r.[SecondaryPowerNodes_-ve])+'",'
+  + '"'+CONVERT(varchar(20),IIF(r.[SecondaryPowerNodes_+ve]>r.[SecondaryPowerNodes_-ve],r.[SecondaryPowerNodes_+ve],r.[SecondaryPowerNodes_-ve]))+'"'
   ), @NL) WITHIN GROUP (ORDER BY r.ControlGrouptext, r.PositionTypeRef) AS Csv
 INTO #DataCsv
 FROM #SPRequirements r

@@ -140,6 +140,7 @@ export function saveSession(state) {
     assignments: state.assignments,
     addedDrivers: state.addedDrivers,
     deletedDrivers: state.deletedDrivers,
+    fixNodeSyntax: state.fixNodeSyntax,
     prefs: state.prefs,
     presets: state.presets,
     layouts: state.layouts,

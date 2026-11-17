@@ -877,12 +877,16 @@ function applyPresets(drivers, presetTypes) {
     d.outputVoltageV = t.outputVoltageV;
     d.undetermined = t.undetermined;
     d.driverRestrictions = t.driverRestrictions || d.driverRestrictions;
-    for (const node of d.nodes) {
-      const tn = t.nodes.find((x) => x.name === node.name) ?? t.nodes[0];
-      if (!tn) continue;
-      node.maxLoadW = tn.maxLoadW;
-      node.maxFvV = tn.maxFvV;
-    }
+    // Copies, so the design's own snapshot (designInventory holds these nodes) is
+    // left as the DesignDB has it. A driver keeps its own node names, except a
+    // banned ':' the type now spells with '-': the assignment keys were
+    // re-spelled with it (state.js nodeChanges), so the node has to follow.
+    d.nodes = d.nodes.map((node) => {
+      const has = (name) => t.nodes.some((x) => x.name === name);
+      const name = !has(node.name) && has(fixNodeName(node.name)) ? fixNodeName(node.name) : node.name;
+      const tn = t.nodes.find((x) => x.name === name) ?? t.nodes[0];
+      return tn ? { ...node, name, maxLoadW: tn.maxLoadW, maxFvV: tn.maxFvV } : { ...node, name };
+    });
   }
 }
 
@@ -1572,7 +1576,9 @@ export function exportCsv(model, assignments, added) {
 
   for (const row of model.originalRows) {
     const key = `${row.ElementRef}|${row.Node}`;
-    const entry = a[key];
+    // a banned ':' node corrected here holds its cables under the corrected
+    // name; the row keeps the name the DesignDB still has until the patch runs
+    const entry = a[key] ?? a[`${row.ElementRef}|${fixNodeName(row.Node)}`];
     const out = { ...row };
     if (entry && !sameRefs(entry.refs, model.baseline[key]?.refs)) {
       const refs = entry.refs || [];
