@@ -339,3 +339,6 @@ Not committed.
 - Then implemented against a Python backend (`validation.py`, `main.py`, `POST /eligibility`). That
   backend was later removed when the app became static; the same logic now lives in `src/engine.js`
   and the tests were ported from pytest to `node --test`.
+
+### 2026-11-17 — Tunable flags embedded (overlay V1.15)
+- Embedded, no tunable/colour flag showed and channels weren't sized: the overlay's assessment had no ControlAddressCount or SecondaryPowerNodes columns, so `channelClass` was always null. V1.15 (DJ 101681 revision 102) sends `Unit_ControlAddressCount`, `SecondaryPowerNodes_+ve/-ve` and `MAX_SecondaryPowerNodes` from `#PositionTypes`, as DJ 100874 does. Not yet run live from here.

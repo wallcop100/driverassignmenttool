@@ -1701,3 +1701,11 @@ test('a corrected node name reaches the drivers, and the export still carries th
   const csv = engine.exportCsv(m, { 'E1|OP.1-2': { toEntityType: 'Link', refs: ['X50350', 'X50351'] } }, []);
   assert.match(csv, /"?OP\.1:2"?,"?Link"?,"?X50350,X50351"?/);
 });
+
+test('overlay V1.15 assessment: the channel columns reach channelClass, so tunable fittings are flagged embedded', () => {
+  const head = '"Link_SecondaryPowerRef","LocationName","ControlTypeRef","ControlGrouptext","PositionTypeRef","SumQuantity","CC/CV","CV_Voltage","CC_Current","SumVf","SumPower","UoM","Unit_ControlAddressCount","SecondaryPowerNodes_+ve","SecondaryPowerNodes_-ve","MAX_SecondaryPowerNodes"';
+  const csv = `${head}\n"H1","L1","DALI","CG1","B02w","2","CV","24","","","20","","1","1","2","2"\n"H1","L1","DALI","CG1","D01","1","CV","24","","","5","","1","1","1","1"\n`;
+  const rs = engine.parseAssessment(csv);
+  assert.deepEqual(rs.map(engine.channelClass), ['tunable', null]);
+  assert.equal(engine.channelsOf(rs[0]), 2);
+});
