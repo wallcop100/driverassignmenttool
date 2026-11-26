@@ -121,6 +121,10 @@ node docs/companion-shots.mjs  # mocked companion, and asserts every body sent; 
 
 ## Gotchas
 
+- (2026-11-17) **One LinkRef can arrive as several Links rows, each carrying only part of the cable.** LinkList (DJ 101585)
+  groups by location and position type, and `#LinkDataRaw` is per LinksMap row, so each row's W/Vf is its own
+  destinations' share. The cable is the sum (110084 X500427: 3W + 9W). Never keep one row's figures.
+
 - **A picked file can't see an Excel save (2026-11-03).** An `<input type=file>` File is a snapshot and dies on reload, so the DesignDB refresh needs a FileSystemFileHandle (from a drop or `showOpenFilePicker`), kept in IndexedDB. To test with a real handle, write the workbook into OPFS (`navigator.storage.getDirectory()`), stub `getAsFileSystemHandle`, and rewrite the OPFS file to stand in for a save.
 - **DesignDB names parts by product code, with lookalike characters.** `SL0240A3` has a zero where
   the letter O belongs, and `SLO560S3`/`DL0560S3` differ by prefix only. Matching is by model token

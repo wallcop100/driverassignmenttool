@@ -1069,15 +1069,38 @@ test('an empty hub is a model of one hub with nothing in it', () => {
   assert.equal(engine.buildEmpty('4FA').inventory.length, 0);   // no library is not an error
 });
 
-test('one cable to two rooms is one link; a real clash under one ref still fails', () => {
-  const head = '"PullZone","LinkRef","LinkTypeRef","LinkSumPower(W)","ToLocationName","SecondaryPowerType"';
-  const row = (room, w = '12') => `"2FA","_GENERATIVE-X500641","LT1","${w}","${room}","CC"`;
+test('a cable split across rows is one link carrying their sum', () => {
+  const head = '"PullZone","LinkRef","LinkTypeRef","LinkSumPower(W)","LinkCurrent","LinkForwardVoltage(Vf)","ToLocationName","PositionType","SecondaryPowerType","ControlType"';
   const types = '"ElementTypeRef","ElementTypeName"\n"X","x"\n';
-  const m = engine.buildModel(null, [head, row('2F WC'), row('Primary Ensuite')].join('\n') + '\n', types);
-  assert.equal(m.links.length, 1);
-  assert.equal(m.links[0].location, '2F WC; Primary Ensuite');
-  assert.throws(() => engine.buildModel(null, [head, row('2F WC'), row('Primary Ensuite', '30')].join('\n') + '\n', types),
-    /duplicate LinkRef: _GENERATIVE-X500641 \(rows 2 and 3 differ in LinkSumPower\(W\)\)/);
+  const load = (...rows) => engine.buildModel(null, [head, ...rows].join('\n') + '\n', types).links;
+  // 109833: one A1 in each of two rooms, 4.5W each
+  const [rooms, ...none] = load('"2FA","_GENERATIVE-X500641","CC-SC","4.5","0.35","6.4","2F WC","A1","CC","DALI"',
+    '"2FA","_GENERATIVE-X500641","CC-SC","4.5","0.35","6.4","Primary Ensuite","A1","CC","DALI"');
+  assert.equal(none.length, 0);
+  assert.equal(rooms.loadW, 9);
+  assert.equal(rooms.fvV, 12.8);
+  assert.equal(rooms.location, '2F WC; Primary Ensuite');
+  assert.equal(rooms.clash, undefined);
+  // 110084 (EECDB2): two position types in one room, which crashed the hub
+  const [types2] = load('"LGC","_GENERATIVE-X500427","CC-SC","3","0.35","8.6","Playroom","B2b","CC","DALI"',
+    '"LGC","_GENERATIVE-X500427","CC-SC","9","0.35","25.8","Playroom","B2c","CC","DALI"');
+  assert.deepEqual([types2.loadW, types2.fvV, types2.positionType, types2.location], [12, 34.4, 'B2b, B2c', 'Playroom']);
+  // a blank is not stated, not a clash (109833 X50038)
+  const [blank] = load('"2FA","X50038","CV","","","","Bedroom 01","5A","",""', '"2FA","X50038","CV","","","","Bedroom 02","P1","CV",""');
+  assert.equal(blank.powerType, 'CV');
+  assert.equal(blank.clash, undefined);
+});
+
+test('a cable whose rows truly disagree loads, flagged, instead of taking the hub down', () => {
+  const head = '"PullZone","LinkRef","LinkSumPower(W)","LinkCurrent","SecondaryPowerType"';
+  const links = [head, '"2FA","L1","4","0.35","CC"', '"2FA","L1","4","0.5","CC"', '"2FA","L2","4","0.350","CC"'].join('\n') + '\n';
+  const form = '"Pullzone","ElementRef","ElementTypeRef","Node","ToEntityType","ToEntityRefs"\n"2FA","D1","ET-CCR-D-350-1CH-01","OP.1","Link","L1"\n';
+  const m = engine.buildModel(form, links, null);
+  assert.deepEqual(m.links.map((l) => [l.ref, l.clash]), [['L1', ['LinkCurrent']], ['L2', undefined]]);
+  const f = engine.validate(m, m.baseline, []).filter((x) => x.check === 'LinkRows');
+  assert.equal(f.length, 1);
+  assert.equal(f[0].level, 'FAIL');
+  assert.match(f[0].message, /^L1: its rows in the Links CSV disagree on LinkCurrent/);
 });
 
 test('an assessment row carries its UoM when the overlay sends one', () => {
